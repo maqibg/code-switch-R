@@ -6,11 +6,22 @@ import ListItem from '../Setting/ListRow.vue'
 import LanguageSwitcher from '../Setting/LanguageSwitcher.vue'
 import ThemeSetting from '../Setting/ThemeSetting.vue'
 import NetworkWslSettings from '../Setting/NetworkWslSettings.vue'
-import { fetchAppSettings, saveAppSettings, type AppSettings } from '../../services/appSettings'
-import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled, type BlacklistSettings } from '../../services/settings'
-import { fetchConfigImportStatus, importFromPath, type ConfigImportStatus } from '../../services/configImport'
+import { fetchAppSettings, saveAppSettings, testGlobalProxy, type AppSettings } from '../../services/appSettings'
+import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled } from '../../services/settings'
+import {
+  exportCurrentProjectDirectory,
+  fetchProjectTransferInfo,
+  importCurrentProjectDirectory,
+  importLegacyProjectDirectory,
+  type ProjectTransferInfo,
+  type ProjectTransferResult,
+} from '../../services/configImport'
+import { clearStoredRecords, fetchRecordStorageInfo, type RecordStorageInfo } from '../../services/logs'
 import { useI18n } from 'vue-i18n'
 import { extractErrorMessage } from '../../utils/error'
+import { applyTheme, getCurrentTheme } from '../../utils/ThemeManager'
+import { setupI18n } from '../../utils/i18n'
+import { getStoredLocale, hydrateFrontendPreferences } from '../../utils/frontendPreferences'
 
 const { t } = useI18n()
 
@@ -37,6 +48,12 @@ const autoConnectivityTestEnabled = ref(getCachedValue('autoConnectivityTest', f
 const switchNotifyEnabled = ref(getCachedValue('switchNotify', true)) // 切换通知开关
 const roundRobinEnabled = ref(getCachedValue('roundRobin', false))    // 同 Level 轮询开关
 const autoUpdateEnabled = ref(getCachedValue('autoUpdate', true))     // 自动更新开关
+const globalProxyEnabled = ref(getCachedValue('globalProxyEnabled', false))
+const globalProxyProtocol = ref<AppSettings['global_proxy_protocol']>(
+  (getCachedString('globalProxyProtocol', 'http') as AppSettings['global_proxy_protocol']) || 'http'
+)
+const globalProxyHost = ref(getCachedString('globalProxyHost', '127.0.0.1'))
+const globalProxyPort = ref(getCachedNumber('globalProxyPort', 7890))
 const budgetTotal = ref(getCachedNumber('budgetTotal', 0))
 const budgetUsedAdjustment = ref(getCachedNumber('budgetUsedAdjustment', 0))
 const budgetForecastMethod = ref(getCachedString('budgetForecastMethod', 'cycle'))
@@ -57,6 +74,8 @@ const budgetShowCountdownCodex = ref(getCachedValue('budgetShowCountdownCodex', 
 const budgetShowForecastCodex = ref(getCachedValue('budgetShowForecastCodex', false))
 const settingsLoading = ref(true)
 const saveBusy = ref(false)
+const testingGlobalProxy = ref(false)
+const globalProxyTestResult = ref<{ success: boolean; message: string } | null>(null)
 
 // 拉黑配置相关状态
 const blacklistEnabled = ref(false)  // 拉黑功能总开关
@@ -66,11 +85,17 @@ const levelBlacklistEnabled = ref(false)
 const blacklistLoading = ref(false)
 const blacklistSaving = ref(false)
 
-// cc-switch 导入相关状态
-const importStatus = ref<ConfigImportStatus | null>(null)
-const importPath = ref('')
-const importing = ref(false)
-const importLoading = ref(true)
+const projectTransferInfo = ref<ProjectTransferInfo | null>(null)
+const legacyImportPath = ref('')
+const projectImportPath = ref('')
+const projectExportPath = ref('')
+const legacyImporting = ref(false)
+const projectImporting = ref(false)
+const projectExporting = ref(false)
+const projectTransferLoading = ref(true)
+const recordStorageInfo = ref<RecordStorageInfo | null>(null)
+const recordStorageLoading = ref(true)
+const recordStorageClearing = ref(false)
 
 const goBack = () => {
   router.push('/')
@@ -82,6 +107,18 @@ const normalizeBudgetForecastMethod = (value: string) => {
     return trimmed
   }
   return 'cycle'
+}
+
+const normalizeGlobalProxyProtocol = (value: string): AppSettings['global_proxy_protocol'] => {
+  if (value === 'https' || value === 'socks5') return value
+  return 'http'
+}
+
+const normalizeGlobalProxyPort = (value: number) => {
+  if (!Number.isFinite(value)) return 7890
+  const next = Math.floor(value)
+  if (next < 1 || next > 65535) return 7890
+  return next
 }
 
 const loadAppSettings = async () => {
@@ -113,6 +150,10 @@ const loadAppSettings = async () => {
     switchNotifyEnabled.value = data?.enable_switch_notify ?? true
     roundRobinEnabled.value = data?.enable_round_robin ?? false
     autoUpdateEnabled.value = data?.auto_update ?? true
+    globalProxyEnabled.value = data?.global_proxy_enabled ?? false
+    globalProxyProtocol.value = normalizeGlobalProxyProtocol(data?.global_proxy_protocol ?? 'http')
+    globalProxyHost.value = (data?.global_proxy_host || '127.0.0.1').trim() || '127.0.0.1'
+    globalProxyPort.value = normalizeGlobalProxyPort(Number(data?.global_proxy_port ?? 7890))
 
     // 缓存到 localStorage，下次打开时直接显示正确状态
     localStorage.setItem('app-settings-heatmap', String(heatmapEnabled.value))
@@ -140,6 +181,10 @@ const loadAppSettings = async () => {
     localStorage.setItem('app-settings-switchNotify', String(switchNotifyEnabled.value))
     localStorage.setItem('app-settings-roundRobin', String(roundRobinEnabled.value))
     localStorage.setItem('app-settings-autoUpdate', String(autoUpdateEnabled.value))
+    localStorage.setItem('app-settings-globalProxyEnabled', String(globalProxyEnabled.value))
+    localStorage.setItem('app-settings-globalProxyProtocol', globalProxyProtocol.value)
+    localStorage.setItem('app-settings-globalProxyHost', globalProxyHost.value)
+    localStorage.setItem('app-settings-globalProxyPort', String(globalProxyPort.value))
   } catch (error) {
     console.error('failed to load app settings', error)
     heatmapEnabled.value = true
@@ -166,6 +211,10 @@ const loadAppSettings = async () => {
     autoConnectivityTestEnabled.value = false
     switchNotifyEnabled.value = true
     roundRobinEnabled.value = false
+    globalProxyEnabled.value = false
+    globalProxyProtocol.value = 'http'
+    globalProxyHost.value = '127.0.0.1'
+    globalProxyPort.value = 7890
   } finally {
     settingsLoading.value = false
   }
@@ -205,6 +254,12 @@ const persistAppSettings = async () => {
     budgetRefreshDayCodex.value = normalizedBudgetRefreshDayCodex
     const normalizedBudgetCycleModeCodex = budgetCycleModeCodex.value === 'weekly' ? 'weekly' : 'daily'
     budgetCycleModeCodex.value = normalizedBudgetCycleModeCodex
+    const normalizedGlobalProxyProtocol = normalizeGlobalProxyProtocol(globalProxyProtocol.value)
+    globalProxyProtocol.value = normalizedGlobalProxyProtocol
+    const normalizedGlobalProxyHost = globalProxyHost.value.trim() || '127.0.0.1'
+    globalProxyHost.value = normalizedGlobalProxyHost
+    const normalizedGlobalProxyPort = normalizeGlobalProxyPort(globalProxyPort.value)
+    globalProxyPort.value = normalizedGlobalProxyPort
     const payload: AppSettings = {
       show_heatmap: heatmapEnabled.value,
       show_home_title: homeTitleVisible.value,
@@ -231,6 +286,10 @@ const persistAppSettings = async () => {
       enable_switch_notify: switchNotifyEnabled.value,
       enable_round_robin: roundRobinEnabled.value,
       auto_update: autoUpdateEnabled.value,
+      global_proxy_enabled: globalProxyEnabled.value,
+      global_proxy_protocol: normalizedGlobalProxyProtocol,
+      global_proxy_host: normalizedGlobalProxyHost,
+      global_proxy_port: normalizedGlobalProxyPort,
     }
     await saveAppSettings(payload)
 
@@ -266,12 +325,41 @@ const persistAppSettings = async () => {
     localStorage.setItem('app-settings-switchNotify', String(switchNotifyEnabled.value))
     localStorage.setItem('app-settings-roundRobin', String(roundRobinEnabled.value))
     localStorage.setItem('app-settings-autoUpdate', String(autoUpdateEnabled.value))
+    localStorage.setItem('app-settings-globalProxyEnabled', String(globalProxyEnabled.value))
+    localStorage.setItem('app-settings-globalProxyProtocol', globalProxyProtocol.value)
+    localStorage.setItem('app-settings-globalProxyHost', globalProxyHost.value)
+    localStorage.setItem('app-settings-globalProxyPort', String(globalProxyPort.value))
 
     window.dispatchEvent(new CustomEvent('app-settings-updated'))
   } catch (error) {
     console.error('failed to save app settings', error)
   } finally {
     saveBusy.value = false
+  }
+}
+
+const handleTestGlobalProxy = async () => {
+  testingGlobalProxy.value = true
+  globalProxyTestResult.value = null
+  try {
+    const result = await testGlobalProxy(
+      normalizeGlobalProxyProtocol(globalProxyProtocol.value),
+      globalProxyHost.value.trim() || '127.0.0.1',
+      normalizeGlobalProxyPort(globalProxyPort.value)
+    )
+    globalProxyTestResult.value = {
+      success: !!result?.success,
+      message: result?.message || t('components.general.proxy.testFailed'),
+    }
+  } catch (error) {
+    globalProxyTestResult.value = {
+      success: false,
+      message: t('components.general.proxy.testError', {
+        error: extractErrorMessage(error),
+      }),
+    }
+  } finally {
+    testingGlobalProxy.value = false
   }
 }
 
@@ -349,52 +437,135 @@ const toggleLevelBlacklist = async () => {
   }
 }
 
-// 加载 cc-switch 导入状态
-const loadImportStatus = async () => {
-  importLoading.value = true
+const loadProjectTransferInfo = async () => {
+  projectTransferLoading.value = true
   try {
-    importStatus.value = await fetchConfigImportStatus()
-    // 设置默认路径
-    if (importStatus.value?.config_path) {
-      importPath.value = importStatus.value.config_path
-    }
+    projectTransferInfo.value = await fetchProjectTransferInfo()
+    legacyImportPath.value = projectTransferInfo.value.legacy_config_dir
+    projectImportPath.value = projectTransferInfo.value.current_config_dir + '-backup'
+    projectExportPath.value = projectTransferInfo.value.current_config_dir + '-backup'
   } catch (error) {
-    console.error('failed to load import status', error)
-    importStatus.value = null
+    console.error('failed to load project transfer info', error)
+    projectTransferInfo.value = null
   } finally {
-    importLoading.value = false
+    projectTransferLoading.value = false
   }
 }
 
-// 执行导入
-const handleImport = async () => {
-  if (importing.value || !importPath.value.trim()) return
-  importing.value = true
+const formatTransferResult = (result: ProjectTransferResult) => {
+  const summary = t('components.general.transfer.resultSummary', {
+    files: result.copied_file_count,
+    bytes: formatBytes(result.copied_bytes),
+    logs: result.imported_request_logs,
+    health: result.imported_health_checks,
+    blacklist: result.imported_blacklist_rows,
+    hotkeys: result.imported_hotkeys,
+  })
+  if (!result.warning) return summary
+  return `${summary}\n${t('components.general.transfer.warning')}: ${result.warning}`
+}
+
+const reloadAfterTransfer = async () => {
+  await Promise.all([
+    loadAppSettings(),
+    loadRecordStorageInfo(),
+    loadProjectTransferInfo(),
+  ])
+  await hydrateFrontendPreferences()
+  applyTheme(getCurrentTheme())
+  await setupI18n(getStoredLocale())
+  window.dispatchEvent(new CustomEvent('frontend-preferences-updated'))
+  window.dispatchEvent(new CustomEvent('app-settings-updated'))
+  window.dispatchEvent(new CustomEvent('providers-updated'))
+}
+
+const handleLegacyImport = async () => {
+  if (legacyImporting.value || !legacyImportPath.value.trim()) return
+  legacyImporting.value = true
   try {
-    const result = await importFromPath(importPath.value.trim())
-    // 无论结果如何，都更新状态
-    importStatus.value = result.status
-    if (result.status.config_path) {
-      importPath.value = result.status.config_path
-    }
-    if (!result.status.config_exists) {
-      alert(t('components.general.import.fileNotFound'))
-      return
-    }
-    const imported = result.imported_providers + result.imported_mcp
-    if (imported > 0) {
-      alert(t('components.general.import.success', {
-        providers: result.imported_providers,
-        mcp: result.imported_mcp
-      }))
-    } else {
-      alert(t('components.general.import.nothingToImport'))
-    }
+    const result = await importLegacyProjectDirectory(legacyImportPath.value.trim())
+    alert(t('components.general.transfer.legacyImportSuccess') + '\n' + formatTransferResult(result))
+    await reloadAfterTransfer()
   } catch (error) {
-    console.error('import failed', error)
-    alert(t('components.general.import.failed') + ': ' + (error as Error).message)
+    console.error('legacy import failed', error)
+    alert(t('components.general.transfer.importFailed', { error: extractErrorMessage(error) }))
   } finally {
-    importing.value = false
+    legacyImporting.value = false
+  }
+}
+
+const handleProjectImport = async () => {
+  if (projectImporting.value || !projectImportPath.value.trim()) return
+  projectImporting.value = true
+  try {
+    const result = await importCurrentProjectDirectory(projectImportPath.value.trim())
+    alert(t('components.general.transfer.projectImportSuccess') + '\n' + formatTransferResult(result))
+    await reloadAfterTransfer()
+  } catch (error) {
+    console.error('project import failed', error)
+    alert(t('components.general.transfer.importFailed', { error: extractErrorMessage(error) }))
+  } finally {
+    projectImporting.value = false
+  }
+}
+
+const handleProjectExport = async () => {
+  if (projectExporting.value || !projectExportPath.value.trim()) return
+  projectExporting.value = true
+  try {
+    const result = await exportCurrentProjectDirectory(projectExportPath.value.trim())
+    alert(t('components.general.transfer.exportSuccess', { path: result.target_path }) + '\n' + formatTransferResult(result))
+    await loadProjectTransferInfo()
+  } catch (error) {
+    console.error('project export failed', error)
+    alert(t('components.general.transfer.exportFailed', { error: extractErrorMessage(error) }))
+  } finally {
+    projectExporting.value = false
+  }
+}
+
+const formatBytes = (value?: number) => {
+  const bytes = value ?? 0
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`
+  return `${bytes} B`
+}
+
+const loadRecordStorageInfo = async () => {
+  recordStorageLoading.value = true
+  try {
+    recordStorageInfo.value = await fetchRecordStorageInfo()
+  } catch (error) {
+    console.error('failed to load record storage info', error)
+    recordStorageInfo.value = null
+  } finally {
+    recordStorageLoading.value = false
+  }
+}
+
+const handleClearStoredRecords = async () => {
+  if (recordStorageClearing.value) return
+  const confirmed = window.confirm(t('components.general.records.clearConfirm'))
+  if (!confirmed) return
+
+  recordStorageClearing.value = true
+  try {
+    const result = await clearStoredRecords()
+    recordStorageInfo.value = result.storage
+    const warningText = result.warning ? `\n${t('components.general.records.warning')}: ${result.warning}` : ''
+    alert(t('components.general.records.clearSuccess', {
+      requests: result.deleted_request_logs,
+      health: result.deleted_health_checks,
+    }) + warningText)
+  } catch (error) {
+    console.error('failed to clear stored records', error)
+    alert(t('components.general.records.clearFailed', {
+      error: extractErrorMessage(error),
+    }))
+  } finally {
+    recordStorageClearing.value = false
+    await loadRecordStorageInfo()
   }
 }
 
@@ -404,8 +575,10 @@ onMounted(async () => {
   // 加载拉黑配置
   await loadBlacklistSettings()
 
-  // 加载导入状态
-  await loadImportStatus()
+  await loadProjectTransferInfo()
+
+  // 加载记录占用信息
+  await loadRecordStorageInfo()
 })
 </script>
 
@@ -771,8 +944,149 @@ onMounted(async () => {
         </div>
       </section>
 
+      <section>
+        <h2 class="mac-section-title">{{ $t('components.general.title.proxy') }}</h2>
+        <div class="mac-panel">
+          <ListItem :label="$t('components.general.label.globalProxyEnabled')">
+            <div class="toggle-with-hint">
+              <label class="mac-switch">
+                <input
+                  type="checkbox"
+                  :disabled="settingsLoading || saveBusy"
+                  v-model="globalProxyEnabled"
+                  @change="persistAppSettings"
+                />
+                <span></span>
+              </label>
+              <span class="hint-text">{{ $t('components.general.label.globalProxyEnabledHint') }}</span>
+            </div>
+          </ListItem>
+          <ListItem :label="$t('components.general.label.globalProxyProtocol')">
+            <select
+              v-model="globalProxyProtocol"
+              :disabled="settingsLoading || saveBusy"
+              class="mac-select budget-select"
+              @change="persistAppSettings">
+              <option value="http">{{ $t('components.general.proxy.protocolHttp') }}</option>
+              <option value="https">{{ $t('components.general.proxy.protocolHttps') }}</option>
+              <option value="socks5">{{ $t('components.general.proxy.protocolSocks5') }}</option>
+            </select>
+          </ListItem>
+          <ListItem :label="$t('components.general.label.globalProxyHost')">
+            <input
+              type="text"
+              :disabled="settingsLoading || saveBusy"
+              v-model="globalProxyHost"
+              @change="persistAppSettings"
+              class="mac-input budget-input-field"
+              placeholder="127.0.0.1"
+            />
+          </ListItem>
+          <ListItem :label="$t('components.general.label.globalProxyPort')">
+            <input
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="65535"
+              :disabled="settingsLoading || saveBusy"
+              v-model.number="globalProxyPort"
+              @change="persistAppSettings"
+              class="mac-input budget-input-field"
+            />
+          </ListItem>
+          <ListItem :label="$t('components.general.label.globalProxyTest')">
+            <div class="proxy-test-block">
+              <button
+                type="button"
+                class="proxy-test-button"
+                :disabled="testingGlobalProxy"
+                @click="handleTestGlobalProxy"
+              >
+                {{ testingGlobalProxy ? $t('components.general.proxy.testing') : $t('components.general.proxy.testButton') }}
+              </button>
+              <span
+                v-if="globalProxyTestResult"
+                class="proxy-test-message"
+                :class="{ success: globalProxyTestResult.success, error: !globalProxyTestResult.success }"
+              >
+                {{ globalProxyTestResult.message }}
+              </span>
+            </div>
+          </ListItem>
+          <p class="panel-note">{{ $t('components.general.proxy.scopeHint') }}</p>
+        </div>
+      </section>
+
       <!-- Network & WSL Settings -->
       <NetworkWslSettings />
+
+      <section>
+        <h2 class="mac-section-title">{{ $t('components.general.title.records') }}</h2>
+        <p class="mac-section-description">{{ $t('components.general.records.sectionDesc') }}</p>
+        <div class="records-grid">
+          <article class="records-card records-card--status">
+            <div class="records-card-head">
+              <span class="records-card-kicker">{{ $t('components.general.records.autoCleanup') }}</span>
+              <span class="record-badge record-badge--muted">{{ $t('components.general.records.autoCleanupValue') }}</span>
+            </div>
+            <p class="records-card-copy">{{ $t('components.general.records.autoCleanupHint') }}</p>
+          </article>
+
+          <article class="records-card records-card--storage">
+            <div class="records-card-head">
+              <span class="records-card-kicker">{{ $t('components.general.records.storage') }}</span>
+              <span v-if="recordStorageLoading" class="info-text">{{ $t('components.general.records.loading') }}</span>
+              <span v-else-if="recordStorageInfo" class="records-card-value">{{ formatBytes(recordStorageInfo.total_bytes) }}</span>
+              <span v-else class="info-text warning">{{ $t('components.general.records.loadFailed') }}</span>
+            </div>
+            <p v-if="recordStorageInfo" class="records-card-copy">
+              {{ $t('components.general.records.dbBreakdown', {
+                db: formatBytes(recordStorageInfo.db_bytes),
+                wal: formatBytes(recordStorageInfo.wal_bytes),
+                shm: formatBytes(recordStorageInfo.shm_bytes),
+              }) }}
+            </p>
+          </article>
+
+          <article class="records-card records-card--metric">
+            <span class="records-card-kicker">{{ $t('components.general.records.requestLogs') }}</span>
+            <strong class="records-card-value">{{ recordStorageInfo?.request_log_count ?? 0 }}</strong>
+            <p class="records-card-copy">{{ $t('components.general.records.requestLogsHint') }}</p>
+          </article>
+
+          <article class="records-card records-card--metric">
+            <span class="records-card-kicker">{{ $t('components.general.records.healthHistory') }}</span>
+            <strong class="records-card-value">{{ recordStorageInfo?.health_check_count ?? 0 }}</strong>
+            <p class="records-card-copy">{{ $t('components.general.records.healthHistoryHint') }}</p>
+          </article>
+        </div>
+
+        <article class="records-action-card">
+          <div class="records-action-copy">
+            <span class="records-card-kicker">{{ $t('components.general.records.actions') }}</span>
+            <h3>{{ $t('components.general.records.clearHintTitle') }}</h3>
+            <p>{{ $t('components.general.records.clearHint') }}</p>
+          </div>
+          <button
+            type="button"
+            class="action-btn record-clear-btn"
+            :disabled="recordStorageClearing"
+            @click="handleClearStoredRecords"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M9 3h6m-7 4h8m-6 0v10m4-10v10M5 7h14l-.8 11.2A2 2 0 0 1 16.2 20H7.8a2 2 0 0 1-2-1.8L5 7z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            {{ recordStorageClearing ? $t('components.general.records.clearing') : $t('components.general.records.clearButton') }}
+          </button>
+        </article>
+      </section>
 
       <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.blacklist') }}</h2>
@@ -845,40 +1159,98 @@ onMounted(async () => {
 
       <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.dataImport') }}</h2>
-        <div class="mac-panel">
-          <ListItem :label="$t('components.general.import.configPath')">
+        <p class="mac-section-description">{{ $t('components.general.transfer.sectionDesc') }}</p>
+        <div class="transfer-overview-grid">
+          <article class="transfer-overview-card">
+            <span class="transfer-overview-label">{{ $t('components.general.transfer.currentConfigDir') }}</span>
+            <strong class="transfer-overview-value">
+              {{ projectTransferLoading ? $t('components.general.transfer.loading') : (projectTransferInfo?.current_config_dir || '-') }}
+            </strong>
+            <span class="transfer-overview-note">{{ $t('components.general.transfer.currentConfigHint') }}</span>
+          </article>
+          <article class="transfer-overview-card">
+            <span class="transfer-overview-label">{{ $t('components.general.transfer.hotkeyDbPath') }}</span>
+            <strong class="transfer-overview-value">
+              {{ projectTransferLoading ? $t('components.general.transfer.loading') : (projectTransferInfo?.hotkey_db_path || '-') }}
+            </strong>
+            <span class="transfer-overview-note">{{ $t('components.general.transfer.hotkeyDbHint') }}</span>
+          </article>
+        </div>
+        <div class="transfer-grid">
+          <article class="transfer-card">
+            <div class="transfer-card-head">
+              <span class="transfer-card-kicker">{{ $t('components.general.transfer.legacyImportButton') }}</span>
+              <h3>{{ $t('components.general.transfer.legacyImportAction') }}</h3>
+              <p>{{ $t('components.general.transfer.legacyImportHint') }}</p>
+            </div>
+            <label class="transfer-card-label">{{ $t('components.general.transfer.legacyImportPath') }}</label>
             <input
               type="text"
-              v-model="importPath"
-              :placeholder="$t('components.general.import.pathPlaceholder')"
-              class="mac-input import-path-input"
+              v-model="legacyImportPath"
+              :placeholder="$t('components.general.transfer.legacyImportPlaceholder')"
+              class="mac-input transfer-path-input"
             />
-          </ListItem>
-          <ListItem :label="$t('components.general.import.status')">
-            <span class="info-text" v-if="importLoading">
-              {{ $t('components.general.import.loading') }}
-            </span>
-            <span class="info-text" v-else-if="importStatus?.config_exists">
-              {{ $t('components.general.import.configFound') }}
-              <span v-if="importStatus.pending_provider_count > 0 || importStatus.pending_mcp_count > 0">
-                ({{ $t('components.general.import.pendingCount', {
-                  providers: importStatus.pending_provider_count,
-                  mcp: importStatus.pending_mcp_count
-                }) }})
-              </span>
-            </span>
-            <span class="info-text warning" v-else-if="importStatus">
-              {{ $t('components.general.import.configNotFound') }}
-            </span>
-          </ListItem>
-          <ListItem :label="$t('components.general.import.action')">
-            <button
-              @click="handleImport"
-              :disabled="importing || !importPath.trim()"
-              class="action-btn">
-              {{ importing ? $t('components.general.import.importing') : $t('components.general.import.importBtn') }}
-            </button>
-          </ListItem>
+            <div class="transfer-card-footer">
+              <span class="transfer-card-note">{{ $t('components.general.transfer.legacyImportFootnote') }}</span>
+              <button
+                @click="handleLegacyImport"
+                :disabled="legacyImporting || !legacyImportPath.trim()"
+                class="action-btn transfer-btn"
+              >
+                {{ legacyImporting ? $t('components.general.transfer.importing') : $t('components.general.transfer.legacyImportButton') }}
+              </button>
+            </div>
+          </article>
+
+          <article class="transfer-card">
+            <div class="transfer-card-head">
+              <span class="transfer-card-kicker">{{ $t('components.general.transfer.projectImportButton') }}</span>
+              <h3>{{ $t('components.general.transfer.projectImportAction') }}</h3>
+              <p>{{ $t('components.general.transfer.projectImportHint') }}</p>
+            </div>
+            <label class="transfer-card-label">{{ $t('components.general.transfer.projectImportPath') }}</label>
+            <input
+              type="text"
+              v-model="projectImportPath"
+              :placeholder="$t('components.general.transfer.projectImportPlaceholder')"
+              class="mac-input transfer-path-input"
+            />
+            <div class="transfer-card-footer">
+              <span class="transfer-card-note">{{ $t('components.general.transfer.projectImportFootnote') }}</span>
+              <button
+                @click="handleProjectImport"
+                :disabled="projectImporting || !projectImportPath.trim()"
+                class="action-btn transfer-btn"
+              >
+                {{ projectImporting ? $t('components.general.transfer.importing') : $t('components.general.transfer.projectImportButton') }}
+              </button>
+            </div>
+          </article>
+
+          <article class="transfer-card">
+            <div class="transfer-card-head">
+              <span class="transfer-card-kicker">{{ $t('components.general.transfer.projectExportButton') }}</span>
+              <h3>{{ $t('components.general.transfer.projectExportAction') }}</h3>
+              <p>{{ $t('components.general.transfer.projectExportHint') }}</p>
+            </div>
+            <label class="transfer-card-label">{{ $t('components.general.transfer.projectExportPath') }}</label>
+            <input
+              type="text"
+              v-model="projectExportPath"
+              :placeholder="$t('components.general.transfer.projectExportPlaceholder')"
+              class="mac-input transfer-path-input"
+            />
+            <div class="transfer-card-footer">
+              <span class="transfer-card-note">{{ $t('components.general.transfer.projectExportFootnote') }}</span>
+              <button
+                @click="handleProjectExport"
+                :disabled="projectExporting || !projectExportPath.trim()"
+                class="action-btn transfer-btn"
+              >
+                {{ projectExporting ? $t('components.general.transfer.exporting') : $t('components.general.transfer.projectExportButton') }}
+              </button>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -972,9 +1344,337 @@ onMounted(async () => {
   color: var(--mac-text-secondary);
 }
 
-.import-path-input {
-  width: 280px;
+.proxy-test-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.proxy-test-button {
+  min-width: 120px;
+  padding: 7px 14px;
+  border: 1px solid var(--mac-border);
+  border-radius: 8px;
+  background: var(--mac-surface);
+  color: var(--mac-text);
   font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.proxy-test-button:hover:not(:disabled) {
+  border-color: var(--mac-accent);
+}
+
+.proxy-test-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.proxy-test-message {
+  max-width: 320px;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.proxy-test-message.success {
+  color: #15803d;
+}
+
+.proxy-test-message.error {
+  color: #b42318;
+}
+
+.panel-note {
+  margin: 12px 18px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--mac-text-secondary);
+}
+
+.import-path-input {
+  width: 360px;
+  font-size: 12px;
+}
+
+.transfer-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.transfer-overview-card,
+.transfer-card {
+  border: 1px solid var(--mac-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--mac-surface) 88%, transparent);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+}
+
+.transfer-overview-card {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transfer-overview-label,
+.transfer-card-kicker,
+.transfer-card-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mac-text-secondary);
+}
+
+.transfer-overview-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mac-text);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.transfer-overview-note,
+.transfer-card-head p,
+.transfer-card-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mac-text-secondary);
+}
+
+.transfer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.transfer-card {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.transfer-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.transfer-card-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--mac-text);
+}
+
+.transfer-card-head p {
+  margin: 0;
+}
+
+.transfer-path-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.transfer-card-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.transfer-btn {
+  width: 100%;
+  min-width: 0;
+}
+
+.transfer-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 420px;
+}
+
+.record-status-block,
+.record-storage-block,
+.record-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 420px;
+}
+
+.record-status-block,
+.record-storage-block {
+  text-align: right;
+}
+
+.record-actions {
+  align-items: stretch;
+}
+
+.record-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-end;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.record-badge--muted {
+  color: var(--mac-text-secondary);
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.record-subtext {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--mac-text-secondary);
+  white-space: normal;
+}
+
+.info-text.strong {
+  font-weight: 600;
+  color: var(--mac-text);
+}
+
+.record-clear-btn {
+  min-height: 38px;
+  align-self: flex-end;
+  min-width: 146px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mac-text);
+  border-color: var(--mac-border);
+  background: var(--mac-surface-strong);
+  box-shadow: none;
+}
+
+.record-clear-btn svg {
+  width: 15px !important;
+  height: 15px !important;
+  color: #d97706;
+}
+
+.record-clear-btn:hover:not(:disabled) {
+  color: var(--mac-text);
+  border-color: rgba(217, 119, 6, 0.22);
+  background: color-mix(in srgb, var(--mac-surface) 84%, rgba(217, 119, 6, 0.06));
+  box-shadow: none;
+}
+
+.record-clear-btn:disabled {
+  color: var(--mac-text-secondary);
+  border-color: var(--mac-border);
+}
+
+:global(.dark) .record-clear-btn {
+  color: var(--mac-text);
+  border-color: var(--mac-border);
+  background: var(--mac-surface-strong);
+}
+
+:global(.dark) .record-clear-btn:hover:not(:disabled) {
+  color: var(--mac-text);
+  border-color: rgba(251, 191, 36, 0.22);
+  background: color-mix(in srgb, var(--mac-surface) 82%, rgba(251, 191, 36, 0.08));
+}
+
+:global(.dark) .record-clear-btn:disabled {
+  color: var(--mac-text-secondary);
+  border-color: var(--mac-border);
+}
+
+:global(.dark) .record-clear-btn svg {
+  color: #fbbf24;
+}
+
+.records-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.records-card,
+.records-action-card {
+  border: 1px solid var(--mac-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--mac-surface) 88%, transparent);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+}
+
+.records-card {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.records-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.records-card-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mac-text-secondary);
+}
+
+.records-card-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--mac-text);
+  line-height: 1.2;
+}
+
+.records-card-copy,
+.records-action-copy p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mac-text-secondary);
+}
+
+.records-action-card {
+  padding: 18px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.records-action-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 680px;
+}
+
+.records-action-copy h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--mac-text);
 }
 
 .info-text.warning {
@@ -983,6 +1683,34 @@ onMounted(async () => {
 
 :global(.dark) .info-text.warning {
   color: #f39c12;
+}
+
+:global(.dark) .proxy-test-button {
+  background: var(--mac-surface-strong);
+}
+
+:global(.dark) .record-badge--muted {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+@media (max-width: 860px) {
+  .records-action-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .record-clear-btn {
+    align-self: stretch;
+    width: 100%;
+  }
+}
+
+:global(.dark) .proxy-test-message.success {
+  color: #4ade80;
+}
+
+:global(.dark) .proxy-test-message.error {
+  color: #f87171;
 }
 
 :global(.dark) .mac-input {

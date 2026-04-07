@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/daodao97/xgo/xdb"
@@ -17,15 +16,10 @@ import (
 // 4. 确保表结构存在
 // 5. 预热连接池
 func InitDatabase() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("获取用户目录失败: %w", err)
-	}
-
 	// 1. 确保配置目录存在（SQLite 不会自动创建父目录）
-	configDir := filepath.Join(home, ".code-switch")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("创建配置目录失败: %w", err)
+	configDir, err := ensureAppConfigDir()
+	if err != nil {
+		return fmt.Errorf("创建项目配置目录失败: %w", err)
 	}
 
 	// 2. 初始化 xdb 连接池

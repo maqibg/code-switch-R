@@ -113,8 +113,8 @@ func TestParseEnvFile(t *testing.T) {
 		expected map[string]string
 	}{
 		{
-			name:    "Empty file",
-			content: "",
+			name:     "Empty file",
+			content:  "",
 			expected: map[string]string{},
 		},
 		{
@@ -182,10 +182,10 @@ func TestIsValidEnvKey(t *testing.T) {
 		{"GOOGLE_GEMINI_BASE_URL", true},
 		{"KEY123", true},
 		{"_KEY", true},
-		{"KEY-NAME", false},  // hyphen not allowed
-		{"KEY.NAME", false},  // dot not allowed
-		{"KEY NAME", false},  // space not allowed
-		{"", true},           // empty is technically valid (no invalid chars)
+		{"KEY-NAME", false}, // hyphen not allowed
+		{"KEY.NAME", false}, // dot not allowed
+		{"KEY NAME", false}, // space not allowed
+		{"", true},          // empty is technically valid (no invalid chars)
 	}
 
 	for _, tt := range tests {
@@ -201,7 +201,8 @@ func TestIsValidEnvKey(t *testing.T) {
 func TestGeminiProvider_DeepCopyMaps(t *testing.T) {
 	// Test that provider EnvConfig is properly deep copied when needed
 	original := GeminiProvider{
-		Name: "Test",
+		Name:         "Test",
+		ProxyEnabled: true,
 		EnvConfig: map[string]string{
 			"KEY1": "value1",
 		},
@@ -209,8 +210,9 @@ func TestGeminiProvider_DeepCopyMaps(t *testing.T) {
 
 	// Create a copy manually (simulating what should happen in duplication)
 	copied := GeminiProvider{
-		Name:      original.Name,
-		EnvConfig: make(map[string]string),
+		Name:         original.Name,
+		ProxyEnabled: original.ProxyEnabled,
+		EnvConfig:    make(map[string]string),
 	}
 	for k, v := range original.EnvConfig {
 		copied.EnvConfig[k] = v
@@ -226,6 +228,10 @@ func TestGeminiProvider_DeepCopyMaps(t *testing.T) {
 
 	if len(original.EnvConfig) != 1 {
 		t.Errorf("Original EnvConfig length changed: got %d, expected 1", len(original.EnvConfig))
+	}
+
+	if !copied.ProxyEnabled {
+		t.Error("ProxyEnabled should be preserved when copying GeminiProvider")
 	}
 }
 

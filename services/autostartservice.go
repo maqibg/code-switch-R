@@ -78,7 +78,7 @@ func (as *AutoStartService) Disable() error {
 const (
 	windowsRunKey             = `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
 	windowsStartupApprovedKey = `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`
-	windowsAutoStartValue     = "CodeSwitch"
+	windowsAutoStartValue     = "code-switch-R"
 )
 
 func windowsRegExe() string {
@@ -124,7 +124,7 @@ func (as *AutoStartService) isEnabledWindows() (bool, error) {
 	approvedCmd := hideWindowCmd(regExe, "query", windowsStartupApprovedKey, "/v", windowsAutoStartValue)
 	approvedOut, err := approvedCmd.CombinedOutput()
 	if err == nil {
-		// 解析 REG_BINARY 输出，格式类似: "CodeSwitch    REG_BINARY    030000..."
+		// 解析 REG_BINARY 输出，格式类似: "code-switch-R    REG_BINARY    030000..."
 		// 第一个字节: 02/06=启用, 03=禁用
 		outStr := string(approvedOut)
 		if idx := strings.Index(strings.ToUpper(outStr), "REG_BINARY"); idx != -1 {
@@ -211,7 +211,7 @@ func (as *AutoStartService) enableDarwin() error {
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.codeswitch.app</string>
+	<string>com.rogers-f.code-switch-r</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>%s</string>
@@ -242,7 +242,7 @@ func (as *AutoStartService) disableDarwin() error {
 }
 
 func (as *AutoStartService) getDarwinPlistPath() string {
-	return filepath.Join(as.homeDir, "Library", "LaunchAgents", "com.codeswitch.app.plist")
+	return filepath.Join(as.homeDir, "Library", "LaunchAgents", "com.rogers-f.code-switch-r.plist")
 }
 
 // Linux 实现 (使用 .desktop 文件)
@@ -277,7 +277,7 @@ func (as *AutoStartService) enableLinux() error {
 
 	desktopContent := fmt.Sprintf(`[Desktop Entry]
 Type=Application
-Name=CodeSwitch
+Name=code-switch-R
 Exec=%s
 Hidden=false
 NoDisplay=false
@@ -316,5 +316,5 @@ func (as *AutoStartService) getLinuxDesktopPath() (string, error) {
 		configHome = filepath.Join(as.homeDir, ".config")
 	}
 
-	return filepath.Join(configHome, "autostart", "codeswitch.desktop"), nil
+	return filepath.Join(configHome, "autostart", "code-switch-R.desktop"), nil
 }

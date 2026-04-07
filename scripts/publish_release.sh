@@ -13,21 +13,22 @@ fi
 
 TAG="$1"
 NOTES="${2:-RELEASE_NOTES.md}"
+VERSION="${TAG#v}"
 
 if [ ! -f "$NOTES" ]; then
   echo "Release notes file '$NOTES' not found" >&2
   exit 1
 fi
 
-MAC_APP_PRIMARY="bin/codeswitch.app"
-MAC_APP_ALT="bin/CodeSwitch.app"
+MAC_APP_PRIMARY="bin/code-switch-R.app"
+MAC_APP_ALT="bin/code-switch-R.app"
 MAC_ARCHS=("arm64" "amd64")
 MAC_ZIPS=()
 
 package_macos_arch() {
   local arch="$1"
-  local staging_app="bin/codeswitch-${arch}.app"
-  local zip_path="bin/codeswitch-macos-${arch}.zip"
+  local staging_app="bin/code-switch-R-${arch}.app"
+  local zip_path="bin/code-switch-R-v${VERSION}-macos-${arch}.zip"
 
   echo "==> Building macOS ${arch}"
   env ARCH="$arch" wails3 task package ${BUILD_OPTS:-}
@@ -66,9 +67,14 @@ env ARCH=amd64 wails3 task windows:package ${BUILD_OPTS:-}
 echo "==> Building updater.exe"
 wails3 task windows:build:updater ${BUILD_OPTS:-}
 
-# 统一文件名大小写（CodeSwitch.exe）
-if [ -f "bin/codeswitch.exe" ] && [ ! -f "bin/CodeSwitch.exe" ]; then
-  mv "bin/codeswitch.exe" "bin/CodeSwitch.exe"
+if [ -f "bin/code-switch-R.exe" ]; then
+  mv "bin/code-switch-R.exe" "bin/code-switch-R-v${VERSION}.exe"
+fi
+
+if [ -f "build/windows/nsis/code-switch-R-amd64-installer.exe" ]; then
+  mv "build/windows/nsis/code-switch-R-amd64-installer.exe" "bin/code-switch-R-v${VERSION}-amd64-installer.exe"
+elif [ -f "bin/code-switch-R-amd64-installer.exe" ]; then
+  mv "bin/code-switch-R-amd64-installer.exe" "bin/code-switch-R-v${VERSION}-amd64-installer.exe"
 fi
 
 # 生成 SHA256 哈希文件
@@ -89,14 +95,14 @@ generate_sha256() {
   fi
 }
 
-generate_sha256 "bin/CodeSwitch.exe"
+generate_sha256 "bin/code-switch-R-v${VERSION}.exe"
 generate_sha256 "bin/updater.exe"
 
 ASSETS=(
   "${MAC_ZIPS[@]}"
-  "bin/codeswitch-amd64-installer.exe"
-  "bin/CodeSwitch.exe"
-  "bin/CodeSwitch.exe.sha256"
+  "bin/code-switch-R-v${VERSION}-amd64-installer.exe"
+  "bin/code-switch-R-v${VERSION}.exe"
+  "bin/code-switch-R-v${VERSION}.exe.sha256"
   "bin/updater.exe"
   "bin/updater.exe.sha256"
 )

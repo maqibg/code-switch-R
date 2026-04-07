@@ -3,26 +3,26 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "CodeSwitch"
+name: "code-switch-r"
 arch: ${GOARCH}
 platform: "linux"
 version: "1.5.3"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "Manage Claude & Codex relays, providers, and request logs."
-vendor: "Code Switch"
+description: "code-switch-R desktop relay controller."
+vendor: "code-switch-R"
 homepage: "https://wails.io"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/CodeSwitch"
-    dst: "/usr/local/bin/CodeSwitch"
+  - src: "./bin/code-switch-R"
+    dst: "/usr/local/bin/code-switch-R"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/CodeSwitch.png"
-  - src: "./build/linux/CodeSwitch.desktop"
-    dst: "/usr/share/applications/CodeSwitch.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/code-switch-R.png"
+  - src: "./build/linux/code-switch-R.desktop"
+    dst: "/usr/share/applications/code-switch-R.desktop"
 
 # Default dependencies for Debian 12/Ubuntu 22.04+ with WebKit 4.1
 depends:

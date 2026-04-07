@@ -28,11 +28,11 @@ const (
 
 // NetworkSettings 网络设置
 type NetworkSettings struct {
-	ListenMode    ListenMode `json:"listenMode"`
-	CustomAddress string     `json:"customAddress,omitempty"`
-	CurrentAddress string    `json:"currentAddress,omitempty"`
-	WSLAutoConfig bool       `json:"wslAutoConfig"`
-	TargetCli     TargetCli  `json:"targetCli"`
+	ListenMode     ListenMode `json:"listenMode"`
+	CustomAddress  string     `json:"customAddress,omitempty"`
+	CurrentAddress string     `json:"currentAddress,omitempty"`
+	WSLAutoConfig  bool       `json:"wslAutoConfig"`
+	TargetCli      TargetCli  `json:"targetCli"`
 }
 
 // TargetCli 目标 CLI 工具配置
@@ -71,13 +71,13 @@ func NewNetworkService(
 	codexService *CodexSettingsService,
 	geminiService *GeminiService,
 ) *NetworkService {
-	home, err := getUserHomeDir()
+	configDir, err := getAppConfigDir()
 	if err != nil {
-		home = "."
+		configDir = mustGetAppConfigDir()
 	}
 
 	return &NetworkService{
-		settingsPath:  filepath.Join(home, appSettingsDir, networkSettingsFile),
+		settingsPath:  filepath.Join(configDir, networkSettingsFile),
 		relayAddr:     relayAddr,
 		claudeService: claudeService,
 		codexService:  codexService,

@@ -4,15 +4,15 @@
         <key>CFBundlePackageType</key>
             <string>APPL</string>
         <key>CFBundleName</key>
-            <string>Code Switch</string>
+            <string>code-switch-R</string>
         <key>CFBundleExecutable</key>
-            <string>CodeSwitch</string>
+            <string>code-switch-R</string>
         <key>CFBundleIdentifier</key>
-            <string>com.codeswitch.app</string>
+            <string>com.rogers-f.code-switch-r</string>
         <key>CFBundleVersion</key>
             <string>0.1.0</string>
         <key>CFBundleGetInfoString</key>
-            <string>Code Switch desktop relay controller</string>
+            <string>code-switch-R desktop relay controller</string>
         <key>CFBundleShortVersionString</key>
             <string>0.1.0</string>
         <key>CFBundleIconFile</key>
@@ -22,7 +22,7 @@
         <key>NSHighResolutionCapable</key>
             <string>true</string>
         <key>NSHumanReadableCopyright</key>
-            <string>(c) 2025, Code Switch</string>
+            <string>(c) 2025, code-switch-R</string>
         <key>NSAppTransportSecurity</key>
         <dict>
             <key>NSAllowsLocalNetworking</key>

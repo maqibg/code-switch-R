@@ -26,6 +26,18 @@ export type AppSettings = {
   auto_connectivity_test: boolean
   enable_switch_notify: boolean // 供应商切换通知开关
   enable_round_robin: boolean   // 同 Level 轮询负载均衡开关
+  global_proxy_enabled: boolean
+  global_proxy_protocol: 'http' | 'https' | 'socks5'
+  global_proxy_host: string
+  global_proxy_port: number
+}
+
+export type GlobalProxyTestResult = {
+  success: boolean
+  message: string
+  latencyMs?: number
+  httpCode?: number
+  testedUrl?: string
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -54,6 +66,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   auto_connectivity_test: false,
   enable_switch_notify: true,  // 默认开启
   enable_round_robin: false,   // 默认关闭轮询
+  global_proxy_enabled: false,
+  global_proxy_protocol: 'http',
+  global_proxy_host: '127.0.0.1',
+  global_proxy_port: 7890,
 }
 
 export const fetchAppSettings = async (): Promise<AppSettings> => {
@@ -63,4 +79,12 @@ export const fetchAppSettings = async (): Promise<AppSettings> => {
 
 export const saveAppSettings = async (settings: AppSettings): Promise<AppSettings> => {
   return Call.ByName('codeswitch/services.AppSettingsService.SaveAppSettings', settings)
+}
+
+export const testGlobalProxy = async (
+  protocol: AppSettings['global_proxy_protocol'],
+  host: string,
+  port: number
+): Promise<GlobalProxyTestResult> => {
+  return Call.ByName('codeswitch/services.AppSettingsService.TestGlobalProxy', protocol, host, port)
 }

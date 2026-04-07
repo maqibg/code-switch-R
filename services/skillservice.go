@@ -20,7 +20,6 @@ import (
 )
 
 const (
-	skillStoreDir  = ".code-switch"
 	skillStoreFile = "skill.json"
 
 	// 平台常量
@@ -49,10 +48,10 @@ type Skill struct {
 	Installed   bool   `json:"installed"`
 
 	// 新增字段
-	Enabled         bool   `json:"enabled"`                     // 是否启用（从 SKILL.md 读取）
-	LicenseFile     string `json:"license_file,omitempty"`      // 许可证文件路径
-	Platform        string `json:"platform,omitempty"`          // "claude" | "codex"
-	InstallLocation string `json:"install_location,omitempty"`  // "user" | "project"
+	Enabled         bool   `json:"enabled"`                    // 是否启用（从 SKILL.md 读取）
+	LicenseFile     string `json:"license_file,omitempty"`     // 许可证文件路径
+	Platform        string `json:"platform,omitempty"`         // "claude" | "codex"
+	InstallLocation string `json:"install_location,omitempty"` // "user" | "project"
 
 	// 仓库字段
 	RepoOwner  string `json:"repo_owner,omitempty"`
@@ -95,26 +94,32 @@ type installRequest struct {
 	RepoOwner string `json:"repo_owner"`
 	RepoName  string `json:"repo_name"`
 	Branch    string `json:"repo_branch"`
-	Platform  string `json:"platform"`  // "claude" | "codex"
-	Location  string `json:"location"`  // "user" | "project"
+	Platform  string `json:"platform"` // "claude" | "codex"
+	Location  string `json:"location"` // "user" | "project"
 }
 
 type SkillService struct {
-	httpClient *http.Client
-	storePath  string
-	installDir string
-	mu         sync.Mutex
+	httpClient  *http.Client
+	appSettings *AppSettingsService
+	storePath   string
+	installDir  string
+	mu          sync.Mutex
 }
 
-func NewSkillService() *SkillService {
+func NewSkillService(appSettings *AppSettingsService) *SkillService {
+	configDir, err := getAppConfigDir()
+	if err != nil {
+		configDir = mustGetAppConfigDir()
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "."
 	}
 	return &SkillService{
-		httpClient: &http.Client{Timeout: 60 * time.Second},
-		storePath:  filepath.Join(home, skillStoreDir, skillStoreFile),
-		installDir: filepath.Join(home, ".claude", "skills"),
+		httpClient:  &http.Client{Timeout: 60 * time.Second},
+		appSettings: appSettings,
+		storePath:   filepath.Join(configDir, skillStoreFile),
+		installDir:  filepath.Join(home, ".claude", "skills"),
 	}
 }
 
@@ -970,7 +975,18 @@ func (ss *SkillService) downloadFile(rawURL, dest string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "ai-code-studio")
-	resp, err := ss.httpClient.Do(req)
+	client := ss.httpClient
+	if ss.appSettings != nil {
+		proxyConfig, err := ss.appSettings.GetGlobalProxyConfig()
+		if err != nil {
+			return fmt.Errorf("读取全局代理配置失败: %w", err)
+		}
+		client, err = NewHTTPClientWithProxy(60*time.Second, nil, proxyConfig)
+		if err != nil {
+			return err
+		}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

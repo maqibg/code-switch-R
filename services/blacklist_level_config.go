@@ -9,15 +9,9 @@ import (
 
 // GetBlacklistLevelConfigPath 获取等级拉黑配置文件路径
 func GetBlacklistLevelConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
+	configDir, err := ensureAppConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("获取用户目录失败: %w", err)
-	}
-
-	configDir := filepath.Join(home, ".code-switch")
-	// 确保目录存在
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return "", fmt.Errorf("创建配置目录失败: %w", err)
+		return "", fmt.Errorf("创建项目配置目录失败: %w", err)
 	}
 
 	return filepath.Join(configDir, "blacklist-config.json"), nil

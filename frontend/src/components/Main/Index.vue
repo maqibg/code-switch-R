@@ -44,40 +44,6 @@
         </svg>
       </button>
       <button
-        v-if="showImportButton"
-        class="ghost-icon"
-        :data-tooltip="importButtonTooltip"
-        :disabled="importBusy"
-        @click="handleImportClick"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" :class="{ rotating: importBusy }">
-          <path
-            d="M12 4v9"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            fill="none"
-          />
-          <path
-            d="M8.5 10.5l3.5 3.5 3.5-3.5"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            fill="none"
-          />
-          <path
-            d="M5 19h14"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            fill="none"
-          />
-        </svg>
-      </button>
-      <button
         class="ghost-icon"
         :data-tooltip="t('components.main.controls.settings')"
         @click="goToSettings"
@@ -103,21 +69,6 @@
       </button>
     </div>
     <div class="contrib-page">
-      <!-- 首次使用提示横幅 -->
-      <div v-if="showFirstRunPrompt" class="first-run-banner">
-        <div class="banner-content">
-          <span class="banner-icon">💡</span>
-          <span class="banner-text">{{ t('components.main.firstRun.message') }}</span>
-        </div>
-        <div class="banner-actions">
-          <button class="banner-btn primary" @click="goToImportSettings">
-            {{ t('components.main.firstRun.goToSettings') }}
-          </button>
-          <button class="banner-btn" @click="dismissFirstRunPrompt">
-            {{ t('components.main.firstRun.dismiss') }}
-          </button>
-        </div>
-      </div>
       <section class="contrib-hero">
         <h1 v-if="showHomeTitle">{{ t('components.main.hero.title') }}</h1>
         <!-- <p class="lead">
@@ -782,6 +733,39 @@
                   </div>
                 </div>
 
+                <div class="form-field switch-field">
+                  <span>{{ t('components.main.form.labels.providerProxy') }}</span>
+                  <div class="switch-inline">
+                    <label class="mac-switch">
+                      <input type="checkbox" v-model="modalState.form.proxyEnabled" />
+                      <span></span>
+                    </label>
+                    <span class="switch-text">
+                      {{ modalState.form.proxyEnabled ? t('components.main.form.switch.on') : t('components.main.form.switch.off') }}
+                    </span>
+                  </div>
+                  <span class="field-hint">{{ t('components.main.form.hints.providerProxy') }}</span>
+                </div>
+
+                <div v-if="modalState.tabId !== 'others'" class="form-field">
+                  <button
+                    type="button"
+                    class="test-connectivity-btn"
+                    :disabled="testingConnectivity"
+                    @click="handleTestConnectivity"
+                  >
+                    <span v-if="testingConnectivity" class="btn-spinner"></span>
+                    {{ testingConnectivity ? t('components.main.form.actions.testing') : t('components.main.form.actions.testConnectivity') }}
+                  </button>
+                  <div
+                    v-if="connectivityTestResult"
+                    class="test-result"
+                    :class="connectivityTestResult.success ? 'success' : 'error'"
+                  >
+                    {{ connectivityTestResult.message }}
+                  </div>
+                </div>
+
                 <!-- 可用性监控配置 -->
                 <div class="form-field switch-field">
                   <span>{{ t('components.main.form.labels.availabilityMonitor') }}</span>
@@ -1041,7 +1025,6 @@ import { fetchCurrentVersion } from '../../services/version'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
 import { useRouter } from 'vue-router'
-import { fetchConfigImportStatus, importFromCcSwitch, isFirstRun, markFirstRunDone, type ConfigImportStatus } from '../../services/configImport'
 import { showToast } from '../../utils/toast'
 import { extractErrorMessage } from '../../utils/error'
 import { getBlacklistStatus, manualUnblock, type BlacklistStatus } from '../../services/blacklist'
@@ -1192,9 +1175,6 @@ const showHeatmap = ref(true)
 const showHomeTitle = ref(true)
 const mcpIcon = lobeIcons['mcp'] ?? ''
 const appVersion = ref('')
-const importStatus = ref<ConfigImportStatus | null>(null)
-const importBusy = ref(false)
-const showFirstRunPrompt = ref(false)
 
 // 自定义 CLI 工具状态
 const customCliTools = ref<CustomCliTool[]>([])
@@ -1254,26 +1234,6 @@ const lastUsedProviders = reactive<Record<string, LastUsedProvider | null>>({
 // 高亮闪烁的供应商名称
 const highlightedProvider = ref<string | null>(null)
 let highlightTimer: number | undefined
-
-const showImportButton = computed(() => {
-  const status = importStatus.value
-  if (!status) return false
-  return status.config_exists && (status.pending_providers || status.pending_mcp)
-})
-
-const importButtonTooltip = computed(() => {
-  if (!showImportButton.value) {
-    return t('components.main.controls.import')
-  }
-  const status = importStatus.value
-  if (!status) {
-    return t('components.main.controls.import')
-  }
-  return t('components.main.importConfig.tooltip', {
-    providers: status.pending_provider_count,
-    servers: status.pending_mcp_count,
-  })
-})
 
 const intensityClass = (value: number) => `gh-level-${value}`
 
@@ -1499,6 +1459,7 @@ interface GeminiProvider {
   category?: string
   partnerPromotionKey?: string
   enabled: boolean
+  proxyEnabled?: boolean
   level?: number // 优先级分组 (1-10, 默认 1)
   envConfig?: Record<string, string | undefined>
   settingsConfig?: Record<string, any>
@@ -1532,6 +1493,7 @@ const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard =
   tint: 'rgba(251, 146, 60, 0.18)',
   accent: '#fb923c',
   enabled: provider.enabled,
+  proxyEnabled: !!provider.proxyEnabled,
   level: provider.level || 1,
   // 可用性监控配置（Gemini 暂不支持，使用默认值）
   availabilityMonitorEnabled: false,
@@ -1547,6 +1509,7 @@ const cardToGemini = (card: AutomationCard, original: GeminiProvider): GeminiPro
   apiKey: card.apiKey,
   websiteUrl: card.officialSite,
   enabled: card.enabled,
+  proxyEnabled: !!card.proxyEnabled,
   level: card.level || 1,
   // 注意：Gemini 不支持可用性监控配置，这些字段不会保存
 })
@@ -1557,6 +1520,7 @@ const serializeProviders = (providers: AutomationCard[]) =>
     // 确保可用性配置正确序列化
     availabilityMonitorEnabled: !!provider.availabilityMonitorEnabled,
     connectivityAutoBlacklist: !!provider.connectivityAutoBlacklist,
+    proxyEnabled: !!provider.proxyEnabled,
     availabilityConfig: provider.availabilityConfig
       ? {
           testModel: provider.availabilityConfig.testModel || '',
@@ -1615,6 +1579,7 @@ const persistProviders = async (tabId: ProviderTab): Promise<{ ok: boolean; erro
             apiKey: card.apiKey,
             websiteUrl: card.officialSite,
             enabled: card.enabled,
+            proxyEnabled: !!card.proxyEnabled,
           }
           await AddGeminiProvider(newProvider)
         }
@@ -1731,43 +1696,6 @@ const loadCustomCliProviders = async (toolId: string) => {
     console.error(`Failed to load providers for tool ${toolId}`, error)
     cards.others.splice(0, cards.others.length)
   }
-}
-
-const refreshImportStatus = async () => {
-  try {
-    importStatus.value = await fetchConfigImportStatus()
-  } catch (error) {
-    console.error('Failed to load cc-switch import status', error)
-    importStatus.value = null
-  }
-}
-
-// 检查是否首次使用，显示导入提示
-const checkFirstRun = async () => {
-  try {
-    const firstRun = await isFirstRun()
-    if (firstRun) {
-      showFirstRunPrompt.value = true
-    }
-  } catch (error) {
-    console.error('Failed to check first run', error)
-  }
-}
-
-// 关闭首次使用提示
-const dismissFirstRunPrompt = async () => {
-  showFirstRunPrompt.value = false
-  try {
-    await markFirstRunDone()
-  } catch (error) {
-    console.error('Failed to mark first run done', error)
-  }
-}
-
-// 打开设置页的导入功能
-const goToImportSettings = async () => {
-  await dismissFirstRunPrompt()
-  router.push('/settings')
 }
 
 const refreshProxyState = async (tab: ProviderTab) => {
@@ -2025,7 +1953,6 @@ const refreshAllData = async () => {
       ...providerTabIds.map((tab) => loadProviderStats(tab)),
       ...providerTabIds.map((tab) => loadBlacklistStatus(tab)), // 同步刷新黑名单状态
       loadAvailabilityResults(), // 同步刷新可用性监控状态（改用新服务）
-      refreshImportStatus()
     ])
   } catch (error) {
     console.error('Failed to refresh data', error)
@@ -2228,8 +2155,6 @@ onMounted(async () => {
   await Promise.all(providerTabIds.map((tab) => loadProviderStats(tab)))
   await loadAppSettings()
   await loadAppVersion()
-  await refreshImportStatus()
-  await checkFirstRun()  // 检查是否首次使用
   startProviderStatsTimer()
 
   // 加载初始黑名单状态
@@ -2354,6 +2279,25 @@ const getDefaultEndpoint = (platform: string) => {
 // 获取平台默认认证方式（默认 Bearer，与 v2.2.x 保持一致）
 const getDefaultAuthType = (_platform: string) => 'bearer'
 
+const getEffectiveConnectivityModel = (platform: string) => {
+  const explicitModel = (
+    modalState.form.availabilityConfig?.testModel ||
+    modalState.form.connectivityTestModel ||
+    ''
+  ).trim()
+  if (explicitModel) return explicitModel
+  if (platform === 'claude') return 'claude-haiku-4-5-20251001'
+  return connectivityTestModelOptions.value[0] || ''
+}
+
+const getEffectiveConnectivityEndpoint = (platform: string) => {
+  return (
+    modalState.form.availabilityConfig?.testEndpoint ||
+    modalState.form.connectivityTestEndpoint ||
+    getDefaultEndpoint(platform)
+  )
+}
+
 // 手动测试连通性
 const handleTestConnectivity = async () => {
   testingConnectivity.value = true
@@ -2366,16 +2310,19 @@ const handleTestConnectivity = async () => {
       platform,
       modalState.form.apiUrl,
       modalState.form.apiKey,
-      modalState.form.connectivityTestModel || '',
-      modalState.form.connectivityTestEndpoint || getDefaultEndpoint(platform),
-      resolveEffectiveAuthType()
+      getEffectiveConnectivityModel(platform),
+      getEffectiveConnectivityEndpoint(platform),
+      resolveEffectiveAuthType(),
+      !!modalState.form.proxyEnabled
     )
 
     connectivityTestResult.value = {
       success: result.success,
-      message: result.success
-        ? t('components.main.form.connectivity.success', { latency: result.latencyMs })
-        : result.message || t('components.main.form.connectivity.failed')
+      message: result.message || (
+        result.success
+          ? t('components.main.form.connectivity.success', { latency: result.latencyMs })
+          : t('components.main.form.connectivity.failed')
+      )
     }
   } catch (error) {
     connectivityTestResult.value = {
@@ -2450,6 +2397,7 @@ type VendorForm = {
   officialSite: string
   icon: string
   enabled: boolean
+  proxyEnabled?: boolean
   supportedModels?: Record<string, boolean>
   modelMapping?: Record<string, string>
   level?: number
@@ -2495,6 +2443,7 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   icon: defaultIconKey,
   level: 1,
   enabled: true,
+  proxyEnabled: false,
   supportedModels: {},
   modelMapping: {},
   cliConfig: {},
@@ -2609,6 +2558,7 @@ const openEditModal = (card: AutomationCard) => {
     icon: card.icon,
     level: card.level || 1,
     enabled: card.enabled,
+    proxyEnabled: !!card.proxyEnabled,
     supportedModels: card.supportedModels || {},
     modelMapping: card.modelMapping || {},
     cliConfig: card.cliConfig || {},
@@ -2689,6 +2639,7 @@ const submitModal = async (): Promise<boolean> => {
       icon,
       level: nextLevel,
       enabled: modalState.form.enabled,
+      proxyEnabled: !!modalState.form.proxyEnabled,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
       cliConfig: modalState.form.cliConfig || {},
@@ -2730,6 +2681,7 @@ const submitModal = async (): Promise<boolean> => {
       tint: 'rgba(15, 23, 42, 0.12)',
       level: normalizeLevel(modalState.form.level),
       enabled: modalState.form.enabled,
+      proxyEnabled: !!modalState.form.proxyEnabled,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
       cliConfig: modalState.form.cliConfig || {},
@@ -2935,35 +2887,6 @@ const onTabChange = (idx: number) => {
     void refreshProxyState(nextTab as ProviderTab)
     void refreshDirectAppliedStatus(nextTab as ProviderTab)
     void loadProviderStats(nextTab as ProviderTab)
-  }
-}
-
-const handleImportClick = async () => {
-  if (importBusy.value) return
-  importBusy.value = true
-  try {
-    const result = await importFromCcSwitch()
-    importStatus.value = result?.status ?? null
-    const importedProviders = result?.imported_providers ?? 0
-    const importedMCP = result?.imported_mcp ?? 0
-    if (importedProviders > 0) {
-      await loadProvidersFromDisk()
-    }
-    if (importedProviders > 0 || importedMCP > 0) {
-      showToast(
-        t('components.main.importConfig.success', {
-          providers: importedProviders,
-          servers: importedMCP,
-        })
-      )
-    } else if (result?.status?.config_exists) {
-      showToast(t('components.main.importConfig.empty'))
-    }
-  } catch (error) {
-    console.error('Failed to import cc-switch config', error)
-    showToast(t('components.main.importConfig.error'), 'error')
-  } finally {
-    importBusy.value = false
   }
 }
 

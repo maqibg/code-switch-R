@@ -43,6 +43,10 @@ export class AppSettings {
      * 同 Level 轮询负载均衡开关（默认关闭）
      */
     "enable_round_robin": boolean;
+    "global_proxy_enabled": boolean;
+    "global_proxy_protocol": string;
+    "global_proxy_host": string;
+    "global_proxy_port": number;
 
     /** Creates a new AppSettings instance. */
     constructor($$source: Partial<AppSettings> = {}) {
@@ -120,6 +124,18 @@ export class AppSettings {
         }
         if (!("enable_round_robin" in $$source)) {
             this["enable_round_robin"] = false;
+        }
+        if (!("global_proxy_enabled" in $$source)) {
+            this["global_proxy_enabled"] = false;
+        }
+        if (!("global_proxy_protocol" in $$source)) {
+            this["global_proxy_protocol"] = "";
+        }
+        if (!("global_proxy_host" in $$source)) {
+            this["global_proxy_host"] = "";
+        }
+        if (!("global_proxy_port" in $$source)) {
+            this["global_proxy_port"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -1283,6 +1299,7 @@ export class GeminiProvider {
      */
     "partnerPromotionKey"?: string;
     "enabled": boolean;
+    "proxyEnabled"?: boolean;
 
     /**
      * 优先级分组 (1-10, 默认 1)
@@ -1986,6 +2003,7 @@ export class Provider {
     "tint": string;
     "accent": string;
     "enabled": boolean;
+    "proxyEnabled"?: boolean;
 
     /**
      * API 端点路径（可选）- 覆盖平台默认端点

@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	modelpricing "codeswitch/resources/model-pricing"
+
 	"github.com/daodao97/xgo/xdb"
 	"github.com/daodao97/xgo/xrequest"
 	"github.com/gin-gonic/gin"
@@ -335,7 +337,7 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
 	router.POST("/custom/:toolId/v1/messages", prs.customCliProxyHandler())
-	
+
 	// 自定义 CLI 工具的 /v1/models 端点
 	router.GET("/custom/:toolId/v1/models", prs.customModelsHandler())
 }
@@ -724,9 +726,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			totalAttempts, lastProvider, errorMsg)
 
 		c.JSON(http.StatusBadGateway, gin.H{
-			"error":         fmt.Sprintf("所有 %d 个 provider 均失败，最后错误: %s", totalAttempts, errorMsg),
-			"last_provider": lastProvider,
-			"last_duration": fmt.Sprintf("%.2fs", lastDuration.Seconds()),
+			"error":          fmt.Sprintf("所有 %d 个 provider 均失败，最后错误: %s", totalAttempts, errorMsg),
+			"last_provider":  lastProvider,
+			"last_duration":  fmt.Sprintf("%.2fs", lastDuration.Seconds()),
 			"total_attempts": totalAttempts,
 		})
 	}
@@ -827,6 +829,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	start := time.Now()
 	defer func() {
 		requestLog.DurationSec = time.Since(start).Seconds()
+		applyStoredRequestCost(requestLog)
 
 		// 【修复】判空保护：避免队列未初始化时 panic
 		if GlobalDBQueueLogs == nil {
@@ -842,8 +845,10 @@ func (prs *ProviderRelayService) forwardRequest(
 			INSERT INTO request_log (
 				platform, model, provider, http_code,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
-				reasoning_tokens, is_stream, duration_sec
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				reasoning_tokens, is_stream, duration_sec,
+				input_cost, output_cost, reasoning_cost, cache_create_cost, cache_read_cost,
+				ephemeral_5m_cost, ephemeral_1h_cost, total_cost, has_pricing, cost_calculated
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			requestLog.Platform,
 			requestLog.Model,
@@ -856,6 +861,16 @@ func (prs *ProviderRelayService) forwardRequest(
 			requestLog.ReasoningTokens,
 			boolToInt(requestLog.IsStream),
 			requestLog.DurationSec,
+			requestLog.InputCost,
+			requestLog.OutputCost,
+			requestLog.ReasoningCost,
+			requestLog.CacheCreateCost,
+			requestLog.CacheReadCost,
+			requestLog.Ephemeral5mCost,
+			requestLog.Ephemeral1hCost,
+			requestLog.TotalCost,
+			boolToInt(requestLog.HasPricing),
+			1,
 		)
 
 		if err != nil {
@@ -868,6 +883,21 @@ func (prs *ProviderRelayService) forwardRequest(
 		SetQueryParams(query).
 		SetRetry(1, 500*time.Millisecond).
 		SetTimeout(32 * time.Hour) // 32小时超时，适配超大型项目分析
+	proxyConfig := ProxyConfig{}
+	var err error
+	if prs.appSettings != nil {
+		proxyConfig, err = prs.appSettings.GetProviderProxyConfig(provider.ProxyEnabled)
+		if err != nil {
+			return false, fmt.Errorf("读取代理配置失败: %w", err)
+		}
+	} else if provider.ProxyEnabled {
+		return false, fmt.Errorf("代理配置服务未初始化")
+	}
+	client, err := NewHTTPClientWithProxy(0, nil, proxyConfig)
+	if err != nil {
+		return false, fmt.Errorf("创建代理客户端失败: %w", err)
+	}
+	req = req.SetClient(client)
 
 	reqBody := bytes.NewReader(bodyBytes)
 	req = req.SetBody(reqBody)
@@ -880,6 +910,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	}
 
 	if err != nil {
+		friendly := describeProxyTransportError(err, proxyConfig)
 		// resp 存在但 err != nil：可能是客户端中断，不计入失败
 		if resp != nil && requestLog.HttpCode == 0 {
 			fmt.Printf("[INFO] Provider %s 响应存在但状态码为0，判定为客户端中断\n", provider.Name)
@@ -891,7 +922,7 @@ func (prs *ProviderRelayService) forwardRequest(
 				return false, fmt.Errorf("upstream status %d: %s", resp.StatusCode(), upstreamBody)
 			}
 		}
-		return false, err
+		return false, fmt.Errorf("%s", friendly)
 	}
 
 	if resp == nil {
@@ -1036,6 +1067,32 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+func applyStoredRequestCost(requestLog *ReqeustLog) {
+	if requestLog == nil || strings.TrimSpace(requestLog.Model) == "" {
+		return
+	}
+	svc, err := modelpricing.DefaultService()
+	if err != nil || svc == nil {
+		return
+	}
+	cost := svc.CalculateCost(requestLog.Model, modelpricing.UsageSnapshot{
+		InputTokens:       requestLog.InputTokens,
+		OutputTokens:      requestLog.OutputTokens,
+		ReasoningTokens:   requestLog.ReasoningTokens,
+		CacheCreateTokens: requestLog.CacheCreateTokens,
+		CacheReadTokens:   requestLog.CacheReadTokens,
+	})
+	requestLog.InputCost = cost.InputCost
+	requestLog.OutputCost = cost.OutputCost
+	requestLog.ReasoningCost = cost.ReasoningCost
+	requestLog.CacheCreateCost = cost.CacheCreateCost
+	requestLog.CacheReadCost = cost.CacheReadCost
+	requestLog.Ephemeral5mCost = cost.Ephemeral5mCost
+	requestLog.Ephemeral1hCost = cost.Ephemeral1hCost
+	requestLog.TotalCost = cost.TotalCost
+	requestLog.HasPricing = cost.HasPricing
+}
+
 func ensureRequestLogColumn(db *sql.DB, column string, definition string) error {
 	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('request_log') WHERE name = '%s'", column)
 	var count int
@@ -1049,6 +1106,12 @@ func ensureRequestLogColumn(db *sql.DB, column string, definition string) error 
 		}
 	}
 	return nil
+}
+
+func ensureRequestLogIndex(db *sql.DB, name string, definition string) error {
+	query := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON request_log (%s)", name, definition)
+	_, err := db.Exec(query)
+	return err
 }
 
 func ensureRequestLogTable() error {
@@ -1073,6 +1136,16 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		reasoning_tokens INTEGER,
 		is_stream INTEGER DEFAULT 0,
 		duration_sec REAL DEFAULT 0,
+		input_cost REAL DEFAULT 0,
+		output_cost REAL DEFAULT 0,
+		reasoning_cost REAL DEFAULT 0,
+		cache_create_cost REAL DEFAULT 0,
+		cache_read_cost REAL DEFAULT 0,
+		ephemeral_5m_cost REAL DEFAULT 0,
+		ephemeral_1h_cost REAL DEFAULT 0,
+		total_cost REAL DEFAULT 0,
+		has_pricing INTEGER DEFAULT 0,
+		cost_calculated INTEGER DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`
 
@@ -1087,6 +1160,48 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		return err
 	}
 	if err := ensureRequestLogColumn(db, "duration_sec", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "input_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "output_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "reasoning_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "cache_create_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "cache_read_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "ephemeral_5m_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "ephemeral_1h_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "total_cost", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "has_pricing", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "cost_calculated", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogIndex(db, "idx_request_log_created_at", "created_at"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogIndex(db, "idx_request_log_platform_created_at", "platform, created_at"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogIndex(db, "idx_request_log_provider_created_at", "provider, created_at"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogIndex(db, "idx_request_log_model_created_at", "model, created_at"); err != nil {
 		return err
 	}
 
@@ -1229,7 +1344,7 @@ func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog) {
 // 【修复】维护跨 chunk 缓冲，确保完整 SSE 事件解析
 // Gemini SSE 格式: "data: {json}\n\n" 或 "data: [DONE]\n\n"
 func streamGeminiResponseWithHook(body io.Reader, writer io.Writer, requestLog *ReqeustLog) error {
-	buf := make([]byte, 8192) // 增大缓冲区减少系统调用
+	buf := make([]byte, 8192)   // 增大缓冲区减少系统调用
 	var lineBuf strings.Builder // 跨 chunk 行缓冲
 
 	for {
@@ -1423,6 +1538,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		// 保存日志的 defer
 		defer func() {
 			requestLog.DurationSec = time.Since(start).Seconds()
+			applyStoredRequestCost(requestLog)
 			if GlobalDBQueueLogs == nil {
 				return
 			}
@@ -1432,13 +1548,19 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 				INSERT INTO request_log (
 					platform, model, provider, http_code,
 					input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
-					reasoning_tokens, is_stream, duration_sec
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					reasoning_tokens, is_stream, duration_sec,
+					input_cost, output_cost, reasoning_cost, cache_create_cost, cache_read_cost,
+					ephemeral_5m_cost, ephemeral_1h_cost, total_cost, has_pricing, cost_calculated
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`,
 				requestLog.Platform, requestLog.Model, requestLog.Provider, requestLog.HttpCode,
 				requestLog.InputTokens, requestLog.OutputTokens, requestLog.CacheCreateTokens,
 				requestLog.CacheReadTokens, requestLog.ReasoningTokens,
 				boolToInt(requestLog.IsStream), requestLog.DurationSec,
+				requestLog.InputCost, requestLog.OutputCost, requestLog.ReasoningCost,
+				requestLog.CacheCreateCost, requestLog.CacheReadCost,
+				requestLog.Ephemeral5mCost, requestLog.Ephemeral1hCost,
+				requestLog.TotalCost, boolToInt(requestLog.HasPricing), 1,
 			)
 		}()
 
@@ -1691,13 +1813,27 @@ func (prs *ProviderRelayService) forwardGeminiRequest(
 	}
 
 	// 发送请求
-	client := &http.Client{Timeout: 300 * time.Second}
+	proxyConfig := ProxyConfig{}
+	if provider.ProxyEnabled {
+		if prs.appSettings == nil {
+			return false, "代理配置服务未初始化", false
+		}
+		proxyConfig, err = prs.appSettings.GetProviderProxyConfig(true)
+		if err != nil {
+			return false, fmt.Sprintf("读取代理配置失败: %v", err), false
+		}
+	}
+	client, err := NewHTTPClientWithProxy(300*time.Second, nil, proxyConfig)
+	if err != nil {
+		return false, fmt.Sprintf("创建代理客户端失败: %v", err), false
+	}
 	resp, err := client.Do(req)
 	providerDuration := time.Since(providerStart).Seconds()
 
 	if err != nil {
+		friendly := describeProxyTransportError(err, proxyConfig)
 		fmt.Printf("[Gemini]   ✗ 失败: %s | 错误: %v | 耗时: %.2fs\n", provider.Name, err, providerDuration)
-		return false, fmt.Sprintf("请求失败: %v", err), false
+		return false, fmt.Sprintf("请求失败: %s", friendly), false
 	}
 	defer resp.Body.Close()
 
@@ -2241,12 +2377,29 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 	}
 
 	// 发送请求
-	client := &http.Client{Timeout: 30 * time.Second}
+	proxyConfig := ProxyConfig{}
+	if selectedProvider.ProxyEnabled {
+		if prs.appSettings == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "代理配置服务未初始化"})
+			return fmt.Errorf("proxy settings service not initialized")
+		}
+		proxyConfig, err = prs.appSettings.GetProviderProxyConfig(true)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取代理配置失败: %v", err)})
+			return fmt.Errorf("failed to load proxy config: %w", err)
+		}
+	}
+	client, err := NewHTTPClientWithProxy(30*time.Second, nil, proxyConfig)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建代理客户端失败: %v", err)})
+		return fmt.Errorf("failed to create proxy client: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
+		friendly := describeProxyTransportError(err, proxyConfig)
 		fmt.Printf("[%s] ✗ 请求失败: %s | 错误: %v\n", logPrefix, selectedProvider.Name, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("请求失败: %v", err)})
-		return fmt.Errorf("request failed: %w", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("请求失败: %s", friendly)})
+		return fmt.Errorf("request failed: %s", friendly)
 	}
 	defer resp.Body.Close()
 

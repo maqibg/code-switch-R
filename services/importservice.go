@@ -472,7 +472,7 @@ func ccSwitchConfigPath() (string, error) {
 	}
 	// 优先检查 SQLite 数据库（新版 cc-switch），然后是 JSON 配置文件
 	candidates := []string{
-		filepath.Join(home, ".cc-switch", "cc-switch.db"),       // 新版 SQLite
+		filepath.Join(home, ".cc-switch", "cc-switch.db"),         // 新版 SQLite
 		filepath.Join(home, ".cc-switch", "config.json.migrated"), // 旧版迁移后的 JSON
 		filepath.Join(home, ".cc-switch", "config.json"),          // 旧版 JSON
 	}
@@ -488,11 +488,11 @@ func ccSwitchConfigPath() (string, error) {
 }
 
 func firstRunMarkerPath() (string, error) {
-	home, err := os.UserHomeDir()
+	configDir, err := ensureAppConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".code-switch", ".import_prompted"), nil
+	return filepath.Join(configDir, ".import_prompted"), nil
 }
 
 type ccSwitchConfig struct {
@@ -793,9 +793,79 @@ func defaultVisual(kind string) (accent, tint string) {
 }
 
 func (is *ImportService) pendingMCPCandidates(cfg *ccSwitchConfig) ([]MCPServer, error) {
-	existing, err := is.mcpService.ListServers()
+	claudeExisting, err := is.mcpService.ListServersForPlatform(platClaudeCode)
 	if err != nil {
 		return nil, err
+	}
+	codexExisting, err := is.mcpService.ListServersForPlatform(platCodex)
+	if err != nil {
+		return nil, err
+	}
+
+	claudeCandidates := diffMCPServersByPlatform(
+		collectPlatformMCPServers(cfg.MCP.Claude.Servers, platClaudeCode),
+		claudeExisting,
+	)
+	codexCandidates := diffMCPServersByPlatform(
+		collectPlatformMCPServers(cfg.MCP.Codex.Servers, platCodex),
+		codexExisting,
+	)
+
+	result := make([]MCPServer, 0, len(claudeCandidates)+len(codexCandidates))
+	result = append(result, claudeCandidates...)
+	result = append(result, codexCandidates...)
+	sort.SliceStable(result, func(i, j int) bool {
+		leftPlatform := firstPlatform(result[i].EnablePlatform)
+		rightPlatform := firstPlatform(result[j].EnablePlatform)
+		if leftPlatform != rightPlatform {
+			return leftPlatform < rightPlatform
+		}
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result, nil
+}
+
+func (is *ImportService) importMCPServers(candidates []MCPServer) (int, error) {
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+
+	grouped := make(map[string][]MCPServer)
+	for _, candidate := range candidates {
+		platform := firstPlatform(candidate.EnablePlatform)
+		if platform == "" {
+			continue
+		}
+		grouped[platform] = append(grouped[platform], candidate)
+	}
+
+	total := 0
+	for platform, list := range grouped {
+		existing, err := is.mcpService.ListServersForPlatform(platform)
+		if err != nil {
+			return total, err
+		}
+		merged := make([]MCPServer, 0, len(existing)+len(list))
+		merged = append(merged, existing...)
+		merged = append(merged, list...)
+		if err := is.mcpService.SaveServersForPlatform(platform, merged); err != nil {
+			return total, err
+		}
+		total += len(list)
+	}
+	return total, nil
+}
+
+func firstPlatform(platforms []string) string {
+	if len(platforms) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(platforms[0])
+}
+
+func diffMCPServersByPlatform(candidates []MCPServer, existing []MCPServer) []MCPServer {
+	if len(candidates) == 0 {
+		return []MCPServer{}
 	}
 	existingNames := make(map[string]struct{}, len(existing))
 	for _, server := range existing {
@@ -803,9 +873,8 @@ func (is *ImportService) pendingMCPCandidates(cfg *ccSwitchConfig) ([]MCPServer,
 			existingNames[name] = struct{}{}
 		}
 	}
-	candidates := collectMCPServers(cfg)
 	result := make([]MCPServer, 0, len(candidates))
-	seen := make(map[string]struct{})
+	seen := make(map[string]struct{}, len(candidates))
 	for _, server := range candidates {
 		name := normalizeName(server.Name)
 		if name == "" {
@@ -820,27 +889,19 @@ func (is *ImportService) pendingMCPCandidates(cfg *ccSwitchConfig) ([]MCPServer,
 		result = append(result, server)
 		seen[name] = struct{}{}
 	}
-	sort.SliceStable(result, func(i, j int) bool {
-		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
-	})
-	return result, nil
+	return result
 }
 
-func (is *ImportService) importMCPServers(candidates []MCPServer) (int, error) {
-	if len(candidates) == 0 {
-		return 0, nil
+func collectPlatformMCPServers(entries map[string]ccMCPServerEntry, platform string) []MCPServer {
+	stores := map[string]*MCPServer{}
+	appendMCPEntries(stores, entries, platform)
+	servers := make([]MCPServer, 0, len(stores))
+	for _, server := range stores {
+		server.EnablePlatform = []string{platform}
+		server.Enabled = true
+		servers = append(servers, *server)
 	}
-	existing, err := is.mcpService.ListServers()
-	if err != nil {
-		return 0, err
-	}
-	merged := make([]MCPServer, 0, len(existing)+len(candidates))
-	merged = append(merged, existing...)
-	merged = append(merged, candidates...)
-	if err := is.mcpService.SaveServers(merged); err != nil {
-		return 0, err
-	}
-	return len(candidates), nil
+	return servers
 }
 
 func collectMCPServers(cfg *ccSwitchConfig) []MCPServer {
@@ -1024,6 +1085,7 @@ type mcpImportServer struct {
 	URL     string      `json:"url,omitempty"`
 	Website string      `json:"website,omitempty"`
 	Tips    string      `json:"tips,omitempty"`
+	Enabled *bool       `json:"enabled,omitempty"`
 
 	EnablePlatform  []string `json:"enable_platform,omitempty"`
 	EnabledInClaude bool     `json:"enabled_in_claude,omitempty"`
@@ -1056,12 +1118,21 @@ func (s mcpImportServer) hasDefinitionFields() bool {
 // 3) 单服务器: {"command": "...", "args": [...] }（name 可选，缺失时 needName=true）
 // 4) 服务器映射: {"name": {...}, "name2": {...}}
 func (is *ImportService) ParseMCPJSON(jsonStr string) (*MCPParseResult, error) {
+	return is.ParseMCPJSONForPlatform(jsonStr, platClaudeCode)
+}
+
+func (is *ImportService) ParseMCPJSONForPlatform(jsonStr string, platform string) (*MCPParseResult, error) {
 	jsonStr = strings.TrimSpace(jsonStr)
 	if jsonStr == "" {
 		return nil, nil
 	}
 
-	existing, err := is.mcpService.ListServers()
+	normalizedPlatform, ok := normalizePlatform(platform)
+	if !ok {
+		return nil, fmt.Errorf("未知 MCP 平台: %s", platform)
+	}
+
+	existing, err := is.mcpService.ListServersForPlatform(normalizedPlatform)
 	if err != nil {
 		return nil, err
 	}
@@ -1082,7 +1153,7 @@ func (is *ImportService) ParseMCPJSON(jsonStr string) (*MCPParseResult, error) {
 			if err := json.Unmarshal(raw, &serversMap); err != nil {
 				return nil, fmt.Errorf("mcpServers 字段必须是对象: %w", err)
 			}
-			servers, err := is.parseMCPServerMap(serversMap, []string{platClaudeCode})
+			servers, err := is.parseMCPServerMap(serversMap, []string{normalizedPlatform})
 			if err != nil {
 				return nil, err
 			}
@@ -1101,6 +1172,9 @@ func (is *ImportService) ParseMCPJSON(jsonStr string) (*MCPParseResult, error) {
 		if err != nil {
 			return nil, err
 		}
+		for i := range servers {
+			servers[i].EnablePlatform = []string{normalizedPlatform}
+		}
 		return &MCPParseResult{
 			Servers:   servers,
 			Conflicts: collectMCPConflicts(existingNames, servers),
@@ -1118,7 +1192,7 @@ func (is *ImportService) ParseMCPJSON(jsonStr string) (*MCPParseResult, error) {
 	// 单服务器格式（用于快速粘贴单条配置）
 	var single mcpImportServer
 	if err := json.Unmarshal(data, &single); err == nil && single.hasDefinitionFields() {
-		server, err := buildMCPServerFromImport("", single, nil)
+		server, err := buildMCPServerFromImport("", single, []string{normalizedPlatform})
 		if err != nil {
 			return nil, err
 		}
@@ -1141,6 +1215,9 @@ func (is *ImportService) ParseMCPJSON(jsonStr string) (*MCPParseResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	for i := range servers {
+		servers[i].EnablePlatform = []string{normalizedPlatform}
+	}
 	return &MCPParseResult{
 		Servers:   servers,
 		Conflicts: collectMCPConflicts(existingNames, servers),
@@ -1153,6 +1230,10 @@ func (is *ImportService) ParseMCPJSON(jsonStr string) (*MCPParseResult, error) {
 // - "skip": 已存在则跳过
 // - "overwrite": 用导入内容更新（保留既有 enable_platform 的并集）
 func (is *ImportService) ImportMCPServers(servers []MCPServer, strategy string) (int, error) {
+	return is.ImportMCPServersForPlatform(servers, strategy, platClaudeCode)
+}
+
+func (is *ImportService) ImportMCPServersForPlatform(servers []MCPServer, strategy string, platform string) (int, error) {
 	strategy = strings.ToLower(strings.TrimSpace(strategy))
 	if strategy == "" {
 		strategy = "skip"
@@ -1164,7 +1245,12 @@ func (is *ImportService) ImportMCPServers(servers []MCPServer, strategy string) 
 		return 0, nil
 	}
 
-	existing, err := is.mcpService.ListServers()
+	normalizedPlatform, ok := normalizePlatform(platform)
+	if !ok {
+		return 0, fmt.Errorf("未知 MCP 平台: %s", platform)
+	}
+
+	existing, err := is.mcpService.ListServersForPlatform(normalizedPlatform)
 	if err != nil {
 		return 0, err
 	}
@@ -1186,6 +1272,7 @@ func (is *ImportService) ImportMCPServers(servers []MCPServer, strategy string) 
 		if err != nil {
 			return 0, err
 		}
+		candidate.EnablePlatform = []string{normalizedPlatform}
 		key := normalizeName(candidate.Name)
 		if key == "" {
 			return 0, errors.New("MCP server name 不能为空")
@@ -1211,7 +1298,7 @@ func (is *ImportService) ImportMCPServers(servers []MCPServer, strategy string) 
 	if imported == 0 {
 		return 0, nil
 	}
-	if err := is.mcpService.SaveServers(merged); err != nil {
+	if err := is.mcpService.SaveServersForPlatform(normalizedPlatform, merged); err != nil {
 		return 0, err
 	}
 	return imported, nil
@@ -1334,6 +1421,7 @@ func buildMCPServerFromImport(name string, entry mcpImportServer, defaultPlatfor
 		URL:            url,
 		Website:        strings.TrimSpace(entry.Website),
 		Tips:           strings.TrimSpace(entry.Tips),
+		Enabled:        entry.Enabled == nil || *entry.Enabled,
 		EnablePlatform: platforms,
 	}
 	server.MissingPlaceholders = detectPlaceholders(server.URL, server.Args)
@@ -1412,6 +1500,7 @@ func normalizeIncomingMCPServer(server MCPServer) (MCPServer, error) {
 		URL:            url,
 		Website:        strings.TrimSpace(server.Website),
 		Tips:           strings.TrimSpace(server.Tips),
+		Enabled:        server.Enabled,
 		EnablePlatform: platforms,
 	}
 	out.MissingPlaceholders = detectPlaceholders(out.URL, out.Args)

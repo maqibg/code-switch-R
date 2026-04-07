@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,23 +10,24 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/tidwall/sjson"
 )
 
 const (
-	mcpStoreDir      = ".code-switch"
-	mcpStoreFile     = "mcp.json"
-	claudeMcpFile    = ".claude.json"
-	codexDirName     = ".codex"
-	codexConfigFile  = "config.toml"
-	geminiDirName    = ".gemini"
-	geminiConfigFile = "settings.json"
-	platClaudeCode   = "claude-code"
-	platCodex        = "codex"
-	platGemini       = "gemini"
+	mcpLegacyStoreFile = "mcp.json"
+	claudeMcpFile      = ".claude.json"
+	codexDirName       = ".codex"
+	codexConfigFile    = "config.toml"
+	geminiDirName      = ".gemini"
+	geminiConfigFile   = "settings.json"
+	platClaudeCode     = "claude-code"
+	platCodex          = "codex"
+	platGemini         = "gemini"
 )
 
 var builtInServers = map[string]rawMCPServer{
@@ -44,6 +46,7 @@ var builtInServers = map[string]rawMCPServer{
 }
 
 var placeholderPattern = regexp.MustCompile(`\{([a-zA-Z0-9_]+)\}`)
+var tomlBareKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 type MCPService struct {
 	mu sync.Mutex
@@ -51,6 +54,18 @@ type MCPService struct {
 
 func NewMCPService() *MCPService {
 	return &MCPService{}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
+}
+
+func platformStoreFile(platform string) (string, error) {
+	normalized, ok := normalizePlatform(platform)
+	if !ok {
+		return "", fmt.Errorf("未知 MCP 平台: %s", platform)
+	}
+	return fmt.Sprintf("mcp-%s.json", normalized), nil
 }
 
 type MCPServer struct {
@@ -62,6 +77,7 @@ type MCPServer struct {
 	URL                 string            `json:"url,omitempty"`
 	Website             string            `json:"website,omitempty"`
 	Tips                string            `json:"tips,omitempty"`
+	Enabled             bool              `json:"enabled"`
 	EnablePlatform      []string          `json:"enable_platform"`
 	EnabledInClaude     bool              `json:"enabled_in_claude"`
 	EnabledInCodex      bool              `json:"enabled_in_codex"`
@@ -77,10 +93,16 @@ type rawMCPServer struct {
 	URL            string            `json:"url,omitempty"`
 	Website        string            `json:"website,omitempty"`
 	Tips           string            `json:"tips,omitempty"`
+	Enabled        *bool             `json:"enabled,omitempty"`
 	EnablePlatform []string          `json:"enable_platform"`
 }
 
 type mcpStorePayload struct {
+	Servers         map[string]rawMCPServer `json:"servers"`
+	DeletedBuiltins []string                `json:"deletedBuiltins,omitempty"`
+}
+
+type mcpPlatformStore struct {
 	Servers         map[string]rawMCPServer `json:"servers"`
 	DeletedBuiltins []string                `json:"deletedBuiltins,omitempty"`
 }
@@ -106,10 +128,19 @@ type claudeDesktopServer struct {
 }
 
 func (ms *MCPService) ListServers() ([]MCPServer, error) {
+	return ms.ListServersForPlatform(platClaudeCode)
+}
+
+func (ms *MCPService) ListServersForPlatform(platform string) ([]MCPServer, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
-	config, err := ms.loadConfig()
+	normalizedPlatform, ok := normalizePlatform(platform)
+	if !ok {
+		return nil, fmt.Errorf("未知 MCP 平台: %s", platform)
+	}
+
+	config, err := ms.loadConfig(normalizedPlatform)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +159,6 @@ func (ms *MCPService) ListServers() ([]MCPServer, error) {
 	for _, name := range names {
 		entry := config[name]
 		typ := normalizeServerType(entry.Type)
-		platforms := normalizePlatforms(entry.EnablePlatform)
 		server := MCPServer{
 			Name:            name,
 			Type:            typ,
@@ -138,7 +168,8 @@ func (ms *MCPService) ListServers() ([]MCPServer, error) {
 			URL:             strings.TrimSpace(entry.URL),
 			Website:         strings.TrimSpace(entry.Website),
 			Tips:            strings.TrimSpace(entry.Tips),
-			EnablePlatform:  platforms,
+			Enabled:         entry.Enabled == nil || *entry.Enabled,
+			EnablePlatform:  []string{normalizedPlatform},
 			EnabledInClaude: containsNormalized(claudeEnabled, name),
 			EnabledInCodex:  containsNormalized(codexEnabled, name),
 			EnabledInGemini: containsNormalized(geminiEnabled, name),
@@ -151,8 +182,17 @@ func (ms *MCPService) ListServers() ([]MCPServer, error) {
 }
 
 func (ms *MCPService) SaveServers(servers []MCPServer) error {
+	return ms.SaveServersForPlatform(platClaudeCode, servers)
+}
+
+func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServer) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
+
+	normalizedPlatform, ok := normalizePlatform(platform)
+	if !ok {
+		return fmt.Errorf("未知 MCP 平台: %s", platform)
+	}
 
 	normalized := make([]MCPServer, len(servers))
 	raw := make(map[string]rawMCPServer, len(servers))
@@ -163,7 +203,7 @@ func (ms *MCPService) SaveServers(servers []MCPServer) error {
 			return fmt.Errorf("server name 不能为空")
 		}
 		typ := normalizeServerType(server.Type)
-		platforms := normalizePlatforms(server.EnablePlatform)
+		platforms := []string{normalizedPlatform}
 		args := cleanArgs(server.Args)
 		env := cleanEnv(server.Env)
 		command := strings.TrimSpace(server.Command)
@@ -183,6 +223,7 @@ func (ms *MCPService) SaveServers(servers []MCPServer) error {
 			URL:             url,
 			Website:         strings.TrimSpace(server.Website),
 			Tips:            strings.TrimSpace(server.Tips),
+			Enabled:         server.Enabled,
 			EnablePlatform:  platforms,
 			EnabledInClaude: server.EnabledInClaude,
 			EnabledInCodex:  server.EnabledInCodex,
@@ -196,13 +237,16 @@ func (ms *MCPService) SaveServers(servers []MCPServer) error {
 			URL:            url,
 			Website:        normalized[i].Website,
 			Tips:           normalized[i].Tips,
+			Enabled:        boolPtr(server.Enabled),
 			EnablePlatform: platforms,
 		}
 		placeholders := detectPlaceholders(url, args)
 		normalized[i].MissingPlaceholders = placeholders
 		if len(placeholders) > 0 {
+			normalized[i].Enabled = false
 			normalized[i].EnablePlatform = []string{}
 			rawEntry := raw[name]
+			rawEntry.Enabled = boolPtr(false)
 			rawEntry.EnablePlatform = []string{}
 			raw[name] = rawEntry
 		}
@@ -217,35 +261,95 @@ func (ms *MCPService) SaveServers(servers []MCPServer) error {
 	}
 	sort.Strings(deletedBuiltins)
 
-	if err := ms.saveStore(raw, deletedBuiltins); err != nil {
+	if err := ms.saveStore(normalizedPlatform, raw, deletedBuiltins); err != nil {
 		return err
 	}
-	if err := ms.syncClaudeServers(normalized); err != nil {
-		return err
-	}
-	if err := ms.syncCodexServers(normalized); err != nil {
-		return err
-	}
-	if err := ms.syncGeminiServers(normalized); err != nil {
-		return err
+	switch normalizedPlatform {
+	case platClaudeCode:
+		if err := ms.syncClaudeServers(normalized); err != nil {
+			return err
+		}
+	case platCodex:
+		if err := ms.syncCodexServers(normalized); err != nil {
+			return err
+		}
+	case platGemini:
+		if err := ms.syncGeminiServers(normalized); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (ms *MCPService) configPath() (string, error) {
-	home, err := os.UserHomeDir()
+func (ms *MCPService) configPath(platform string) (string, error) {
+	dir, err := ensureAppConfigDir()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, mcpStoreDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	file, err := platformStoreFile(platform)
+	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, mcpStoreFile), nil
+	return filepath.Join(dir, file), nil
 }
 
-func (ms *MCPService) loadConfig() (map[string]rawMCPServer, error) {
-	path, err := ms.configPath()
+func (ms *MCPService) legacyConfigPath() (string, error) {
+	dir, err := ensureAppConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, mcpLegacyStoreFile), nil
+}
+
+func (ms *MCPService) loadLegacySharedConfig() (map[string]rawMCPServer, []string, error) {
+	path, err := ms.legacyConfigPath()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	servers := map[string]rawMCPServer{}
+	var deletedBuiltins []string
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return servers, deletedBuiltins, nil
+		}
+		return nil, nil, err
+	}
+	if len(data) == 0 {
+		return servers, deletedBuiltins, nil
+	}
+
+	var storePayload mcpStorePayload
+	if err := json.Unmarshal(data, &storePayload); err == nil && storePayload.Servers != nil {
+		servers = storePayload.Servers
+		deletedBuiltins = storePayload.DeletedBuiltins
+	} else {
+		if err := json.Unmarshal(data, &servers); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	for name, entry := range servers {
+		servers[name] = normalizeRawEntry(entry)
+	}
+	return servers, deletedBuiltins, nil
+}
+
+func selectPlatformServers(servers map[string]rawMCPServer, platform string) map[string]rawMCPServer {
+	selected := make(map[string]rawMCPServer)
+	for name, entry := range servers {
+		if platformContains(normalizePlatforms(entry.EnablePlatform), platform) {
+			normalized := normalizeRawEntry(entry)
+			normalized.EnablePlatform = []string{platform}
+			selected[name] = normalized
+		}
+	}
+	return selected
+}
+
+func (ms *MCPService) loadConfig(platform string) (map[string]rawMCPServer, error) {
+	path, err := ms.configPath(platform)
 	if err != nil {
 		return nil, err
 	}
@@ -265,8 +369,16 @@ func (ms *MCPService) loadConfig() (map[string]rawMCPServer, error) {
 				return nil, err
 			}
 		}
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	} else if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		legacyServers, legacyDeletedBuiltins, legacyErr := ms.loadLegacySharedConfig()
+		if legacyErr != nil {
+			return nil, legacyErr
+		}
+		servers = selectPlatformServers(legacyServers, platform)
+		deletedBuiltins = legacyDeletedBuiltins
 	}
 
 	for name, entry := range servers {
@@ -274,12 +386,14 @@ func (ms *MCPService) loadConfig() (map[string]rawMCPServer, error) {
 	}
 
 	changed := false
-	if imported, err := ms.importFromClaude(servers); err == nil {
-		if ms.mergeImportedServers(servers, imported) {
-			changed = true
+	if platform == platClaudeCode {
+		if imported, err := ms.importFromClaude(servers); err == nil {
+			if ms.mergeImportedServers(servers, imported) {
+				changed = true
+			}
+		} else {
+			return nil, err
 		}
-	} else {
-		return nil, err
 	}
 
 	if ensureBuiltInServers(servers, deletedBuiltins) {
@@ -287,7 +401,7 @@ func (ms *MCPService) loadConfig() (map[string]rawMCPServer, error) {
 	}
 
 	if changed {
-		if err := ms.saveStore(servers, deletedBuiltins); err != nil {
+		if err := ms.saveStore(platform, servers, deletedBuiltins); err != nil {
 			return servers, err
 		}
 	}
@@ -347,14 +461,15 @@ func (ms *MCPService) importFromClaude(existing map[string]rawMCPServer) (map[st
 			Args:           cleanArgs(entry.Args),
 			Env:            cleanEnv(entry.Env),
 			URL:            strings.TrimSpace(entry.URL),
+			Enabled:        boolPtr(true),
 			EnablePlatform: []string{platClaudeCode},
 		}
 	}
 	return result, nil
 }
 
-func (ms *MCPService) saveStore(servers map[string]rawMCPServer, deletedBuiltins []string) error {
-	path, err := ms.configPath()
+func (ms *MCPService) saveStore(platform string, servers map[string]rawMCPServer, deletedBuiltins []string) error {
+	path, err := ms.configPath(platform)
 	if err != nil {
 		return err
 	}
@@ -424,6 +539,9 @@ func normalizeRawEntry(entry rawMCPServer) rawMCPServer {
 	entry.Tips = strings.TrimSpace(entry.Tips)
 	entry.Args = cleanArgs(entry.Args)
 	entry.Env = cleanEnv(entry.Env)
+	if entry.Enabled == nil {
+		entry.Enabled = boolPtr(true)
+	}
 	entry.EnablePlatform = normalizePlatforms(entry.EnablePlatform)
 	return entry
 }
@@ -625,25 +743,12 @@ func (ms *MCPService) syncClaudeServers(servers []MCPServer) error {
 	}
 	desired := make(map[string]claudeDesktopServer)
 	for _, server := range servers {
-		if !platformContains(server.EnablePlatform, platClaudeCode) {
+		if !server.Enabled || !platformContains(server.EnablePlatform, platClaudeCode) {
 			continue
 		}
 		desired[server.Name] = buildClaudeDesktopEntry(server)
 	}
-	payload := make(map[string]any)
-	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-		if err := json.Unmarshal(data, &payload); err != nil {
-			payload = make(map[string]any)
-		}
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	payload["mcpServers"] = desired
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o600)
+	return writeJSONMCPServersPreservingLayout(path, "mcpServers", desired, 0o600)
 }
 
 func (ms *MCPService) syncCodexServers(servers []MCPServer) error {
@@ -653,25 +758,18 @@ func (ms *MCPService) syncCodexServers(servers []MCPServer) error {
 	}
 	desired := make(map[string]map[string]any)
 	for _, server := range servers {
-		if !platformContains(server.EnablePlatform, platCodex) {
+		if !server.Enabled || !platformContains(server.EnablePlatform, platCodex) {
 			continue
 		}
 		desired[server.Name] = buildCodexEntry(server)
 	}
-	payload := make(map[string]any)
-	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-		if err := toml.Unmarshal(data, &payload); err != nil {
-			payload = make(map[string]any)
-		}
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+	content, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	payload["mcp_servers"] = desired
-	data, err := toml.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
+	block := buildCodexMCPServersBlock(desired)
+	updated := replaceCodexMCPServersSection(string(content), block)
+	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
 func (ms *MCPService) syncGeminiServers(servers []MCPServer) error {
@@ -681,25 +779,12 @@ func (ms *MCPService) syncGeminiServers(servers []MCPServer) error {
 	}
 	desired := make(map[string]map[string]any)
 	for _, server := range servers {
-		if !platformContains(server.EnablePlatform, platGemini) {
+		if !server.Enabled || !platformContains(server.EnablePlatform, platGemini) {
 			continue
 		}
 		desired[server.Name] = buildGeminiEntry(server)
 	}
-	payload := make(map[string]any)
-	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-		if err := json.Unmarshal(data, &payload); err != nil {
-			payload = make(map[string]any)
-		}
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	payload["mcpServers"] = desired
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
+	return writeJSONMCPServersPreservingLayout(path, "mcpServers", desired, 0o644)
 }
 
 func platformContains(platforms []string, target string) bool {
@@ -760,6 +845,206 @@ func buildGeminiEntry(server MCPServer) map[string]any {
 		}
 	}
 	return entry
+}
+
+func writeJSONMCPServersPreservingLayout(path string, key string, desired any, perm os.FileMode) error {
+	desiredBytes, err := json.MarshalIndent(desired, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		fresh, marshalErr := json.MarshalIndent(map[string]any{key: desired}, "", "  ")
+		if marshalErr != nil {
+			return marshalErr
+		}
+		return os.WriteFile(path, fresh, perm)
+	}
+
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		fresh, marshalErr := json.MarshalIndent(map[string]any{key: desired}, "", "  ")
+		if marshalErr != nil {
+			return marshalErr
+		}
+		return os.WriteFile(path, fresh, perm)
+	}
+
+	if !json.Valid(trimmed) {
+		return fmt.Errorf("%s 不是有效 JSON，无法手术式写入 %s", path, key)
+	}
+
+	updated, err := sjson.SetRawBytes(data, key, desiredBytes)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, updated, perm)
+}
+
+func tomlSectionKey(name string) string {
+	if tomlBareKeyPattern.MatchString(name) {
+		return name
+	}
+	return strconv.Quote(name)
+}
+
+func buildTomlStringArray(values []string) string {
+	if len(values) == 0 {
+		return "[]"
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, strconv.Quote(value))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+func buildCodexMCPServersBlock(desired map[string]map[string]any) string {
+	if len(desired) == 0 {
+		return ""
+	}
+
+	names := make([]string, 0, len(desired))
+	for name := range desired {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var out []string
+	for _, name := range names {
+		entry := desired[name]
+		section := tomlSectionKey(name)
+		out = append(out, fmt.Sprintf("[mcp_servers.%s]", section))
+
+		if typeValue, _ := entry["type"].(string); strings.TrimSpace(typeValue) != "" {
+			out = append(out, fmt.Sprintf("type = %s", strconv.Quote(typeValue)))
+		}
+		if urlValue, _ := entry["url"].(string); strings.TrimSpace(urlValue) != "" {
+			out = append(out, fmt.Sprintf("url = %s", strconv.Quote(urlValue)))
+		}
+		if commandValue, _ := entry["command"].(string); strings.TrimSpace(commandValue) != "" {
+			out = append(out, fmt.Sprintf("command = %s", strconv.Quote(commandValue)))
+		}
+		if argsValue, ok := entry["args"].([]string); ok && len(argsValue) > 0 {
+			out = append(out, fmt.Sprintf("args = %s", buildTomlStringArray(argsValue)))
+		} else if argsValue, ok := entry["args"].([]any); ok && len(argsValue) > 0 {
+			args := make([]string, 0, len(argsValue))
+			for _, item := range argsValue {
+				args = append(args, fmt.Sprint(item))
+			}
+			out = append(out, fmt.Sprintf("args = %s", buildTomlStringArray(args)))
+		}
+
+		if envValue, ok := entry["env"].(map[string]string); ok && len(envValue) > 0 {
+			out = append(out, fmt.Sprintf("[mcp_servers.%s.env]", section))
+			keys := make([]string, 0, len(envValue))
+			for key := range envValue {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				out = append(out, fmt.Sprintf("%s = %s", tomlSectionKey(key), strconv.Quote(envValue[key])))
+			}
+		} else if envValue, ok := entry["env"].(map[string]any); ok && len(envValue) > 0 {
+			out = append(out, fmt.Sprintf("[mcp_servers.%s.env]", section))
+			keys := make([]string, 0, len(envValue))
+			for key := range envValue {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				out = append(out, fmt.Sprintf("%s = %s", tomlSectionKey(key), strconv.Quote(fmt.Sprint(envValue[key]))))
+			}
+		}
+
+		out = append(out, "")
+	}
+
+	return strings.TrimRight(strings.Join(out, "\n"), "\n")
+}
+
+func extractTomlHeader(line string) string {
+	matches := regexp.MustCompile(`^\s*(\[[^\]]+\])`).FindStringSubmatch(line)
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
+}
+
+func isCodexMCPHeader(header string) bool {
+	return header == "[mcp_servers]" || strings.HasPrefix(header, "[mcp_servers.")
+}
+
+func replaceCodexMCPServersSection(content string, block string) string {
+	newline := "\n"
+	if strings.Contains(content, "\r\n") {
+		newline = "\r\n"
+		content = strings.ReplaceAll(content, "\r\n", "\n")
+	}
+
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines)+8)
+	blockLines := []string{}
+	if block != "" {
+		blockLines = strings.Split(block, "\n")
+	}
+
+	inserted := false
+	skipping := false
+	insertBlock := func() {
+		if inserted || len(blockLines) == 0 {
+			inserted = true
+			return
+		}
+		if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+			out = append(out, "")
+		}
+		out = append(out, blockLines...)
+		inserted = true
+	}
+
+	for _, line := range lines {
+		header := extractTomlHeader(line)
+
+		if skipping {
+			if header != "" {
+				if isCodexMCPHeader(header) {
+					continue
+				}
+				insertBlock()
+				skipping = false
+			} else {
+				continue
+			}
+		}
+
+		if header != "" && isCodexMCPHeader(header) {
+			skipping = true
+			continue
+		}
+
+		out = append(out, line)
+	}
+
+	if skipping {
+		insertBlock()
+	}
+	if !inserted && len(blockLines) > 0 {
+		insertBlock()
+	}
+
+	result := strings.Join(out, "\n")
+	if strings.HasSuffix(content, "\n") || len(blockLines) > 0 {
+		result = strings.TrimRight(result, "\n") + "\n"
+	}
+	if newline != "\n" {
+		result = strings.ReplaceAll(result, "\n", newline)
+	}
+	return result
 }
 
 func claudeConfigPath() (string, error) {

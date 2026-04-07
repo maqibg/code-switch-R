@@ -13,21 +13,50 @@ type SuiStore struct {
 	db *sql.DB
 }
 
-func getSafeDBPath() (string, error) {
+func getLegacyHotkeyDBPath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
 	appDir := filepath.Join(configDir, "SuiNest")
-	err = os.MkdirAll(appDir, 0755)
+	return filepath.Join(appDir, hotkeyDBFileName), nil
+}
+
+func getSafeDBPath() (string, error) {
+	configDir, err := ensureAppConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(appDir, "suidemo.db"), nil
+	return filepath.Join(configDir, hotkeyDBFileName), nil
 }
+
+func ensureHotkeyDBMigrated(targetPath string) error {
+	legacyPath, err := getLegacyHotkeyDBPath()
+	if err != nil {
+		return err
+	}
+	if filepath.Clean(legacyPath) == filepath.Clean(targetPath) {
+		return nil
+	}
+	if FileExists(targetPath) || !FileExists(legacyPath) {
+		return nil
+	}
+	content, err := os.ReadFile(legacyPath)
+	if err != nil {
+		return fmt.Errorf("读取旧快捷键数据库失败: %w", err)
+	}
+	if err := AtomicWriteBytes(targetPath, content); err != nil {
+		return fmt.Errorf("迁移快捷键数据库到数据目录失败: %w", err)
+	}
+	return nil
+}
+
 func NewSuiStore() (*SuiStore, error) {
 	dbPath, err := getSafeDBPath()
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureHotkeyDBMigrated(dbPath); err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", dbPath)

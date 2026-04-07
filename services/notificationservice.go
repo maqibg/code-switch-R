@@ -55,14 +55,13 @@ func (ns *NotificationService) SetApp(app *application.App) {
 // ensureIconFile 确保图标文件存在于临时目录，并返回路径
 // @author sm
 func (ns *NotificationService) ensureIconFile() string {
-	// 获取用户配置目录
-	homeDir, err := os.UserHomeDir()
+	configDir, err := ensureAppConfigDir()
 	if err != nil {
-		log.Printf("[Notification] 获取用户目录失败: %v", err)
+		log.Printf("[Notification] 获取项目配置目录失败: %v", err)
 		return ""
 	}
 
-	iconDir := filepath.Join(homeDir, ".code-switch", "icons")
+	iconDir := filepath.Join(configDir, "icons")
 	if err := os.MkdirAll(iconDir, 0755); err != nil {
 		log.Printf("[Notification] 创建图标目录失败: %v", err)
 		return ""
@@ -131,7 +130,7 @@ func (ns *NotificationService) sendSwitchNotification(info SwitchNotification) {
 	ns.mu.Unlock()
 
 	// 简化通知内容：仅显示已切换到哪个供应商
-	title := "Code Switch"
+	title := "code-switch-R"
 	body := fmt.Sprintf("已切换到 %s", info.ToProvider)
 
 	// 发送 Wails 事件到前端（用于点击通知后定位）
@@ -168,7 +167,7 @@ func (ns *NotificationService) NotifyProviderBlacklisted(platform, providerName 
 
 	go func() {
 		// 简化通知内容
-		title := "Code Switch"
+		title := "code-switch-R"
 		body := fmt.Sprintf("%s 已拉黑 %d 分钟", providerName, durationMinutes)
 
 		// 发送 Wails 事件到前端

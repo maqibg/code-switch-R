@@ -8,6 +8,7 @@ export type AutomationCard = {
   tint: string
   accent: string
   enabled: boolean
+  proxyEnabled?: boolean
   // 模型白名单：声明 provider 支持的模型（精确或通配符）
   supportedModels?: Record<string, boolean>
   // 模型映射：external model -> internal model
@@ -110,5 +111,6 @@ export function createAutomationCards(data: AutomationCard[] = []): AutomationCa
   return data.map((item) => ({
     ...item,
     officialSite: item.officialSite ?? '',
+    proxyEnabled: item.proxyEnabled ?? false,
   }))
 }

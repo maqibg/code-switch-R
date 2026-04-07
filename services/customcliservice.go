@@ -26,7 +26,7 @@ type ConfigFile struct {
 	ID        string `json:"id"`
 	Label     string `json:"label"`
 	Path      string `json:"path"`
-	Format    string `json:"format"`              // json | toml | env
+	Format    string `json:"format"` // json | toml | env
 	IsPrimary bool   `json:"isPrimary,omitempty"`
 }
 
@@ -482,13 +482,11 @@ func (s *CustomCliService) GetLockedFields(toolId string) ([]string, error) {
 // ========== 内部方法 ==========
 
 func (s *CustomCliService) getStorePath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".code-switch", "custom-cli.json")
+	return filepath.Join(mustGetAppConfigDir(), "custom-cli.json")
 }
 
 func (s *CustomCliService) getProvidersDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".code-switch", "providers")
+	return filepath.Join(mustGetAppConfigDir(), "providers")
 }
 
 func (s *CustomCliService) getProvidersPath(toolId string) string {

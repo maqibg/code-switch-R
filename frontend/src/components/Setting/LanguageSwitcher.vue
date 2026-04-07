@@ -9,8 +9,9 @@
 import { ref } from 'vue'
 import { i18n, setupI18n } from '../../utils/i18n'
 import { Locale } from '../../locales'
+import { getStoredLocale } from '../../utils/frontendPreferences'
 
-const locale = ref(i18n.global.locale.value)
+const locale = ref((i18n.global.locale.value || getStoredLocale()) as Locale)
 
 const switchLang = async () => {
   await setupI18n(locale.value as Locale)

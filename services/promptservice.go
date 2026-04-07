@@ -516,12 +516,12 @@ func (s *PromptService) syncFromFile(platform, filePath string, fileModTime time
 
 // load 加载配置
 func (s *PromptService) load() error {
-	home, err := os.UserHomeDir()
+	configDir, err := getAppConfigDir()
 	if err != nil {
 		return err
 	}
 
-	configPath := filepath.Join(home, ".code-switch", "prompts.json")
+	configPath := filepath.Join(configDir, "prompts.json")
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -536,13 +536,8 @@ func (s *PromptService) load() error {
 
 // save 保存配置
 func (s *PromptService) save() error {
-	home, err := os.UserHomeDir()
+	configDir, err := ensureAppConfigDir()
 	if err != nil {
-		return err
-	}
-
-	configDir := filepath.Join(home, ".code-switch")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return err
 	}
 

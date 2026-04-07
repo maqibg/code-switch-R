@@ -3,16 +3,17 @@ import App from './App.vue'
 import './style.css'
 import { i18n, setupI18n } from './utils/i18n'
 import { initTheme } from './utils/ThemeManager'
+import { getStoredLocale, hydrateFrontendPreferences } from './utils/frontendPreferences'
 import router from './router/index'
 
-initTheme()
 const isMac = navigator.userAgent.includes('Mac')
-if (isMac) {
-  document.documentElement.classList.add('mac')
-}
-
 async function bootstrap(){
-    await setupI18n('zh')//默认语言或从后端读取
+    await hydrateFrontendPreferences()
+    initTheme()
+    if (isMac) {
+      document.documentElement.classList.add('mac')
+    }
+    await setupI18n(getStoredLocale())
     createApp(App).use(router).use(i18n).mount('#app')
 }
 bootstrap()

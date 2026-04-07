@@ -1,8 +1,9 @@
 // src/i18n.ts
 import { createI18n } from 'vue-i18n'
 import { Locale, loadLocaleMessages } from '../locales'
+import { getStoredLocale, persistFrontendPreferencesPatch, setStoredLocale } from './frontendPreferences'
 
-const defaultLocale: Locale = 'zh'
+const defaultLocale: Locale = getStoredLocale()
 export const i18n = createI18n({
   legacy: false, // 使用 Composition API
   locale: defaultLocale, // 默认语言
@@ -16,4 +17,6 @@ export async function setupI18n(locale: Locale) {
   const messages = await loadLocaleMessages(locale)
   i18n.global.setLocaleMessage(locale, messages)
   i18n.global.locale.value = locale
+  setStoredLocale(locale)
+  void persistFrontendPreferencesPatch({ locale })
 }

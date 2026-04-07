@@ -1,51 +1,40 @@
 import { Call } from '@wailsio/runtime'
 
-export type ConfigImportStatus = {
-  config_exists: boolean
-  config_path?: string
-  pending_providers: boolean
-  pending_mcp: boolean
-  pending_provider_count: number
-  pending_mcp_count: number
+export type ProjectTransferInfo = {
+  legacy_config_dir: string
+  current_config_dir: string
+  hotkey_db_path: string
 }
 
-export type ConfigImportResult = {
-  status: ConfigImportStatus
-  imported_providers: number
-  imported_mcp: number
+export type ProjectTransferResult = {
+  source_path: string
+  target_path: string
+  copied_file_count: number
+  copied_bytes: number
+  imported_request_logs: number
+  imported_health_checks: number
+  imported_blacklist_rows: number
+  imported_app_settings: number
+  imported_hotkeys: number
+  warning?: string
 }
 
-const emptyStatus: ConfigImportStatus = {
-  config_exists: false,
-  pending_providers: false,
-  pending_mcp: false,
-  pending_provider_count: 0,
-  pending_mcp_count: 0
+export const fetchProjectTransferInfo = async (): Promise<ProjectTransferInfo> => {
+  const response = await Call.ByName('codeswitch/services.ImportService.GetProjectTransferInfo')
+  return response as ProjectTransferInfo
 }
 
-export const fetchConfigImportStatus = async (): Promise<ConfigImportStatus> => {
-  const response = await Call.ByName('codeswitch/services.ImportService.GetStatus')
-  return (response as ConfigImportStatus) ?? emptyStatus
+export const importLegacyProjectDirectory = async (path: string): Promise<ProjectTransferResult> => {
+  const response = await Call.ByName('codeswitch/services.ImportService.ImportLegacyProjectDirectory', path)
+  return response as ProjectTransferResult
 }
 
-export const importFromCcSwitch = async (): Promise<ConfigImportResult> => {
-  const response = await Call.ByName('codeswitch/services.ImportService.ImportAll')
-  return response as ConfigImportResult
+export const importCurrentProjectDirectory = async (path: string): Promise<ProjectTransferResult> => {
+  const response = await Call.ByName('codeswitch/services.ImportService.ImportCurrentProjectDirectory', path)
+  return response as ProjectTransferResult
 }
 
-// 从指定路径导入配置
-export const importFromPath = async (path: string): Promise<ConfigImportResult> => {
-  const response = await Call.ByName('codeswitch/services.ImportService.ImportFromPath', path)
-  return response as ConfigImportResult
-}
-
-// 检查是否首次使用（用于显示导入提示）
-export const isFirstRun = async (): Promise<boolean> => {
-  const response = await Call.ByName('codeswitch/services.ImportService.IsFirstRun')
-  return response as boolean
-}
-
-// 标记首次使用已完成（不再显示导入提示）
-export const markFirstRunDone = async (): Promise<void> => {
-  await Call.ByName('codeswitch/services.ImportService.MarkFirstRunDone')
+export const exportCurrentProjectDirectory = async (path: string): Promise<ProjectTransferResult> => {
+  const response = await Call.ByName('codeswitch/services.ImportService.ExportCurrentProjectDirectory', path)
+  return response as ProjectTransferResult
 }

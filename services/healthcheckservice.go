@@ -66,16 +66,16 @@ type HealthCheckHistory struct {
 
 // ProviderTimeline Provider 时间线（用于前端展示）
 type ProviderTimeline struct {
-	ProviderID                 int64                `json:"providerId"`
-	ProviderName               string               `json:"providerName"`
-	Platform                   string               `json:"platform"`
-	AvailabilityMonitorEnabled bool                 `json:"availabilityMonitorEnabled"`
-	ConnectivityAutoBlacklist  bool                 `json:"connectivityAutoBlacklist"`
-	AvailabilityConfig         *AvailabilityConfig  `json:"availabilityConfig,omitempty"` // 高级配置
-	Items                      []HealthCheckResult  `json:"items"`                        // 历史记录
-	Latest                     *HealthCheckResult   `json:"latest"`                       // 最新一条
-	Uptime                     float64              `json:"uptime"`                       // 可用率
-	AvgLatencyMs               int                  `json:"avgLatencyMs"`                 // 平均延迟
+	ProviderID                 int64               `json:"providerId"`
+	ProviderName               string              `json:"providerName"`
+	Platform                   string              `json:"platform"`
+	AvailabilityMonitorEnabled bool                `json:"availabilityMonitorEnabled"`
+	ConnectivityAutoBlacklist  bool                `json:"connectivityAutoBlacklist"`
+	AvailabilityConfig         *AvailabilityConfig `json:"availabilityConfig,omitempty"` // 高级配置
+	Items                      []HealthCheckResult `json:"items"`                        // 历史记录
+	Latest                     *HealthCheckResult  `json:"latest"`                       // 最新一条
+	Uptime                     float64             `json:"uptime"`                       // 可用率
+	AvgLatencyMs               int                 `json:"avgLatencyMs"`                 // 平均延迟
 }
 
 // AvailabilityFailureCounter 可用性失败计数器（独立于真实请求）
@@ -91,18 +91,16 @@ type HealthCheckService struct {
 	providerService  *ProviderService
 	blacklistService *BlacklistService
 	settingsService  *SettingsService
+	appSettings      *AppSettingsService
 
 	mu            sync.RWMutex
-	failCounters  map[string]*AvailabilityFailureCounter // key: platform:providerName
+	failCounters  map[string]*AvailabilityFailureCounter  // key: platform:providerName
 	latestResults map[string]map[int64]*HealthCheckResult // platform -> providerID -> result
 
 	// 后台轮询
 	running      bool
 	stopChan     chan struct{}
 	pollInterval time.Duration
-
-	// HTTP 客户端（带连接池）
-	client *http.Client
 }
 
 // NewHealthCheckService 创建健康检查服务
@@ -110,11 +108,13 @@ func NewHealthCheckService(
 	providerService *ProviderService,
 	blacklistService *BlacklistService,
 	settingsService *SettingsService,
+	appSettings *AppSettingsService,
 ) *HealthCheckService {
 	return &HealthCheckService{
 		providerService:  providerService,
 		blacklistService: blacklistService,
 		settingsService:  settingsService,
+		appSettings:      appSettings,
 		failCounters:     make(map[string]*AvailabilityFailureCounter),
 		latestResults: map[string]map[int64]*HealthCheckResult{
 			"claude": {},
@@ -122,16 +122,6 @@ func NewHealthCheckService(
 			"gemini": {},
 		},
 		pollInterval: time.Duration(DefaultPollIntervalSeconds) * time.Second,
-		client: &http.Client{
-			// 由每次请求的 context 控制超时，避免固定值截断自定义配置
-			Timeout: 0,
-			Transport: &http.Transport{
-				MaxIdleConns:        20,
-				IdleConnTimeout:     30 * time.Second,
-				DisableCompression:  true,
-				MaxIdleConnsPerHost: 5,
-			},
-		},
 	}
 }
 
@@ -548,52 +538,65 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 	}
 	targetURL := baseURL + endpoint
 
-	// 创建 HTTP 请求
-	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(reqBody))
-	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("创建请求失败: %v", err)
-		return result
-	}
-
-	// 设置 Headers
-	req.Header.Set("Content-Type", "application/json")
-	if provider.APIKey != "" {
-		// 根据认证方式设置请求头
-		authTypeRaw := strings.TrimSpace(provider.ConnectivityAuthType)
-		authType := strings.ToLower(authTypeRaw)
-		if authType == "" {
-			// 空值时使用平台默认（claude: x-api-key, codex: bearer）
-			if strings.ToLower(platform) == "claude" {
-				authType = "x-api-key"
-			} else {
-				authType = "bearer"
-			}
-		}
-		switch authType {
-		case "x-api-key":
-			req.Header.Set("x-api-key", provider.APIKey)
-			req.Header.Set("anthropic-version", "2023-06-01")
-		case "bearer":
-			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-		default:
-			// 自定义 Header 名
-			headerName := authTypeRaw
-			if headerName == "" || strings.EqualFold(headerName, "custom") {
-				headerName = "Authorization"
-			}
-			req.Header.Set(headerName, provider.APIKey)
-		}
-	}
-
 	// 发送请求并计时
 	start := time.Now()
+	proxyConfig := ProxyConfig{}
+	var err error
+	if provider.ProxyEnabled {
+		if hcs.appSettings == nil {
+			result.ErrorMessage = "代理配置服务未初始化"
+			return result
+		}
+		proxyConfig, err = hcs.appSettings.GetProviderProxyConfig(true)
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("读取代理配置失败: %v", err)
+			return result
+		}
+	}
+	requestFactory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(reqBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if provider.APIKey != "" {
+			authTypeRaw := strings.TrimSpace(provider.ConnectivityAuthType)
+			authType := strings.ToLower(authTypeRaw)
+			if authType == "" {
+				if strings.ToLower(platform) == "claude" {
+					authType = "x-api-key"
+				} else {
+					authType = "bearer"
+				}
+			}
+			switch authType {
+			case "x-api-key":
+				req.Header.Set("x-api-key", provider.APIKey)
+				req.Header.Set("anthropic-version", "2023-06-01")
+			case "bearer":
+				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			default:
+				headerName := authTypeRaw
+				if headerName == "" || strings.EqualFold(headerName, "custom") {
+					headerName = "Authorization"
+				}
+				req.Header.Set(headerName, provider.APIKey)
+			}
+		}
+		return req, nil
+	}
 
-	// 使用 per-request context 控制超时（复用服务级客户端）
-	reqCtx, cancelReq := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
-	defer cancelReq()
-	req = req.WithContext(reqCtx)
-
-	resp, err := hcs.client.Do(req)
+	resp, usedProxyConfig, err := doProxyAwareRequest(
+		time.Duration(timeout)*time.Millisecond,
+		&http.Transport{
+			MaxIdleConns:        20,
+			IdleConnTimeout:     30 * time.Second,
+			DisableCompression:  true,
+			MaxIdleConnsPerHost: 5,
+		},
+		proxyConfig,
+		requestFactory,
+	)
 	latencyMs := int(time.Since(start).Milliseconds())
 	result.LatencyMs = latencyMs
 
@@ -606,7 +609,11 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 				platform, provider.Name, latencyMs, timeout)
 			return result
 		}
-		result.ErrorMessage = fmt.Sprintf("网络错误: %v", err)
+		message := describeProxyTransportError(err, usedProxyConfig)
+		if !provider.ProxyEnabled {
+			message = fmt.Sprintf("网络错误: %s", message)
+		}
+		result.ErrorMessage = message
 		log.Printf("[HealthCheck] [%s/%s] 网络错误: %v", platform, provider.Name, err)
 		return result
 	}
@@ -719,13 +726,15 @@ func (hcs *HealthCheckService) getEffectiveTimeout(provider *Provider) int {
 
 // buildTestRequest 构建测试请求体
 func (hcs *HealthCheckService) buildTestRequest(platform, model string) []byte {
+	prompt := buildSimpleMathPrompt()
+
 	// Anthropic 格式
 	if platform == "claude" {
 		reqBody := map[string]interface{}{
 			"model":      model,
 			"max_tokens": 1,
 			"messages": []map[string]string{
-				{"role": "user", "content": "hi"},
+				{"role": "user", "content": prompt},
 			},
 		}
 		data, _ := json.Marshal(reqBody)
@@ -737,7 +746,7 @@ func (hcs *HealthCheckService) buildTestRequest(platform, model string) []byte {
 		"model":      model,
 		"max_tokens": 1,
 		"messages": []map[string]string{
-			{"role": "user", "content": "hi"},
+			{"role": "user", "content": prompt},
 		},
 	}
 	data, _ := json.Marshal(reqBody)

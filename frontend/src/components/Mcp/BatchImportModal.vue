@@ -98,6 +98,7 @@ import BaseTextarea from '../common/BaseTextarea.vue'
 import {
   parseMcpJSON,
   importMcpServers,
+  type McpPlatform,
   type McpServer,
   type ConflictStrategy,
 } from '../../services/mcp'
@@ -111,6 +112,7 @@ interface ParsedServerItem {
 
 const props = defineProps<{
   open: boolean
+  currentPlatform: McpPlatform
 }>()
 
 const emit = defineEmits<{
@@ -119,6 +121,11 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const normalizeToCurrentPlatform = (server: McpServer): McpServer => ({
+  ...server,
+  enable_platform: [props.currentPlatform],
+})
 
 const step = ref<'input' | 'review'>('input')
 const jsonInput = ref('')
@@ -181,7 +188,7 @@ const parseJson = async () => {
   parsing.value = true
 
   try {
-    const result = await parseMcpJSON(jsonInput.value)
+    const result = await parseMcpJSON(props.currentPlatform, jsonInput.value)
     if (!result || result.servers.length === 0) {
       error.value = t('components.mcp.import.noServers')
       return
@@ -198,7 +205,7 @@ const parseJson = async () => {
     parsedServers.value = result.servers.map((server) => {
       const isConflict = conflictSet.has(server.name.toLowerCase())
       return {
-        data: server,
+        data: normalizeToCurrentPlatform(server),
         selected: !isConflict,
         isConflict,
       }
@@ -218,7 +225,7 @@ const doImport = async () => {
 
   importing.value = true
   try {
-    const count = await importMcpServers(selected, conflictStrategy.value)
+    const count = await importMcpServers(props.currentPlatform, selected, conflictStrategy.value)
     if (count === 0) {
       showToast(t('components.mcp.import.allSkipped'), 'warning')
     } else {

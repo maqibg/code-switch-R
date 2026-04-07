@@ -44,6 +44,16 @@
           </select>
         </label>
         <label class="filter-field">
+          <span>{{ t('components.logs.filters.range') }}</span>
+          <select v-model="filters.range" class="mac-select">
+            <option value="today">{{ t('components.logs.ranges.today') }}</option>
+            <option value="7d">{{ t('components.logs.ranges.last7Days') }}</option>
+            <option value="30d">{{ t('components.logs.ranges.last30Days') }}</option>
+            <option value="month">{{ t('components.logs.ranges.thisMonth') }}</option>
+            <option value="all">{{ t('components.logs.ranges.allTime') }}</option>
+          </select>
+        </label>
+        <label class="filter-field">
           <span>{{ t('components.logs.filters.provider') }}</span>
           <select v-model="filters.provider" class="mac-select">
             <option value="">{{ t('components.logs.filters.allProviders') }}</option>
@@ -188,6 +198,7 @@ import {
   type LogStatsSeries,
   type LogPlatform,
   type ProviderDailyStat,
+  type StatsRange,
 } from '../../services/logs'
 import {
   Chart,
@@ -209,7 +220,11 @@ const router = useRouter()
 const logs = ref<RequestLog[]>([])
 const stats = ref<LogStats | null>(null)
 const loading = ref(false)
-const filters = reactive<{ platform: LogPlatform | ''; provider: string }>({ platform: '', provider: '' })
+const filters = reactive<{ platform: LogPlatform | ''; provider: string; range: StatsRange }>({
+  platform: '',
+  provider: '',
+  range: 'today',
+})
 const page = ref(1)
 const PAGE_SIZE = 15
 const providerOptions = ref<string[]>([])
@@ -240,7 +255,7 @@ const openCostDetailModal = async () => {
   costDetailModal.data = []
 
   try {
-    const stats = await fetchProviderDailyStats(filters.platform)
+    const stats = await fetchProviderDailyStats(filters.platform, filters.range)
     // 按金额降序排序，过滤掉金额为 0 的
     costDetailModal.data = (stats ?? [])
       .filter(item => item.cost_total > 0)
@@ -463,6 +478,7 @@ const loadLogs = async () => {
       platform: filters.platform,
       provider: filters.provider,
       limit: 200,
+      range: filters.range === 'all' ? '' : filters.range,
     })
     logs.value = data ?? []
     page.value = Math.min(page.value, totalPages.value)
@@ -475,7 +491,7 @@ const loadLogs = async () => {
 
 const loadStats = async () => {
   try {
-    const data = await fetchLogStats(filters.platform)
+    const data = await fetchLogStats(filters.platform, filters.range)
     stats.value = data ?? null
   } catch (error) {
     console.error('failed to load log stats', error)
@@ -614,15 +630,9 @@ const formatCurrency = (value?: number) => {
   return `$${value.toFixed(4)}`
 }
 
-const startOfTodayLocal = () => {
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  return now
-}
-
 const statsCards = computed(() => {
   const data = stats.value
-  const summaryDate = summaryDateLabel.value
+  const summaryLabel = rangeLabel.value
   const totalTokens =
     (data?.input_tokens ?? 0) + (data?.output_tokens ?? 0) + (data?.reasoning_tokens ?? 0)
   return [
@@ -648,17 +658,21 @@ const statsCards = computed(() => {
     {
       key: 'cost',
       label: t('components.logs.tokenLabels.cost'),
-      hint: summaryDate ? t('components.logs.summary.todayScope', { date: summaryDate }) : '',
+      hint: summaryLabel ? t('components.logs.summary.rangeScope', { range: summaryLabel }) : '',
       value: formatCurrency(data?.cost_total ?? 0),
     },
   ]
 })
 
-const summaryDateLabel = computed(() => {
-  const firstBucket = statsSeries.value.find((item) => item.day)
-  const parsed = parseLogDate(firstBucket?.day ?? '')
-  const date = parsed ?? startOfTodayLocal()
-  return `${date.getFullYear()}-${padHour(date.getMonth() + 1)}-${padHour(date.getDate())}`
+const rangeLabel = computed(() => {
+  const mapping: Record<StatsRange, string> = {
+    today: t('components.logs.ranges.today'),
+    '7d': t('components.logs.ranges.last7Days'),
+    '30d': t('components.logs.ranges.last30Days'),
+    month: t('components.logs.ranges.thisMonth'),
+    all: t('components.logs.ranges.allTime'),
+  }
+  return mapping[filters.range]
 })
 
 const loadProviderOptions = async () => {

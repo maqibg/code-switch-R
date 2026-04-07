@@ -69,14 +69,14 @@ type CLIConfigFile struct {
 
 // CLIConfig CLI 配置数据
 type CLIConfig struct {
-	Platform     CLIPlatform               `json:"platform"`
-	Fields       []CLIConfigField          `json:"fields"`
-	RawContent   string                    `json:"rawContent,omitempty"`   // 原始文件内容（用于高级编辑）
-	RawFiles     []CLIConfigFile           `json:"rawFiles,omitempty"`     // 多文件内容预览
-	ConfigFormat string                    `json:"configFormat,omitempty"` // "json" 或 "toml"
-	EnvContent   map[string]string         `json:"envContent,omitempty"`   // Gemini .env 内容
-	FilePath     string                    `json:"filePath,omitempty"`     // 配置文件路径
-	Editable     map[string]interface{}    `json:"editable,omitempty"`     // 可编辑字段的当前值
+	Platform     CLIPlatform            `json:"platform"`
+	Fields       []CLIConfigField       `json:"fields"`
+	RawContent   string                 `json:"rawContent,omitempty"`   // 原始文件内容（用于高级编辑）
+	RawFiles     []CLIConfigFile        `json:"rawFiles,omitempty"`     // 多文件内容预览
+	ConfigFormat string                 `json:"configFormat,omitempty"` // "json" 或 "toml"
+	EnvContent   map[string]string      `json:"envContent,omitempty"`   // Gemini .env 内容
+	FilePath     string                 `json:"filePath,omitempty"`     // 配置文件路径
+	Editable     map[string]interface{} `json:"editable,omitempty"`     // 可编辑字段的当前值
 }
 
 // CLIConfigSnapshots CLI 配置快照（用于前端对比：当前 vs 预览）
@@ -101,7 +101,7 @@ type CLITemplates struct {
 
 // getTemplatesPath 获取模板存储路径
 func (s *CliConfigService) getTemplatesPath() string {
-	return filepath.Join(s.homeDir, ".code-switch", "cli-templates.json")
+	return filepath.Join(mustGetAppConfigDir(), "cli-templates.json")
 }
 
 // GetConfig 获取指定平台的 CLI 配置

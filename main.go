@@ -32,6 +32,12 @@ type AppService struct {
 	TrayWindow application.Window
 }
 
+func defaultWindowsWindowTheme() application.WindowsWindow {
+	return application.WindowsWindow{
+		Theme: application.Dark,
+	}
+}
+
 func (a *AppService) SetApp(app *application.App) {
 	a.App = app
 }
@@ -67,6 +73,7 @@ func (a *AppService) OpenSecondWindow() {
 			TitleBar:                application.MacTitleBarHidden,
 			Backdrop:                application.MacBackdropTransparent,
 		},
+		Windows:          defaultWindowsWindowTheme(),
 		BackgroundColour: application.NewRGB(27, 38, 54),
 		URL:              "/#/logs",
 	})
@@ -78,6 +85,9 @@ func (a *AppService) OpenSecondWindow() {
 // logs any error that might occur.
 func main() {
 	appservice := &AppService{}
+	var mainWindow application.Window
+	var focusMainWindow func()
+	var showMainWindow func(bool)
 
 	// 【修复】第一步：初始化数据库（必须最先执行）
 	// 解决问题：InitGlobalDBQueue 依赖 xdb.DB("default")，但 xdb.Inits() 在 NewProviderRelayService 中
@@ -111,14 +121,14 @@ func main() {
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
 	logService := services.NewLogService()
 	mcpService := services.NewMCPService()
-	skillService := services.NewSkillService()
+	skillService := services.NewSkillService(appSettings)
 	promptService := services.NewPromptService()
 	envCheckService := services.NewEnvCheckService()
 	importService := services.NewImportService(providerService, mcpService)
 	deeplinkService := services.NewDeepLinkService(providerService)
 	speedTestService := services.NewSpeedTestService()
-	connectivityTestService := services.NewConnectivityTestService(providerService, blacklistService, settingsService)
-	healthCheckService := services.NewHealthCheckService(providerService, blacklistService, settingsService)
+	connectivityTestService := services.NewConnectivityTestService(providerService, blacklistService, settingsService, appSettings)
+	healthCheckService := services.NewHealthCheckService(providerService, blacklistService, settingsService, appSettings)
 	// 初始化健康检查数据库表
 	if err := healthCheckService.Start(); err != nil {
 		log.Fatalf("初始化健康检查服务失败: %v", err)
@@ -129,6 +139,7 @@ func main() {
 	consoleService := services.NewConsoleService()
 	customCliService := services.NewCustomCliService(providerRelay.Addr())
 	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService)
+	frontendPreferencesService := services.NewFrontendPreferencesService()
 
 	go func() {
 		if err := providerRelay.Start(); err != nil {
@@ -185,8 +196,29 @@ func main() {
 	// 'Bind' is a list of Go struct instances. The frontend has access to the methods of these instances.
 	// 'Mac' options tailor the application when running an macOS.
 	app := application.New(application.Options{
-		Name:        "AI Code Studio",
-		Description: "Claude Code and Codex provier manager",
+		Name:        "code-switch-R",
+		Description: "code-switch-R desktop relay controller",
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.rogers-f.code-switch-r",
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				log.Printf("检测到第二个实例启动，参数=%v，工作目录=%s", data.Args, data.WorkingDir)
+				if showMainWindow != nil {
+					showMainWindow(true)
+					return
+				}
+				if mainWindow != nil {
+					if mainWindow.IsMinimised() {
+						mainWindow.UnMinimise()
+					}
+					mainWindow.Show()
+					if focusMainWindow != nil {
+						focusMainWindow()
+					} else {
+						mainWindow.Focus()
+					}
+				}
+			},
+		},
 		Services: []application.Service{
 			application.NewService(appservice),
 			application.NewService(suiService),
@@ -214,6 +246,7 @@ func main() {
 			application.NewService(consoleService),
 			application.NewService(customCliService),
 			application.NewService(networkService),
+			application.NewService(frontendPreferencesService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -264,8 +297,8 @@ func main() {
 	// 'Mac' options tailor the window when running on macOS.
 	// 'BackgroundColour' is the background colour of the window.
 	// 'URL' is the URL that will be loaded into the webview.
-	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     "Code Switch R",
+	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:     "code-switch-R",
 		Width:     1400,
 		Height:    1040,
 		MinWidth:  600,
@@ -275,11 +308,12 @@ func main() {
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
+		Windows:          defaultWindowsWindowTheme(),
 		BackgroundColour: application.NewRGB(27, 38, 54),
 		URL:              "/",
 	})
 	var mainWindowCentered bool
-	focusMainWindow := func() {
+	focusMainWindow = func() {
 		if runtime.GOOS == "windows" {
 			mainWindow.SetAlwaysOnTop(true)
 			mainWindow.Focus()
@@ -291,7 +325,7 @@ func main() {
 		}
 		mainWindow.Focus()
 	}
-	showMainWindow := func(withFocus bool) {
+	showMainWindow = func(withFocus bool) {
 		if !mainWindowCentered {
 			mainWindow.Center()
 			mainWindowCentered = true
@@ -334,25 +368,25 @@ func main() {
 
 	if runtime.GOOS == "darwin" {
 		trayWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
-			Title:       "Code Switch Tray",
-			Name:        "tray",
-			Width:       trayWindowWidth,
-			Height:      trayWindowMinHeight,
-			MinWidth:    trayWindowWidth,
-			MaxWidth:    trayWindowWidth,
-			MinHeight:   trayWindowMinHeight,
-			MaxHeight:   trayWindowMaxHeight,
-			AlwaysOnTop: true,
-			DisableResize: true,
-			Frameless:     true,
-			Hidden:        true,
-			BackgroundType: application.BackgroundTypeTransparent,
+			Title:            "code-switch-R tray",
+			Name:             "tray",
+			Width:            trayWindowWidth,
+			Height:           trayWindowMinHeight,
+			MinWidth:         trayWindowWidth,
+			MaxWidth:         trayWindowWidth,
+			MinHeight:        trayWindowMinHeight,
+			MaxHeight:        trayWindowMaxHeight,
+			AlwaysOnTop:      true,
+			DisableResize:    true,
+			Frameless:        true,
+			Hidden:           true,
+			BackgroundType:   application.BackgroundTypeTransparent,
 			BackgroundColour: application.NewRGBA(0, 0, 0, 0),
 			Mac: application.MacWindow{
-				Backdrop:     application.MacBackdropTransparent,
-				TitleBar:     application.MacTitleBarHidden,
+				Backdrop:      application.MacBackdropTransparent,
+				TitleBar:      application.MacTitleBarHidden,
 				DisableShadow: true,
-				WindowLevel:  application.MacWindowLevelPopUpMenu,
+				WindowLevel:   application.MacWindowLevelPopUpMenu,
 			},
 			URL: "/#/tray",
 		})
@@ -365,7 +399,7 @@ func main() {
 
 	systray := app.SystemTray.New()
 	// systray.SetLabel("AI Code Studio")
-	systray.SetTooltip("AI Code Studio")
+	systray.SetTooltip("code-switch-R")
 	if lightIcon := loadTrayIcon("assets/icon.png"); len(lightIcon) > 0 {
 		systray.SetIcon(lightIcon)
 	}
@@ -454,9 +488,9 @@ func handleDockVisibility(service *dock.DockService, show bool) {
 }
 
 const (
-	trayWindowWidth     = 360
-	trayWindowMinHeight = 120
-	trayWindowMaxHeight = 420
+	trayWindowWidth      = 360
+	trayWindowMinHeight  = 120
+	trayWindowMaxHeight  = 420
 	trayProgressBarWidth = 28
 )
 
@@ -536,4 +570,3 @@ func trayProgressLabel(used float64, total float64) string {
 func formatCurrency(value float64) string {
 	return fmt.Sprintf("$%.2f", value)
 }
-

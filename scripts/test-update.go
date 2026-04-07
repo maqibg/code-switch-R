@@ -29,7 +29,7 @@ func main() {
 	}
 
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "CodeSwitch-Test")
+	req.Header.Set("User-Agent", "code-switch-R-test")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -55,10 +55,10 @@ func main() {
 
 	// 检查必需的文件是否存在
 	requiredFiles := []string{
-		"CodeSwitch-amd64-installer.exe", // Windows安装器
-		"CodeSwitch.exe",                  // Windows便携版
-		"codeswitch-macos-arm64.zip",      // macOS ARM
-		"codeswitch-macos-amd64.zip",      // macOS Intel
+		"code-switch-R-amd64-installer.exe", // Windows安装器
+		"code-switch-R.exe",                 // Windows便携版
+		"code-switch-R-macos-arm64.zip",     // macOS ARM
+		"code-switch-R-macos-amd64.zip",     // macOS Intel
 	}
 
 	fmt.Printf("\n🔍 检查必需文件:\n")

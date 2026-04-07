@@ -11,7 +11,6 @@ if command -v gtk-update-icon-cache &> /dev/null; then
     gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 fi
 
-# 创建小写别名（方便命令行调用）
-ln -sf /usr/local/bin/CodeSwitch /usr/local/bin/codeswitch 2>/dev/null || true
+# code-switch-R 已使用最终命令名，无需额外别名
 
-echo "Code-Switch 安装完成"
+echo "code-switch-R 安装完成"

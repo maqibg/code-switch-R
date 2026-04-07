@@ -456,8 +456,7 @@ func TestProvider_ValidateConfiguration(t *testing.T) {
 					"external": "internal",
 				},
 			},
-			expectErrors:  true,
-			errorContains: "未配置 supportedModels",
+			expectErrors: false,
 		},
 
 		// 警告：自映射
@@ -472,8 +471,7 @@ func TestProvider_ValidateConfiguration(t *testing.T) {
 					"model-a": "model-a",
 				},
 			},
-			expectErrors:  true,
-			errorContains: "映射到自身",
+			expectErrors: false,
 		},
 
 		// 通配符映射（不验证）
@@ -532,7 +530,7 @@ func TestProviderLevelGrouping(t *testing.T) {
 			name: "默认 Level（未设置）",
 			providers: []Provider{
 				{ID: 1, Name: "Provider-A", Level: 0}, // 0 应默认为 1
-				{ID: 2, Name: "Provider-B"},            // 未设置应默认为 1
+				{ID: 2, Name: "Provider-B"},           // 未设置应默认为 1
 			},
 			expected: map[int][]string{
 				1: {"Provider-A", "Provider-B"},
@@ -719,6 +717,54 @@ func TestProviderLevelJSON(t *testing.T) {
 				if !containsString(jsonStr, tt.expected) {
 					t.Errorf("期望 JSON 包含 %q，但实际是: %s", tt.expected, jsonStr)
 				}
+			}
+		})
+	}
+}
+
+func TestProviderProxyEnabledJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider Provider
+		expected string
+	}{
+		{
+			name: "ProxyEnabled 开启时序列化",
+			provider: Provider{
+				ID:           1,
+				Name:         "Test",
+				ProxyEnabled: true,
+			},
+			expected: `"proxyEnabled":true`,
+		},
+		{
+			name: "ProxyEnabled 关闭时省略",
+			provider: Provider{
+				ID:           1,
+				Name:         "Test",
+				ProxyEnabled: false,
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.provider)
+			if err != nil {
+				t.Fatalf("JSON 序列化失败: %v", err)
+			}
+
+			jsonStr := string(data)
+			if tt.expected == "" {
+				if containsString(jsonStr, `"proxyEnabled"`) {
+					t.Errorf("期望 proxyEnabled 字段被 omit，但在 JSON 中找到: %s", jsonStr)
+				}
+				return
+			}
+
+			if !containsString(jsonStr, tt.expected) {
+				t.Errorf("期望 JSON 包含 %q，但实际是: %s", tt.expected, jsonStr)
 			}
 		})
 	}

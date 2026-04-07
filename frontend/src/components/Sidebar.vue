@@ -3,6 +3,13 @@ import { computed, ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { fetchCurrentVersion } from '../services/version'
+import {
+  getStoredSidebarCollapsed,
+  getStoredVisitedPages,
+  persistFrontendPreferencesPatch,
+  setStoredSidebarCollapsed,
+  setStoredVisitedPages,
+} from '../utils/frontendPreferences'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,26 +26,12 @@ onMounted(async () => {
 })
 
 // 侧边栏收起状态
-const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
-const VISITED_PAGES_KEY = 'visited-pages'
 const isCollapsed = ref(false)
 const visitedPages = ref<Set<string>>(new Set())
 
 onMounted(() => {
-  // 加载侧边栏状态
-  const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
-  if (saved !== null) {
-    isCollapsed.value = saved === 'true'
-  }
-  // 加载已访问页面
-  const visitedJson = localStorage.getItem(VISITED_PAGES_KEY)
-  if (visitedJson) {
-    try {
-      visitedPages.value = new Set(JSON.parse(visitedJson))
-    } catch {
-      visitedPages.value = new Set()
-    }
-  }
+  isCollapsed.value = getStoredSidebarCollapsed()
+  visitedPages.value = new Set(getStoredVisitedPages())
   // 标记当前页面为已访问
   markAsVisited(route.path)
 })
@@ -51,7 +44,9 @@ watch(() => route.path, (newPath) => {
 function markAsVisited(path: string) {
   if (!visitedPages.value.has(path)) {
     visitedPages.value.add(path)
-    localStorage.setItem(VISITED_PAGES_KEY, JSON.stringify([...visitedPages.value]))
+    const pages = [...visitedPages.value]
+    setStoredVisitedPages(pages)
+    void persistFrontendPreferencesPatch({ visited_pages: pages })
   }
 }
 
@@ -62,7 +57,8 @@ function shouldShowNew(item: NavItem): boolean {
 
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
-  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed.value))
+  setStoredSidebarCollapsed(isCollapsed.value)
+  void persistFrontendPreferencesPatch({ sidebar_collapsed: isCollapsed.value })
 }
 
 interface NavItem {
@@ -74,6 +70,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/', icon: 'home', labelKey: 'sidebar.home' },
+  { path: '/stats', icon: 'pie-chart', labelKey: 'sidebar.stats' },
   { path: '/prompts', icon: 'file-text', labelKey: 'sidebar.prompts', isNew: true },
   { path: '/mcp', icon: 'plug', labelKey: 'sidebar.mcp' },
   { path: '/skill', icon: 'tool', labelKey: 'sidebar.skill' },
@@ -95,7 +92,7 @@ const navigate = (path: string) => {
 <template>
   <nav class="mac-sidebar" :class="{ collapsed: isCollapsed }">
     <div class="sidebar-header">
-      <span class="sidebar-title" v-if="!isCollapsed">Code Switch R</span>
+      <span class="sidebar-title" v-if="!isCollapsed">code-switch-R</span>
       <button class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? 'Expand' : 'Collapse'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline v-if="isCollapsed" points="9 18 15 12 9 6"></polyline>
@@ -126,6 +123,12 @@ const navigate = (path: string) => {
           <line x1="16" y1="13" x2="8" y2="13"></line>
           <line x1="16" y1="17" x2="8" y2="17"></line>
           <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+
+        <!-- Pie Chart -->
+        <svg v-else-if="item.icon === 'pie-chart'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.21 15.89A10 10 0 1 1 8.11 2.79"></path>
+          <path d="M12 2v10h10"></path>
         </svg>
 
         <!-- Plug -->

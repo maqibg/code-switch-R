@@ -10,12 +10,10 @@ import (
 // providerFilePathNoCreate 返回 provider 配置文件路径（不创建目录）
 // 用于只读操作场景，避免副作用
 func providerFilePathNoCreate(kind string) (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := getAppConfigDir()
 	if err != nil {
 		return "", err
 	}
-
-	dir := filepath.Join(home, ".code-switch")
 	var filename string
 
 	switch strings.ToLower(kind) {

@@ -60,6 +60,7 @@
   },
   "sidebar": {
     "home": "首页",
+    "stats": "统计",
     "prompts": "提示词",
     "mcp": "MCP",
     "skill": "技能",
@@ -70,6 +71,82 @@
     "logs": "日志",
     "console": "控制台",
     "settings": "设置"
+  },
+  "stats": {
+    "hero": {
+      "eyebrow": "运营统计",
+      "title": "统一统计面板",
+      "lead": "把请求量、成本、模型分布和实时状态放到一个页面里，直接复用现有日志与监控数据。"
+    },
+    "refresh": "刷新",
+    "refreshing": "刷新中...",
+    "nextRefresh": "{seconds}s 后自动刷新",
+    "lastUpdated": "最近更新 {time}",
+    "error": "统计加载失败：{message}",
+    "empty": "暂无统计数据",
+    "rangeBar": {
+      "kicker": "时间范围",
+      "hint": "范围切换时保留当前内容，只更新当前视图所需的数据。",
+      "loading": "正在切换统计范围..."
+    },
+    "ranges": {
+      "today": "今日",
+      "last7Days": "过去7天",
+      "last30Days": "过去30天",
+      "thisMonth": "本月",
+      "allTime": "总计"
+    },
+    "labels": {
+      "requests": "请求",
+      "tokens": "Tokens"
+    },
+    "platforms": {
+      "claude": "Claude Code",
+      "codex": "Codex",
+      "gemini": "Gemini"
+    },
+    "cards": {
+      "requests": "今日请求",
+      "tokens": "今日 Tokens",
+      "cost": "今日花费",
+      "latency": "平均延迟",
+      "successRate": "成功率 {value}",
+      "monitoredProviders": "监控中 {value} 家供应商",
+      "failedProviders": "故障 {value} 家供应商",
+      "degradedProviders": "波动 {value} 家供应商",
+      "vsYesterday": "较昨日同期 {value}",
+      "vsPrevious": "较上一周期 {value}",
+      "newValue": "较昨日新增",
+      "noCompare": "暂无对比"
+    },
+    "chart": {
+      "title": "24 小时趋势",
+      "subtitle": "按小时聚合请求、Tokens 和花费，避免重复生成统计文件。",
+      "requests": "请求",
+      "tokens": "Tokens",
+      "cost": "花费"
+    },
+    "providers": {
+      "title": "供应商排行",
+      "subtitle": "按今日请求量排序，并展示成功率、Tokens 与成本。"
+    },
+    "models": {
+      "title": "模型排行",
+      "subtitle": "按今日请求量排序，直接来自真实请求日志。"
+    },
+    "status": {
+      "title": "实时状态",
+      "subtitle": "来自可用性监控结果，不额外维护第二份状态数据。",
+      "operational": "正常",
+      "degraded": "波动",
+      "failed": "故障",
+      "disabled": "未监控",
+      "empty": "暂无监控中的供应商"
+    },
+    "activity": {
+      "title": "最近活动",
+      "subtitle": "最近几条真实请求，方便快速查看异常链路。"
+    }
   },
   "availability": {
     "title": "可用性监控",
@@ -305,19 +382,7 @@
         "mcp": "打开 MCP 面板",
         "skill": "打开 Skill 列表",
         "gemini": "打开 Gemini CLI 管理",
-        "import": "导入 cc-switch 配置",
         "duplicate": "复制供应商"
-      },
-      "importConfig": {
-        "tooltip": "导入 {providers} 个供应商 · {servers} 个 MCP 服务器",
-        "success": "已导入 {providers} 个供应商与 {servers} 个 MCP 服务器",
-        "empty": "cc-switch 中的供应商与 MCP 均已同步",
-        "error": "导入 cc-switch 配置失败"
-      },
-      "firstRun": {
-        "message": "欢迎使用 Code Switch R！如果你有 cc-switch 的配置，可以前往设置页导入。",
-        "goToSettings": "前往设置",
-        "dismiss": "稍后"
       },
       "providers": {
         "requests": "请求数",
@@ -348,6 +413,7 @@
           "officialSite": "官网地址",
           "icon": "图标",
           "enabled": "启用状态",
+          "providerProxy": "使用代理",
           "level": "优先级分组",
           "availabilityMonitor": "可用性监控",
           "connectivityAutoBlacklist": "失败自动拉黑",
@@ -379,6 +445,7 @@
           "level": "数字越小优先级越高，Level 1 会被优先尝试，失败后依次尝试 Level 2、Level 3 等",
           "apiEndpoint": "覆盖平台默认端点。留空使用默认（claude: /v1/messages, codex: /responses）。GLM 模型请使用 /v1/chat/completions",
           "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 openai_chat 时自动转换请求和响应格式",
+          "providerProxy": "开启后，此供应商的真实请求、可用性检测和连通性测试都会使用通用设置中的代理配置",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
           "connectivityAutoBlacklist": "健康检查失败时自动拉黑该供应商",
           "availabilityAdvancedConfig": "高级配置（测试模型、端点、超时）可在可用性页面中编辑",
@@ -395,13 +462,13 @@
           "save": "保存",
           "saveAndApply": "保存并应用",
           "delete": "删除",
-          "testConnectivity": "测试连通性",
+          "testConnectivity": "延迟检查",
           "testing": "测试中..."
         },
         "connectivity": {
-          "success": "连接成功（延迟: {latency}ms）",
-          "failed": "连接失败",
-          "error": "测试出错: {error}"
+          "success": "延迟 {latency}ms",
+          "failed": "延迟检查失败",
+          "error": "延迟检查出错: {error}"
         },
         "switch": {
           "on": "已启用",
@@ -490,11 +557,19 @@
       "lastUpdated": "最近更新：{time}",
       "filters": {
         "platform": "平台",
+        "range": "范围",
         "allPlatforms": "全部平台",
         "provider": "供应商",
         "allProviders": "全部供应商",
         "providerPlaceholder": "输入供应商名称",
         "limit": "条数上限"
+      },
+      "ranges": {
+        "today": "今日",
+        "last7Days": "过去7天",
+        "last30Days": "过去30天",
+        "thisMonth": "本月",
+        "allTime": "总计"
       },
       "tabs": {
         "all": "全部日志",
@@ -510,7 +585,8 @@
         "cache": "缓存命中",
         "cacheHint": "响应中的读取命中数",
         "costHint": "近 24 小时总花费",
-        "todayScope": "今日 · {date}"
+        "todayScope": "今日 · {date}",
+        "rangeScope": "{range} · 聚合范围"
       },
       "table": {
         "time": "时间",
@@ -551,8 +627,10 @@
         "trayPanel": "托盘弹窗",
         "exterior": "外观设置",
         "blacklist": "拉黑配置",
-        "dataImport": "数据导入",
-        "connectivity": "连通性检测"
+        "dataImport": "数据迁移与备份",
+        "connectivity": "连通性检测",
+        "proxy": "代理设置",
+        "records": "记录管理"
       },
       "label": {
         "assistant_access": "辅助功能访问权限",
@@ -606,6 +684,12 @@
         "next_up": "下次启动自动检查更新",
         "autoConnectivityTest": "自动可用性监控",
         "autoConnectivityTestHint": "启用后会每分钟自动检测已启用监控的供应商可用性",
+        "globalProxyEnabled": "技能页代理开关",
+        "globalProxyEnabledHint": "开启后技能页面中需要联网的功能会使用这里的代理配置；供应商请求是否走代理由供应商表单单独控制",
+        "globalProxyProtocol": "代理协议",
+        "globalProxyHost": "代理主机",
+        "globalProxyPort": "代理端口",
+        "globalProxyTest": "代理连通性测试",
         "blacklistThreshold": "失败次数阈值",
         "blacklistDuration": "拉黑时长",
         "saveBlacklist": "保存配置",
@@ -618,6 +702,74 @@
         "save": "保存",
         "saving": "保存中..."
       },
+      "proxy": {
+        "protocolHttp": "HTTP",
+        "protocolHttps": "HTTPS",
+        "protocolSocks5": "SOCKS5",
+        "testButton": "测试代理",
+        "testing": "测试中...",
+        "testFailed": "代理测试失败",
+        "testError": "代理测试出错: {error}",
+        "scopeHint": "全局代理配置页本身只提供配置与测试入口。供应商链路是否使用代理，取决于对应供应商编辑页里的“使用代理”开关。"
+      },
+      "records": {
+        "sectionDesc": "把日志占用、历史数量和清理操作集中到一处，方便判断是否需要手动回收空间。",
+        "autoCleanup": "自动清理",
+        "autoCleanupValue": "已关闭",
+        "autoCleanupHint": "记录默认长期保留，只有你手动清理时才会删除。",
+        "storage": "占用存储",
+        "requestLogs": "请求日志条数",
+        "healthHistory": "可用性历史条数",
+        "requestLogsHint": "累计保存的 request_log 记录数量。",
+        "healthHistoryHint": "累计保存的 health_check_history 记录数量。",
+        "actions": "手动清理",
+        "loading": "读取中...",
+        "loadFailed": "读取失败",
+        "dbBreakdown": "主库 {db} · WAL {wal} · SHM {shm}",
+        "clearButton": "清理全部记录",
+        "clearing": "清理中...",
+        "clearHintTitle": "只清理记录，不动配置",
+        "clearHint": "会清理 request_log 和 health_check_history，并回收数据库空间；不会删除供应商、MCP 或设置。",
+        "clearConfirm": "确认清理全部记录吗？这会删除请求日志和可用性历史，且不可恢复。",
+        "clearSuccess": "已清理请求日志 {requests} 条，可用性历史 {health} 条",
+        "clearFailed": "清理失败：{error}",
+        "warning": "附加提示"
+      },
+      "transfer": {
+        "loading": "读取中...",
+        "sectionDesc": "在这里迁移原项目配置、恢复当前项目备份，或导出当前项目的完整设置与数据。",
+        "currentConfigDir": "当前配置目录",
+        "currentConfigHint": "程序当前实际使用的配置文件夹。",
+        "hotkeyDbPath": "快捷键数据库",
+        "hotkeyDbHint": "当前项目数据目录里的快捷键配置数据库，不再放在外部公共目录。",
+        "legacyImportPath": "原项目 .code-switch 路径",
+        "legacyImportPlaceholder": "输入原项目 .code-switch 文件夹路径",
+        "legacyImportAction": "导入原项目数据",
+        "legacyImportButton": "导入 .code-switch",
+        "legacyImportHint": "用于迁移原项目的完整配置与数据，包括供应商、MCP、日志、黑名单和历史记录。",
+        "legacyImportFootnote": "适合第一次从原项目迁移到当前项目时使用。",
+        "projectImportPath": "当前项目备份路径",
+        "projectImportPlaceholder": "输入当前项目导出的备份文件夹路径",
+        "projectImportAction": "导入当前项目备份",
+        "projectImportButton": "导入当前备份",
+        "projectImportHint": "把之前导出的当前项目备份完整恢复到本程序。",
+        "projectImportFootnote": "导入后会覆盖当前项目已有的设置与数据。",
+        "projectExportPath": "导出目标路径",
+        "projectExportPlaceholder": "输入导出目录路径",
+        "projectExportAction": "导出当前项目数据",
+        "projectExportButton": "导出当前项目",
+        "projectExportHint": "导出当前项目的全部设置与数据，包含配置文件、日志库和快捷键数据库。",
+        "projectExportFootnote": "导出结果可直接用于当前项目的完整恢复。",
+        "importing": "导入中...",
+        "exporting": "导出中...",
+        "legacyImportSuccess": "原项目配置与数据导入完成",
+        "projectImportSuccess": "当前项目备份导入完成",
+        "exportSuccess": "当前项目数据已导出到 {path}",
+        "importFailed": "导入失败：{error}",
+        "exportFailed": "导出失败：{error}",
+        "resultSummary": "文件 {files} 个 · 大小 {bytes} · 请求日志 {logs} 条 · 可用性历史 {health} 条 · 黑名单 {blacklist} 条 · 快捷键 {hotkeys} 条",
+        "warning": "附加提示"
+      },
       "subLabel": {
         "sb_assistant_access": "需要无障碍访问权限来操作剪切板内容",
         "sb_disk_access": "需要完全磁盘访问权限来实现文件预览"
@@ -627,22 +779,7 @@
         "go_authorized": "去授权",
         "back": "返回首页"
       },
-      "import": {
-        "configPath": "配置文件路径",
-        "pathPlaceholder": "输入 cc-switch 配置文件路径",
-        "status": "配置状态",
-        "loading": "加载中...",
-        "configFound": "已找到配置文件",
-        "configNotFound": "未找到配置文件",
-        "pendingCount": "{providers} 个供应商，{mcp} 个 MCP",
-        "action": "导入操作",
-        "importBtn": "导入配置",
-        "importing": "导入中...",
-        "success": "导入成功：{providers} 个供应商，{mcp} 个 MCP 服务器",
-        "nothingToImport": "没有需要导入的配置（可能已全部导入）",
-        "failed": "导入失败",
-        "fileNotFound": "配置文件不存在，请检查路径是否正确"
-      }
+      "import": {}
     },
     "mcp": {
       "hero": {
@@ -654,7 +791,17 @@
         "back": "返回主页",
         "settings": "打开设置",
         "refresh": "刷新列表",
-        "create": "新增服务器"
+        "create": "新增服务器",
+        "import": "导入当前 Tab",
+        "export": "导出当前 Tab"
+      },
+      "export": {
+        "button": "导出当前 Tab",
+        "title": "导出 {platform} MCP",
+        "desc": "导出当前 tab 的 MCP 配置 JSON，保留当前 tab 的启用/禁用状态。",
+        "copy": "复制 JSON",
+        "copySuccess": "MCP JSON 已复制到剪贴板",
+        "copyFailed": "复制失败，请手动复制"
       },
       "import": {
         "title": "批量导入 MCP 服务器",
@@ -683,7 +830,10 @@
       },
       "section": {
         "title": "已注册服务器",
-        "subtitle": "数据来自 ~/.code-switch/mcp.json，修改后立即保存"
+        "subtitle": "数据保存在程序所在目录的 .code-switch-R/mcp.json，修改后立即保存"
+      },
+      "toolbar": {
+        "summary": "{platform} 当前共有 {count} 个 MCP，导入导出与启用状态都只作用于这一页。"
       },
       "list": {
         "loading": "正在载入服务器...",
@@ -825,9 +975,12 @@
         "baseUrl": "API 地址",
         "apiKey": "API 密钥",
         "model": "默认模型",
+        "proxyEnabled": "使用代理",
         "cancel": "取消",
         "save": "保存",
-        "delete": "删除"
+        "delete": "删除",
+        "switchOn": "已启用",
+        "switchOff": "未启用"
       }
     },
     "skill": {

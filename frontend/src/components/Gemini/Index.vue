@@ -228,6 +228,19 @@
           <BaseInput v-model="modalState.form.model" type="text" :disabled="saving" placeholder="gemini-2.5-pro-preview" />
         </label>
 
+        <div class="form-field switch-field">
+          <span>{{ t('components.gemini.form.proxyEnabled') }}</span>
+          <div class="switch-inline">
+            <label class="mac-switch">
+              <input type="checkbox" v-model="modalState.form.proxyEnabled" :disabled="saving" />
+              <span></span>
+            </label>
+            <span class="switch-text">
+              {{ modalState.form.proxyEnabled ? t('components.gemini.form.switchOn') : t('components.gemini.form.switchOff') }}
+            </span>
+          </div>
+        </div>
+
         <footer class="form-actions">
           <BaseButton variant="outline" type="button" @click="closeModal">
             {{ t('components.gemini.form.cancel') }}
@@ -310,6 +323,7 @@ const modalState = reactive({
     baseUrl: '',
     apiKey: '',
     model: '',
+    proxyEnabled: false,
   },
 })
 
@@ -381,6 +395,7 @@ const openPresetModal = (preset: BindingGeminiPreset) => {
   modalState.form.baseUrl = preset.baseUrl ?? ''
   modalState.form.apiKey = ''
   modalState.form.model = preset.model ?? 'gemini-2.5-pro-preview'
+  modalState.form.proxyEnabled = false
 }
 
 const openCreateModal = () => {
@@ -391,6 +406,7 @@ const openCreateModal = () => {
   modalState.form.baseUrl = ''
   modalState.form.apiKey = ''
   modalState.form.model = 'gemini-2.5-pro-preview'
+  modalState.form.proxyEnabled = false
 }
 
 const openEditModal = (provider: BindingGeminiProvider) => {
@@ -403,6 +419,7 @@ const openEditModal = (provider: BindingGeminiProvider) => {
   modalState.form.baseUrl = provider.baseUrl ?? ''
   modalState.form.apiKey = provider.apiKey ?? ''
   modalState.form.model = provider.model ?? ''
+  modalState.form.proxyEnabled = !!provider.proxyEnabled
 }
 
 const closeModal = () => {
@@ -421,6 +438,20 @@ const submitModal = async () => {
       if (!newProvider) {
         throw new Error('创建供应商失败')
       }
+      await UpdateProvider({
+        ...newProvider,
+        name: modalState.form.name,
+        baseUrl: modalState.form.baseUrl,
+        apiKey: modalState.form.apiKey,
+        model: modalState.form.model,
+        proxyEnabled: !!modalState.form.proxyEnabled,
+        envConfig: {
+          ...(newProvider.envConfig ?? {}),
+          GOOGLE_GEMINI_BASE_URL: modalState.form.baseUrl,
+          GEMINI_API_KEY: modalState.form.apiKey,
+          GEMINI_MODEL: modalState.form.model,
+        },
+      })
     } else if (modalState.editing) {
       // 更新：基于原始对象合并，保留 partnerPromotionKey/category 等字段
       const original = modalState.originalProvider
@@ -437,6 +468,7 @@ const submitModal = async () => {
         apiKey: modalState.form.apiKey,
         model: modalState.form.model,
         enabled: original.enabled, // 保持启用状态不变
+        proxyEnabled: !!modalState.form.proxyEnabled,
         envConfig: {
           ...(original.envConfig ?? {}),
           GOOGLE_GEMINI_BASE_URL: modalState.form.baseUrl,
@@ -453,6 +485,7 @@ const submitModal = async () => {
         apiKey: modalState.form.apiKey,
         model: modalState.form.model,
         enabled: false,
+        proxyEnabled: !!modalState.form.proxyEnabled,
         envConfig: {
           GOOGLE_GEMINI_BASE_URL: modalState.form.baseUrl,
           GEMINI_API_KEY: modalState.form.apiKey,

@@ -5,6 +5,11 @@
  */
 import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
 import { Call, Events } from '@wailsio/runtime'
+import {
+  getStoredDismissedUpdateVersion,
+  persistFrontendPreferencesPatch,
+  setStoredDismissedUpdateVersion,
+} from '../utils/frontendPreferences'
 
 // ==================== 类型定义 ====================
 
@@ -175,7 +180,7 @@ export function useUpdateStore() {
     if (isInitialized.value) return
 
     // 加载已忽略的版本
-    const dismissed = localStorage.getItem('dismissed-update-version')
+    const dismissed = getStoredDismissedUpdateVersion()
     if (dismissed) {
       dismissedVersion.value = dismissed
     }
@@ -307,7 +312,8 @@ export function useUpdateStore() {
 
     const version = globalState.latest_version
     dismissedVersion.value = version
-    localStorage.setItem('dismissed-update-version', version)
+    setStoredDismissedUpdateVersion(version)
+    void persistFrontendPreferencesPatch({ dismissed_update_version: version })
 
     try {
       await dismissUpdate(version)

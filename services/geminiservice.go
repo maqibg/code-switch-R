@@ -14,10 +14,10 @@ import (
 type GeminiAuthType string
 
 const (
-	GeminiAuthOAuth      GeminiAuthType = "oauth-personal"   // Google 官方 OAuth
-	GeminiAuthAPIKey     GeminiAuthType = "gemini-api-key"   // API Key 认证
-	GeminiAuthPackycode  GeminiAuthType = "packycode"        // PackyCode 合作方
-	GeminiAuthGeneric    GeminiAuthType = "generic"          // 通用第三方
+	GeminiAuthOAuth     GeminiAuthType = "oauth-personal" // Google 官方 OAuth
+	GeminiAuthAPIKey    GeminiAuthType = "gemini-api-key" // API Key 认证
+	GeminiAuthPackycode GeminiAuthType = "packycode"      // PackyCode 合作方
+	GeminiAuthGeneric   GeminiAuthType = "generic"        // 通用第三方
 )
 
 // GeminiProvider Gemini 供应商配置
@@ -33,9 +33,10 @@ type GeminiProvider struct {
 	Category            string            `json:"category,omitempty"`            // official, third_party, custom
 	PartnerPromotionKey string            `json:"partnerPromotionKey,omitempty"` // 用于识别供应商类型
 	Enabled             bool              `json:"enabled"`
-	Level               int               `json:"level,omitempty"`               // 优先级分组 (1-10, 默认 1)
-	EnvConfig           map[string]string `json:"envConfig,omitempty"`           // .env 配置
-	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"`      // settings.json 配置
+	ProxyEnabled        bool              `json:"proxyEnabled,omitempty"`
+	Level               int               `json:"level,omitempty"`          // 优先级分组 (1-10, 默认 1)
+	EnvConfig           map[string]string `json:"envConfig,omitempty"`      // .env 配置
+	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"` // settings.json 配置
 }
 
 // GeminiPreset 预设供应商
@@ -53,12 +54,12 @@ type GeminiPreset struct {
 
 // GeminiStatus Gemini 配置状态
 type GeminiStatus struct {
-	Enabled        bool           `json:"enabled"`
+	Enabled         bool           `json:"enabled"`
 	CurrentProvider string         `json:"currentProvider,omitempty"`
-	AuthType       GeminiAuthType `json:"authType"`
-	HasAPIKey      bool           `json:"hasApiKey"`
-	HasBaseURL     bool           `json:"hasBaseUrl"`
-	Model          string         `json:"model,omitempty"`
+	AuthType        GeminiAuthType `json:"authType"`
+	HasAPIKey       bool           `json:"hasApiKey"`
+	HasBaseURL      bool           `json:"hasBaseUrl"`
+	Model           string         `json:"model,omitempty"`
 }
 
 // GeminiService Gemini 配置管理服务
@@ -404,8 +405,7 @@ func detectGeminiAuthType(provider *GeminiProvider) GeminiAuthType {
 
 // getConfigDir 获取 CodeSwitch 配置目录
 func getConfigDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".code-switch")
+	return mustGetAppConfigDir()
 }
 
 // getGeminiDir 获取 Gemini 配置目录

@@ -1,7 +1,7 @@
 // src/utils/ThemeManager.ts
-const THEME_KEY = 'theme'
+import { getStoredThemeMode, persistFrontendPreferencesPatch, setStoredThemeMode, type FrontendThemeMode } from './frontendPreferences'
 
-export type ThemeMode = 'light' | 'dark' | 'systemdefault'
+export type ThemeMode = FrontendThemeMode
 
 export function applyTheme(mode: ThemeMode) {
   let resolvedTheme = mode
@@ -14,8 +14,9 @@ export function applyTheme(mode: ThemeMode) {
 }
 
 export function initTheme() {
-  const savedTheme = (localStorage.getItem(THEME_KEY) || 'systemdefault') as ThemeMode
-  applyTheme(savedTheme)
+  const theme = getStoredThemeMode()
+  applyTheme(theme)
+  void persistFrontendPreferencesPatch({ theme })
 
   // 监听系统变化，仅在 systemdefault 时响应
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -27,10 +28,11 @@ export function initTheme() {
 }
 
 export function setTheme(mode: ThemeMode) {
-  localStorage.setItem(THEME_KEY, mode)
+  setStoredThemeMode(mode)
   applyTheme(mode)
+  void persistFrontendPreferencesPatch({ theme: mode })
 }
 
 export function getCurrentTheme(): ThemeMode {
-  return (localStorage.getItem(THEME_KEY) || 'systemdefault') as ThemeMode
+  return getStoredThemeMode()
 }

@@ -42,12 +42,30 @@
         <p class="lead">{{ t('components.mcp.hero.lead') }}</p>
       </section>
 
+      <section class="mcp-tab-strip">
+        <button
+          v-for="option in platformOptions"
+          :key="option.id"
+          type="button"
+          class="mcp-tab-button"
+          :class="{ active: activePlatform === option.id }"
+          :aria-pressed="activePlatform === option.id"
+          @click="activePlatform = option.id"
+        >
+          {{ option.label }}
+        </button>
+      </section>
+
       <section class="automation-section">
-        <div class="section-header section-header-solo">
-          <div class="section-controls">
+        <div class="mcp-toolbar">
+          <div class="mcp-toolbar-copy">
+            <span class="mcp-toolbar-kicker">{{ activePlatformLabel }}</span>
+            <h2>{{ t('components.mcp.section.title') }}</h2>
+            <p>{{ t('components.mcp.toolbar.summary', { count: visibleServers.length, platform: activePlatformLabel }) }}</p>
+          </div>
+          <div class="mcp-toolbar-actions">
             <button
-              class="ghost-icon"
-              :aria-label="t('components.mcp.controls.refresh')"
+              class="mcp-toolbar-btn"
               :disabled="loading"
               @click="reload"
             >
@@ -69,8 +87,9 @@
                   stroke-linejoin="round"
                 />
               </svg>
+              <span>{{ t('components.mcp.controls.refresh') }}</span>
             </button>
-            <button class="ghost-icon" :aria-label="t('components.mcp.controls.create')" @click="openCreateModal">
+            <button class="mcp-toolbar-btn" @click="openCreateModal">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M12 5v14M5 12h14"
@@ -81,8 +100,9 @@
                   fill="none"
                 />
               </svg>
+              <span>{{ t('components.mcp.controls.create') }}</span>
             </button>
-            <button class="ghost-icon" :aria-label="t('components.mcp.import.title')" @click="openBatchImport">
+            <button class="mcp-toolbar-btn" @click="openBatchImport">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"
@@ -93,6 +113,20 @@
                   fill="none"
                 />
               </svg>
+              <span>{{ t('components.mcp.controls.import') }}</span>
+            </button>
+            <button class="mcp-toolbar-btn" @click="openExportModal">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 20V8m0 0l-4 4m4-4l4 4M5 4h14a2 2 0 012 2v10"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  fill="none"
+                />
+              </svg>
+              <span>{{ t('components.mcp.controls.export') }}</span>
             </button>
           </div>
         </div>
@@ -101,7 +135,7 @@
 
         <div v-if="loading" class="empty-state">{{ t('components.mcp.list.loading') }}</div>
 
-        <div v-else-if="!servers.length" class="empty-state">
+        <div v-else-if="!visibleServers.length" class="empty-state">
           <p>{{ t('components.mcp.list.empty') }}</p>
           <BaseButton type="button" @click="openCreateModal">
             {{ t('components.mcp.controls.create') }}
@@ -109,7 +143,7 @@
         </div>
 
         <div v-else class="automation-list">
-          <article v-for="server in servers" :key="server.name" class="automation-card">
+          <article v-for="server in visibleServers" :key="server.name" class="automation-card">
             <div class="card-leading">
               <div class="card-icon" :style="iconStyle(server.name)">
                 <span v-if="iconSvg(server.name)" class="icon-svg" v-html="iconSvg(server.name)" aria-hidden="true"></span>
@@ -128,25 +162,25 @@
               </div>
             </div>
             <div class="card-platforms">
-              <div v-for="option in platformOptions" :key="option.id" class="platform-row">
+              <div class="platform-row">
                 <div class="platform-info">
-                  <span class="platform-label">{{ option.label }}</span>
+                  <span class="platform-label">{{ activePlatformLabel }}</span>
                   <div class="platform-controls">
-                    <span
-                      class="platform-status"
-                      :class="{ active: platformActive(server, option.id) }"
-                    >
-                      {{ platformActive(server, option.id) ? t('components.mcp.status.active') : t('components.mcp.status.inactive') }}
-                    </span>
                     <label class="mac-switch sm">
                       <input
                         type="checkbox"
-                        :checked="platformEnabled(server, option.id)"
+                        :checked="server.enabled"
                         :disabled="saveBusy"
-                        @change="onPlatformToggle(server, option.id, $event)"
+                        @change="onEnabledToggle(server, $event)"
                       />
                       <span></span>
                     </label>
+                    <span
+                      class="platform-status"
+                      :class="{ active: currentPlatformActive(server) }"
+                    >
+                      {{ currentPlatformActive(server) ? t('components.mcp.status.active') : t('components.mcp.status.inactive') }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -263,17 +297,7 @@
         </div>
         <div class="form-field">
           <span>{{ t('components.mcp.form.platforms.title') }}</span>
-          <div class="platform-checkboxes">
-            <label v-for="option in platformOptions" :key="option.id" class="platform-checkbox">
-              <input
-                type="checkbox"
-                :checked="modalState.form.enablePlatform.includes(option.id)"
-                :disabled="saveBusy"
-                @change="onModalPlatformToggle(option.id, $event)"
-              />
-              <span>{{ option.label }}</span>
-            </label>
-          </div>
+          <div class="platform-current-chip">{{ activePlatformLabel }}</div>
         </div>
 
         <!-- 表单模式：JSON 配置编辑器 -->
@@ -382,9 +406,34 @@
 
     <BatchImportModal
       :open="showBatchImport"
+      :current-platform="activePlatform"
       @close="closeBatchImport"
       @imported="onBatchImported"
     />
+
+    <InlineModal
+      :open="exportState.open"
+      :title="t('components.mcp.export.title', { platform: activePlatformLabel })"
+      @close="closeExportModal"
+    >
+      <div class="confirm-body export-body">
+        <p class="export-desc">{{ t('components.mcp.export.desc') }}</p>
+        <BaseTextarea
+          v-model="exportState.json"
+          rows="14"
+          class="mcp-json-textarea export-textarea"
+          readonly
+        />
+      </div>
+      <footer class="form-actions confirm-actions">
+        <BaseButton variant="outline" type="button" @click="closeExportModal">
+          {{ t('components.mcp.form.actions.cancel') }}
+        </BaseButton>
+        <BaseButton type="button" @click="copyExportJson">
+          {{ t('components.mcp.export.copy') }}
+        </BaseButton>
+      </footer>
+    </InlineModal>
   </div>
 </template>
 
@@ -399,6 +448,7 @@ import BaseInput from '../common/BaseInput.vue'
 import BaseTextarea from '../common/BaseTextarea.vue'
 import BatchImportModal from './BatchImportModal.vue'
 import {
+  buildMcpExportJSON,
   fetchMcpServers,
   saveMcpServers,
   type McpPlatform,
@@ -481,6 +531,11 @@ const confirmState = reactive<{ open: boolean; target: McpServer | null }>({
 })
 
 const showBatchImport = ref(false)
+const exportState = reactive({
+  open: false,
+  json: '',
+})
+const activePlatform = ref<McpPlatform>('claude-code')
 
 const openBatchImport = () => {
   showBatchImport.value = true
@@ -494,11 +549,37 @@ const onBatchImported = async () => {
   await loadServers()
 }
 
+const openExportModal = () => {
+  exportState.json = buildMcpExportJSON(activePlatform.value, visibleServers.value)
+  exportState.open = true
+}
+
+const closeExportModal = () => {
+  exportState.open = false
+  exportState.json = ''
+}
+
+const copyExportJson = async () => {
+  try {
+    await navigator.clipboard.writeText(exportState.json)
+    showToast(t('components.mcp.export.copySuccess'), 'success')
+  } catch (error) {
+    console.error('failed to copy mcp export json', error)
+    showToast(t('components.mcp.export.copyFailed'), 'error')
+  }
+}
+
 const platformOptions = computed(() => [
   { id: 'claude-code' as McpPlatform, label: t('components.mcp.platforms.claude') },
   { id: 'codex' as McpPlatform, label: t('components.mcp.platforms.codex') },
   { id: 'gemini' as McpPlatform, label: t('components.mcp.platforms.gemini') },
 ])
+
+const activePlatformLabel = computed(
+  () => platformOptions.value.find((option) => option.id === activePlatform.value)?.label ?? activePlatform.value
+)
+
+const visibleServers = computed(() => servers.value)
 
 const formMissingPlaceholders = computed(() => detectPlaceholders(modalState.form.url, modalState.form.argsText))
 
@@ -506,12 +587,13 @@ const loadServers = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const data = await fetchMcpServers()
+    const data = await fetchMcpServers(activePlatform.value)
     servers.value = (data ?? []).map((item) => ({
       ...item,
       args: item.args ?? [],
       env: item.env ?? {},
-      enable_platform: item.enable_platform ?? [],
+      enabled: item.enabled ?? true,
+      enable_platform: [activePlatform.value],
       website: item.website ?? '',
       tips: item.tips ?? '',
       missing_placeholders: item.missing_placeholders ?? [],
@@ -527,7 +609,7 @@ const loadServers = async () => {
 const persistServers = async () => {
   saveBusy.value = true
   try {
-    await saveMcpServers(servers.value)
+    await saveMcpServers(activePlatform.value, servers.value)
     await loadServers()
   } catch (error) {
     console.error('failed to save mcp servers', error)
@@ -572,11 +654,8 @@ const serverSummary = (server: McpServer) => {
 const typeLabel = (type: McpServerType) =>
   type === 'http' ? t('components.mcp.types.http') : t('components.mcp.types.stdio')
 
-const platformEnabled = (server: McpServer, platform: McpPlatform) =>
-  server.enable_platform?.includes(platform) ?? false
-
-const platformActive = (server: McpServer, platform: McpPlatform) => {
-  switch (platform) {
+const currentPlatformActive = (server: McpServer) => {
+  switch (activePlatform.value) {
     case 'claude-code':
       return server.enabled_in_claude
     case 'codex':
@@ -588,52 +667,24 @@ const platformActive = (server: McpServer, platform: McpPlatform) => {
   }
 }
 
-const hasMissingPlaceholders = (server: McpServer) => (server.missing_placeholders?.length ?? 0) > 0
-
 const showPlaceholderWarning = (variables: string[]) => {
   const list = (variables ?? []).filter(Boolean)
   showToast(t('components.mcp.toast.placeholder', { vars: list.join(', ') || 'variables' }), 'error')
 }
 
-const onModalPlatformToggle = (platform: McpPlatform, event: Event) => {
+const onEnabledToggle = async (server: McpServer, event: Event) => {
   const targetInput = event.target as HTMLInputElement | null
   if (!targetInput) return
 
-  if (formMissingPlaceholders.value.length > 0) {
-    targetInput.checked = modalState.form.enablePlatform.includes(platform)
-    showPlaceholderWarning(formMissingPlaceholders.value)
-    return
-  }
-
-  const next = new Set<McpPlatform>(modalState.form.enablePlatform)
-  if (targetInput.checked) {
-    next.add(platform)
-  } else {
-    next.delete(platform)
-  }
-  modalState.form.enablePlatform = Array.from(next)
-}
-
-const onPlatformToggle = async (server: McpServer, platform: McpPlatform, event: Event) => {
-  const targetInput = event.target as HTMLInputElement | null
-  if (!targetInput) return
-
-  if (hasMissingPlaceholders(server)) {
-    targetInput.checked = platformEnabled(server, platform)
+  if (targetInput.checked && (server.missing_placeholders?.length ?? 0) > 0) {
+    targetInput.checked = false
     showPlaceholderWarning(server.missing_placeholders ?? [])
     return
   }
 
   const target = servers.value.find((item) => item.name === server.name)
   if (!target) return
-
-  const next = new Set<McpPlatform>(target.enable_platform ?? [])
-  if (targetInput.checked) {
-    next.add(platform)
-  } else {
-    next.delete(platform)
-  }
-  target.enable_platform = Array.from(next)
+  target.enabled = targetInput.checked
   await persistServers()
 }
 
@@ -642,6 +693,7 @@ const openCreateModal = () => {
   modalState.open = true
   modalState.editingName = ''
   modalState.form = createEmptyForm()
+  modalState.form.enablePlatform = [activePlatform.value]
   modalError.value = ''
   // 初始化表单 JSON 编辑器状态
   formJsonExpanded.value = true
@@ -666,7 +718,7 @@ const openEditModal = (server: McpServer) => {
     tips: server.tips ?? '',
     argsText: (server.args ?? []).join('\n'),
     envEntries: buildEnvEntries(server.env),
-    enablePlatform: [...(server.enable_platform ?? [])],
+    enablePlatform: [activePlatform.value],
   }
   // 初始化表单 JSON 编辑器状态
   formJsonExpanded.value = true
@@ -901,7 +953,10 @@ const requestDelete = (server: McpServer) => {
 
 const confirmDelete = async () => {
   if (!confirmState.target) return
-  servers.value = servers.value.filter((server) => server.name !== confirmState.target?.name)
+  const index = servers.value.findIndex((server) => server.name === confirmState.target?.name)
+  if (index !== -1) {
+    servers.value.splice(index, 1)
+  }
   closeConfirm()
   await persistServers()
 }
@@ -926,12 +981,6 @@ const submitModal = async () => {
     return
   }
 
-  // 平台校验：至少勾选一个平台
-  if (form.enablePlatform.length === 0) {
-    modalError.value = t('components.mcp.form.errors.noPlatformSelected')
-    return
-  }
-
   const existing = servers.value.find((server) => server.name === trimmedName)
   if (!modalState.editingName && existing) {
     modalError.value = t('components.mcp.form.errors.duplicate')
@@ -951,7 +1000,8 @@ const submitModal = async () => {
     url: form.type === 'http' ? form.url.trim() : '',
     website: form.website.trim(),
     tips: form.tips.trim(),
-    enable_platform: [...form.enablePlatform],
+    enabled: modalState.editingName === trimmedName ? existing?.enabled ?? true : true,
+    enable_platform: [activePlatform.value],
     enabled_in_claude:
       modalState.editingName === trimmedName
         ? existing?.enabled_in_claude ?? false
@@ -980,7 +1030,7 @@ const submitModal = async () => {
 
   // 检查占位符并提示
   const placeholders = formMissingPlaceholders.value
-  if (placeholders.length > 0 && form.enablePlatform.length > 0) {
+  if (placeholders.length > 0) {
     // 显示警告（允许保存，但提示未同步）
     showToast(
       t('components.mcp.form.warnings.savedWithPlaceholders', {
@@ -1046,6 +1096,10 @@ const collectPlaceholders = (value: string, set: Set<string>) => {
 onMounted(() => {
   void loadServers()
 })
+
+watch(activePlatform, () => {
+  void loadServers()
+})
 </script>
 
 <style scoped>
@@ -1060,6 +1114,137 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.08);
   font-size: 12px;
   text-transform: uppercase;
+}
+
+.mcp-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--mac-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--mac-surface) 88%, transparent);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+}
+
+.mcp-toolbar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.mcp-toolbar-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mac-text-secondary);
+}
+
+.mcp-toolbar-copy h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--mac-text);
+}
+
+.mcp-toolbar-copy p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--mac-text-secondary);
+}
+
+.mcp-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.mcp-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--mac-border);
+  background: var(--mac-surface-strong);
+  color: var(--mac-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.mcp-toolbar-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.mcp-toolbar-btn:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.28);
+  background: color-mix(in srgb, var(--mac-surface) 84%, rgba(96, 165, 250, 0.08));
+}
+
+.mcp-toolbar-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.mcp-tab-strip {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0 auto 1.25rem;
+  padding: 0.4rem;
+  width: fit-content;
+  border-radius: 16px;
+  border: 1px solid var(--mac-border);
+  background: color-mix(in srgb, var(--mac-surface) 92%, rgba(15, 23, 42, 0.03));
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.mcp-tab-button {
+  min-width: 148px;
+  padding: 13px 22px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--mac-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mcp-tab-button:hover {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--mac-text);
+}
+
+.mcp-tab-button.active {
+  background: var(--mac-accent);
+  border-color: rgba(37, 99, 235, 0.24);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+}
+
+html.dark .mcp-tab-strip {
+  background: rgba(15, 23, 42, 0.46);
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow: 0 16px 30px rgba(2, 6, 23, 0.28);
+}
+
+html.dark .mcp-tab-button {
+  color: rgba(226, 232, 240, 0.78);
+}
+
+html.dark .mcp-tab-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .card-platforms {
@@ -1180,6 +1365,18 @@ onMounted(() => {
   gap: 0.4rem;
 }
 
+.platform-current-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -1236,9 +1433,40 @@ onMounted(() => {
   margin-bottom: 1rem;
 }
 
+.export-body {
+  min-width: min(860px, 92vw);
+}
+
+.export-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.export-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 /* 表单模式 JSON 配置编辑器 */
 .mcp-json-field {
   margin-top: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .mcp-toolbar {
+    flex-direction: column;
+  }
+
+  .mcp-toolbar-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .mcp-toolbar-btn {
+    flex: 1 1 calc(50% - 10px);
+    justify-content: center;
+  }
 }
 
 .mcp-json-header {

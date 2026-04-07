@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import MainPage from '../components/Main/Index.vue'
+import StatsPage from '../components/Stats/Index.vue'
 import LogsPage from '../components/Logs/Index.vue'
 import GeneralPage from '../components/General/Index.vue'
 import McpPage from '../components/Mcp/index.vue'
@@ -13,6 +14,7 @@ import TrayPage from '../components/Tray/Index.vue'
 
 const routes = [
   { path: '/', component: MainPage },
+  { path: '/stats', component: StatsPage },
   { path: '/prompts', component: PromptsPage },
   { path: '/mcp', component: McpPage },
   { path: '/skill', component: SkillPage },

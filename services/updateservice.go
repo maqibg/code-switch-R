@@ -1021,7 +1021,7 @@ func (us *UpdateService) launchMacOSUpdater(pending *PendingApply) error {
 	}
 
 	// 从 exe 路径推断 .app 路径
-	// 例如: /Applications/CodeSwitch.app/Contents/MacOS/CodeSwitch
+	// 例如: /Applications/code-switch-R.app/Contents/MacOS/code-switch-R
 	appPath := exePath
 	if idx := strings.Index(exePath, ".app/"); idx != -1 {
 		appPath = exePath[:idx+4]
@@ -1347,15 +1347,15 @@ func (us *UpdateService) getAssetName(version string) string {
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
 		// P2: 使用 cachedPolicy 避免无锁调用 detectPolicyLocked()
 		if us.cachedPolicy == string(PolicyInstaller) {
-			return fmt.Sprintf("CodeSwitch-v%s-amd64-installer.exe", v)
+			return fmt.Sprintf("code-switch-R-v%s-amd64-installer.exe", v)
 		}
-		return fmt.Sprintf("CodeSwitch-v%s.exe", v)
+		return fmt.Sprintf("code-switch-R-v%s.exe", v)
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
-		return fmt.Sprintf("CodeSwitch-v%s-macos-arm64.zip", v)
+		return fmt.Sprintf("code-switch-R-v%s-macos-arm64.zip", v)
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
-		return fmt.Sprintf("CodeSwitch-v%s-macos-amd64.zip", v)
+		return fmt.Sprintf("code-switch-R-v%s-macos-amd64.zip", v)
 	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
-		return fmt.Sprintf("CodeSwitch-v%s.AppImage", v)
+		return fmt.Sprintf("code-switch-R-v%s.AppImage", v)
 	default:
 		return ""
 	}
@@ -1472,11 +1472,7 @@ func isURLAllowed(url string) bool {
 
 // getUpdateDataDir 获取更新数据目录
 func getUpdateDataDir() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".", ".code-switch-update")
-	}
-	return filepath.Join(homeDir, ".code-switch", "update")
+	return filepath.Join(mustGetAppConfigDir(), "update")
 }
 
 // computeSHA256 计算文件 SHA256

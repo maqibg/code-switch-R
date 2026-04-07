@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -54,6 +55,7 @@ type ConnectivityTestService struct {
 	providerService  *ProviderService
 	blacklistService *BlacklistService
 	settingsService  *SettingsService
+	appSettings      *AppSettingsService
 
 	mu      sync.RWMutex
 	results map[string]map[int64]*ConnectivityResult // platform -> providerID -> result
@@ -61,8 +63,6 @@ type ConnectivityTestService struct {
 	autoTestEnabled bool
 	stopChan        chan struct{}
 	running         bool
-
-	client *http.Client
 }
 
 // NewConnectivityTestService 创建连通性测试服务
@@ -70,26 +70,19 @@ func NewConnectivityTestService(
 	providerService *ProviderService,
 	blacklistService *BlacklistService,
 	settingsService *SettingsService,
+	appSettings *AppSettingsService,
 ) *ConnectivityTestService {
 	return &ConnectivityTestService{
 		providerService:  providerService,
 		blacklistService: blacklistService,
 		settingsService:  settingsService,
+		appSettings:      appSettings,
 		results: map[string]map[int64]*ConnectivityResult{
 			"claude": {},
 			"codex":  {},
 			"gemini": {},
 		},
 		autoTestEnabled: false,
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				IdleConnTimeout:     30 * time.Second,
-				DisableCompression:  true,
-				MaxIdleConnsPerHost: 5,
-			},
-		},
 	}
 }
 
@@ -122,38 +115,59 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	fmt.Printf("  authType:  %s\n", authType)
 	fmt.Printf("  reqBody:   %s\n", string(reqBody))
 
-	// 创建 HTTP 请求
-	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(reqBody))
-	if err != nil {
-		result.Message = fmt.Sprintf("创建请求失败: %v", err)
-		result.SubStatus = SubStatusNetworkError
-		return result
-	}
-
-	// 设置 Headers
-	req.Header.Set("Content-Type", "application/json")
-	if provider.APIKey != "" {
-		// authType 已在上方获取
-		authTypeLower := strings.ToLower(authType)
-		switch authTypeLower {
-		case "x-api-key":
-			req.Header.Set("x-api-key", provider.APIKey)
-			req.Header.Set("anthropic-version", "2023-06-01")
-		case "bearer":
-			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-		default:
-			// 自定义 Header 名
-			headerName := strings.TrimSpace(authType)
-			if headerName == "" || strings.EqualFold(headerName, "custom") {
-				headerName = "Authorization"
-			}
-			req.Header.Set(headerName, provider.APIKey)
+	proxyConfig := ProxyConfig{}
+	var err error
+	if provider.ProxyEnabled {
+		if cts.appSettings == nil {
+			result.Message = "代理配置服务未初始化"
+			result.SubStatus = SubStatusNetworkError
+			return result
 		}
+		proxyConfig, err = cts.appSettings.GetProviderProxyConfig(true)
+		if err != nil {
+			result.Message = fmt.Sprintf("读取代理配置失败: %v", err)
+			result.SubStatus = SubStatusNetworkError
+			return result
+		}
+	}
+	requestFactory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(reqBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if provider.APIKey != "" {
+			authTypeLower := strings.ToLower(authType)
+			switch authTypeLower {
+			case "x-api-key":
+				req.Header.Set("x-api-key", provider.APIKey)
+				req.Header.Set("anthropic-version", "2023-06-01")
+			case "bearer":
+				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			default:
+				headerName := strings.TrimSpace(authType)
+				if headerName == "" || strings.EqualFold(headerName, "custom") {
+					headerName = "Authorization"
+				}
+				req.Header.Set(headerName, provider.APIKey)
+			}
+		}
+		return req, nil
 	}
 
 	// 发送请求并计时
 	start := time.Now()
-	resp, err := cts.client.Do(req)
+	resp, usedProxyConfig, err := doProxyAwareRequest(
+		10*time.Second,
+		&http.Transport{
+			MaxIdleConns:        10,
+			IdleConnTimeout:     30 * time.Second,
+			DisableCompression:  true,
+			MaxIdleConnsPerHost: 5,
+		},
+		proxyConfig,
+		requestFactory,
+	)
 	latencyMs := int(time.Since(start).Milliseconds())
 	result.LatencyMs = latencyMs
 
@@ -163,13 +177,17 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 		if isTimeoutError(err) {
 			result.Status = StatusDegraded
 			result.SubStatus = SubStatusSlowLatency
-			result.Message = fmt.Sprintf("响应超时 (>%ds)", int(cts.client.Timeout.Seconds()))
+			result.Message = "响应超时 (>10s)"
 			return result
 		}
 		// 真正的网络错误（连接失败、DNS 解析失败等）
 		result.Status = StatusUnavailable
 		result.SubStatus = SubStatusNetworkError
-		result.Message = cts.truncateMessage(fmt.Sprintf("网络错误: %v", err))
+		message := describeProxyTransportError(err, usedProxyConfig)
+		if !provider.ProxyEnabled {
+			message = fmt.Sprintf("网络错误: %s", message)
+		}
+		result.Message = cts.truncateMessage(message)
 		return result
 	}
 	defer resp.Body.Close()
@@ -243,6 +261,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 
 	// 获取有效端点（含平台默认值）
 	endpoint := strings.ToLower(cts.getEffectiveEndpoint(provider, platform))
+	prompt := buildSimpleMathPrompt()
 
 	// Anthropic 格式: /v1/messages
 	if strings.Contains(endpoint, "/messages") {
@@ -250,7 +269,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 			"model":      model,
 			"max_tokens": 1,
 			"messages": []map[string]string{
-				{"role": "user", "content": "hi"},
+				{"role": "user", "content": prompt},
 			},
 		}
 		data, _ := json.Marshal(reqBody)
@@ -263,7 +282,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 			"model":      model,
 			"max_tokens": 1,
 			"messages": []map[string]string{
-				{"role": "user", "content": "hi"},
+				{"role": "user", "content": prompt},
 			},
 		}
 		data, _ := json.Marshal(reqBody)
@@ -275,11 +294,24 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		"model":      model,
 		"max_tokens": 1,
 		"messages": []map[string]string{
-			{"role": "user", "content": "hi"},
+			{"role": "user", "content": prompt},
 		},
 	}
 	data, _ := json.Marshal(reqBody)
 	return data, "choices"
+}
+
+func buildSimpleMathPrompt() string {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	left := rng.Intn(100)
+	right := rng.Intn(100)
+	if rng.Intn(2) == 0 {
+		return fmt.Sprintf("请计算并且只返回最终数字答案：%d + %d = ?", left, right)
+	}
+	if left < right {
+		left, right = right, left
+	}
+	return fmt.Sprintf("请计算并且只返回最终数字答案：%d - %d = ?", left, right)
 }
 
 // determineStatus 根据 HTTP 状态码和延迟判定状态
@@ -633,7 +665,101 @@ type ManualTestResult struct {
 	Message   string `json:"message"`
 }
 
-// TestProviderManual 手动测试供应商连通性（供前端测试按钮调用）
+func (cts *ConnectivityTestService) probeProviderLatency(
+	ctx context.Context,
+	provider Provider,
+	platform string,
+) ManualTestResult {
+	result := ManualTestResult{
+		Success: false,
+	}
+
+	targetURL := cts.buildTargetURL(&provider, platform)
+	authType := cts.getEffectiveAuthType(&provider, platform)
+	proxyConfig := ProxyConfig{}
+	var err error
+	if provider.ProxyEnabled {
+		if cts.appSettings == nil {
+			result.Message = "代理配置服务未初始化"
+			return result
+		}
+		proxyConfig, err = cts.appSettings.GetProviderProxyConfig(true)
+		if err != nil {
+			result.Message = fmt.Sprintf("读取代理配置失败: %v", err)
+			return result
+		}
+	}
+
+	requestFactory := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/json, text/plain, */*")
+		req.Header.Set("User-Agent", "code-switch-R")
+		if provider.APIKey != "" {
+			authTypeLower := strings.ToLower(authType)
+			switch authTypeLower {
+			case "x-api-key":
+				req.Header.Set("x-api-key", provider.APIKey)
+				req.Header.Set("anthropic-version", "2023-06-01")
+			case "bearer":
+				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			default:
+				headerName := strings.TrimSpace(authType)
+				if headerName == "" || strings.EqualFold(headerName, "custom") {
+					headerName = "Authorization"
+				}
+				req.Header.Set(headerName, provider.APIKey)
+			}
+		}
+		return req, nil
+	}
+
+	start := time.Now()
+	resp, usedProxyConfig, err := doProxyAwareRequest(
+		15*time.Second,
+		&http.Transport{
+			MaxIdleConns:        10,
+			IdleConnTimeout:     30 * time.Second,
+			DisableCompression:  true,
+			MaxIdleConnsPerHost: 5,
+		},
+		proxyConfig,
+		requestFactory,
+	)
+	result.LatencyMs = int(time.Since(start).Milliseconds())
+	if err != nil {
+		message := describeProxyTransportError(err, usedProxyConfig)
+		if !provider.ProxyEnabled {
+			message = fmt.Sprintf("网络错误: %s", message)
+		}
+		result.Message = message
+		return result
+	}
+	defer resp.Body.Close()
+
+	result.Success = resp.StatusCode != http.StatusProxyAuthRequired
+	result.HTTPCode = resp.StatusCode
+
+	protocolNote := ""
+	if provider.ProxyEnabled {
+		normalized := normalizeProxyConfig(proxyConfig)
+		if usedProxyConfig.Protocol != normalized.Protocol {
+			protocolNote = fmt.Sprintf("，自动识别为 %s", strings.ToUpper(usedProxyConfig.Protocol))
+		}
+	}
+
+	if resp.StatusCode == http.StatusProxyAuthRequired {
+		result.Message = "代理需要认证，当前配置不可直接使用"
+		return result
+	}
+
+	result.Message = fmt.Sprintf("延迟 %dms%s，接口返回 HTTP %d", result.LatencyMs, protocolNote, resp.StatusCode)
+	return result
+}
+
+// TestProviderManual 手动做供应商延迟检查（供前端按钮调用）
 func (cts *ConnectivityTestService) TestProviderManual(
 	platform string,
 	apiURL string,
@@ -641,6 +767,7 @@ func (cts *ConnectivityTestService) TestProviderManual(
 	model string,
 	endpoint string,
 	authType string,
+	proxyEnabled bool,
 ) ManualTestResult {
 	// 调试日志：打印前端传递的参数
 	fmt.Printf("[DEBUG] TestProviderManual 收到参数:\n")
@@ -663,19 +790,13 @@ func (cts *ConnectivityTestService) TestProviderManual(
 		ConnectivityTestModel:    model,
 		ConnectivityTestEndpoint: endpoint,
 		ConnectivityAuthType:     authType,
+		ProxyEnabled:             proxyEnabled,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	result := cts.TestProvider(ctx, provider, platform)
-
-	return ManualTestResult{
-		Success:   result.Status == StatusAvailable || result.Status == StatusDegraded,
-		LatencyMs: result.LatencyMs,
-		HTTPCode:  result.HTTPCode,
-		Message:   result.Message,
-	}
+	return cts.probeProviderLatency(ctx, provider, platform)
 }
 
 // maskAPIKey 隐藏 API Key 的中间部分，用于安全日志输出
