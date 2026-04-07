@@ -55,10 +55,10 @@ func main() {
 
 	// 检查必需的文件是否存在
 	requiredFiles := []string{
-		"code-switch-R-amd64-installer.exe", // Windows安装器
-		"code-switch-R.exe",                 // Windows便携版
-		"code-switch-R-macos-arm64.zip",     // macOS ARM
-		"code-switch-R-macos-amd64.zip",     // macOS Intel
+		"codeSwitchR-amd64-installer.exe", // Windows安装器
+		"codeSwitchR.exe",                 // Windows便携版
+		"codeSwitchR-macos-arm64.zip",     // macOS ARM
+		"codeSwitchR-macos-amd64.zip",     // macOS Intel
 	}
 
 	fmt.Printf("\n🔍 检查必需文件:\n")

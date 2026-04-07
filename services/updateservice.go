@@ -1340,22 +1340,19 @@ func (us *UpdateService) getPlatformKey() string {
 // getAssetName 获取资产文件名（用于 GitHub API fallback）
 // version 参数应为 GitHub Release 的 tag_name，如 "v2.6.23"
 func (us *UpdateService) getAssetName(version string) string {
-	// 去除版本号前缀 v
-	v := strings.TrimPrefix(version, "v")
-
 	switch {
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
 		// P2: 使用 cachedPolicy 避免无锁调用 detectPolicyLocked()
 		if us.cachedPolicy == string(PolicyInstaller) {
-			return fmt.Sprintf("code-switch-R-v%s-amd64-installer.exe", v)
+			return "codeSwitchR-amd64-installer.exe"
 		}
-		return fmt.Sprintf("code-switch-R-v%s.exe", v)
+		return "codeSwitchR.exe"
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
-		return fmt.Sprintf("code-switch-R-v%s-macos-arm64.zip", v)
+		return "codeSwitchR-macos-arm64.zip"
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
-		return fmt.Sprintf("code-switch-R-v%s-macos-amd64.zip", v)
+		return "codeSwitchR-macos-amd64.zip"
 	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
-		return fmt.Sprintf("code-switch-R-v%s.AppImage", v)
+		return "codeSwitchR.AppImage"
 	default:
 		return ""
 	}

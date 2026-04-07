@@ -1,3 +1,15 @@
+# Code Switch v2.6.28
+
+## 更新亮点
+- **发布资产文件名统一**：GitHub Release 产物统一改为 `codeSwitchR` 前缀，并去除文件名中的版本号。
+- **发版流程重新梳理**：先推送最新本地仓库，再用 tag 触发 Actions 编译发版，避免先发旧代码再补修。
+
+## 修复
+- 修复 Release 资产仍混用 `CodeSwitch` / `code-switch-R-v{version}` 命名的问题。
+- 修复应用内更新与 `latest.json` 对发布资产文件名的匹配逻辑，使其适配新的无版本文件名。
+
+---
+
 # Code Switch v2.6.27
 
 ## 更新亮点

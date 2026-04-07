@@ -21,10 +21,10 @@
 
 | 系统 | 推荐下载 |
 |------|---------|
-| Windows | `CodeSwitch-amd64-installer.exe` |
-| macOS (M1/M2/M3) | `codeswitch-macos-arm64.zip` |
-| macOS (Intel) | `codeswitch-macos-amd64.zip` |
-| Linux | `CodeSwitch.AppImage` |
+| Windows | `codeSwitchR-amd64-installer.exe` |
+| macOS (M1/M2/M3) | `codeSwitchR-macos-arm64.zip` |
+| macOS (Intel) | `codeSwitchR-macos-amd64.zip` |
+| Linux | `codeSwitchR.AppImage` |
 
 ### 2. 添加供应商
 
@@ -179,12 +179,12 @@ Claude Code / Codex / Gemini CLI
 ### Windows
 
 **安装器方式（推荐）**：
-1. 下载 `CodeSwitch-amd64-installer.exe`
+1. 下载 `codeSwitchR-amd64-installer.exe`
 2. 双击运行，按提示安装
 3. 从开始菜单启动
 
 **便携版**：
-1. 下载 `CodeSwitch.exe`
+1. 下载 `codeSwitchR.exe`
 2. 放到任意目录，双击运行
 
 ### macOS
@@ -198,8 +198,8 @@ Claude Code / Codex / Gemini CLI
 
 **AppImage（推荐）**：
 ```bash
-chmod +x CodeSwitch.AppImage
-./CodeSwitch.AppImage
+chmod +x codeSwitchR.AppImage
+./codeSwitchR.AppImage
 ```
 
 **DEB 包（Ubuntu/Debian）**：

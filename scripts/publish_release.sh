@@ -13,7 +13,6 @@ fi
 
 TAG="$1"
 NOTES="${2:-RELEASE_NOTES.md}"
-VERSION="${TAG#v}"
 
 if [ ! -f "$NOTES" ]; then
   echo "Release notes file '$NOTES' not found" >&2
@@ -28,7 +27,7 @@ MAC_ZIPS=()
 package_macos_arch() {
   local arch="$1"
   local staging_app="bin/code-switch-R-${arch}.app"
-  local zip_path="bin/code-switch-R-v${VERSION}-macos-${arch}.zip"
+  local zip_path="bin/codeSwitchR-macos-${arch}.zip"
 
   echo "==> Building macOS ${arch}"
   env ARCH="$arch" wails3 task package ${BUILD_OPTS:-}
@@ -68,13 +67,13 @@ echo "==> Building updater.exe"
 wails3 task windows:build:updater ${BUILD_OPTS:-}
 
 if [ -f "bin/code-switch-R.exe" ]; then
-  mv "bin/code-switch-R.exe" "bin/code-switch-R-v${VERSION}.exe"
+  mv "bin/code-switch-R.exe" "bin/codeSwitchR.exe"
 fi
 
 if [ -f "build/windows/nsis/code-switch-R-amd64-installer.exe" ]; then
-  mv "build/windows/nsis/code-switch-R-amd64-installer.exe" "bin/code-switch-R-v${VERSION}-amd64-installer.exe"
+  mv "build/windows/nsis/code-switch-R-amd64-installer.exe" "bin/codeSwitchR-amd64-installer.exe"
 elif [ -f "bin/code-switch-R-amd64-installer.exe" ]; then
-  mv "bin/code-switch-R-amd64-installer.exe" "bin/code-switch-R-v${VERSION}-amd64-installer.exe"
+  mv "bin/code-switch-R-amd64-installer.exe" "bin/codeSwitchR-amd64-installer.exe"
 fi
 
 # 生成 SHA256 哈希文件
@@ -95,14 +94,14 @@ generate_sha256() {
   fi
 }
 
-generate_sha256 "bin/code-switch-R-v${VERSION}.exe"
+generate_sha256 "bin/codeSwitchR.exe"
 generate_sha256 "bin/updater.exe"
 
 ASSETS=(
   "${MAC_ZIPS[@]}"
-  "bin/code-switch-R-v${VERSION}-amd64-installer.exe"
-  "bin/code-switch-R-v${VERSION}.exe"
-  "bin/code-switch-R-v${VERSION}.exe.sha256"
+  "bin/codeSwitchR-amd64-installer.exe"
+  "bin/codeSwitchR.exe"
+  "bin/codeSwitchR.exe.sha256"
   "bin/updater.exe"
   "bin/updater.exe.sha256"
 )
