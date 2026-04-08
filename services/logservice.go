@@ -16,6 +16,14 @@ import (
 	"github.com/daodao97/xgo/xdb"
 )
 
+var beijingLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("UTC+8", 8*60*60)
+	}
+	return loc
+}()
+
 const (
 	timeLayout          = "2006-01-02 15:04:05"
 	statsRangeToday     = "today"
@@ -83,6 +91,7 @@ func normalizeStatsRange(rangeKey string) string {
 }
 
 func resolveStatsWindow(rangeKey string, now time.Time) statsWindow {
+	now = inBeijing(now)
 	key := normalizeStatsRange(rangeKey)
 	window := statsWindow{
 		key:        key,
@@ -141,7 +150,7 @@ func selectRequestLogRecords(platform string, start *time.Time, fields ...string
 		xdb.OrderByAsc("created_at"),
 	}
 	if start != nil {
-		options = append(options, xdb.WhereGte("created_at", start.Format(timeLayout)))
+		options = append(options, xdb.WhereGte("created_at", formatCreatedAtBoundary(*start)))
 	}
 	if platform != "" {
 		options = append(options, xdb.WhereEq("platform", platform))
@@ -178,7 +187,7 @@ func recordInWindow(record xdb.Record, start *time.Time, end time.Time) bool {
 	if rawDay == "" {
 		return false
 	}
-	day, err := time.ParseInLocation("2006-01-02", rawDay, time.Local)
+	day, err := time.ParseInLocation("2006-01-02", rawDay, beijingLocation)
 	if err != nil {
 		return false
 	}
@@ -214,7 +223,7 @@ func (ls *LogService) CostSince(start string, platform string) (float64, error) 
 	}
 	model := xdb.New("request_log")
 	options := []xdb.Option{
-		xdb.WhereGte("created_at", startTime.Format(timeLayout)),
+		xdb.WhereGte("created_at", formatCreatedAtBoundary(startTime)),
 		xdb.Field(
 			"model",
 			"input_tokens",
@@ -274,9 +283,9 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 	if limit > 1000 {
 		limit = 1000
 	}
-	window := statsWindow{currentEnd: time.Now()}
+	window := statsWindow{currentEnd: nowInBeijing()}
 	if strings.TrimSpace(rangeKey) != "" {
-		window = resolveStatsWindow(rangeKey, time.Now())
+		window = resolveStatsWindow(rangeKey, nowInBeijing())
 	}
 	model := xdb.New("request_log")
 	options := []xdb.Option{
@@ -284,7 +293,7 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 		xdb.Limit(limit),
 	}
 	if window.currentStart != nil {
-		options = append(options, xdb.WhereGte("created_at", window.currentStart.Format(timeLayout)))
+		options = append(options, xdb.WhereGte("created_at", formatCreatedAtBoundary(*window.currentStart)))
 	}
 	if platform != "" {
 		options = append(options, xdb.WhereEq("platform", platform))
@@ -353,7 +362,7 @@ func (ls *LogService) DashboardOverview(platform string) (DashboardOverview, err
 }
 
 func (ls *LogService) DashboardOverviewByRange(platform string, rangeKey string) (DashboardOverview, error) {
-	window := resolveStatsWindow(rangeKey, time.Now())
+	window := resolveStatsWindow(rangeKey, nowInBeijing())
 	queryStart := window.currentStart
 	if window.previousStart != nil && (queryStart == nil || window.previousStart.Before(*queryStart)) {
 		queryStart = window.previousStart
@@ -412,13 +421,13 @@ func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
 	if totalHours <= 0 {
 		totalHours = 24
 	}
-	rangeStart := startOfHour(time.Now())
+	rangeStart := startOfHour(nowInBeijing())
 	if totalHours > 1 {
 		rangeStart = rangeStart.Add(-time.Duration(totalHours-1) * time.Hour)
 	}
 	model := xdb.New("request_log")
 	options := []xdb.Option{
-		xdb.WhereGe("created_at", rangeStart.Format(timeLayout)),
+		xdb.WhereGe("created_at", formatCreatedAtBoundary(rangeStart)),
 		xdb.Field(
 			"model",
 			"input_tokens",
@@ -491,7 +500,7 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 }
 
 func (ls *LogService) StatsByRange(platform string, rangeKey string) (LogStats, error) {
-	window := resolveStatsWindow(rangeKey, time.Now())
+	window := resolveStatsWindow(rangeKey, nowInBeijing())
 	stats := LogStats{
 		RangeKey: window.key,
 		Series:   make([]LogStatsSeries, 0),
@@ -547,7 +556,7 @@ func (ls *LogService) StatsByRange(platform string, rangeKey string) (LogStats, 
 
 		createdAt, hasTime := parseCreatedAt(record)
 		if !hasTime {
-			day, err := time.ParseInLocation("2006-01-02", dayFromTimestamp(record.GetString("created_at")), time.Local)
+			day, err := time.ParseInLocation("2006-01-02", dayFromTimestamp(record.GetString("created_at")), beijingLocation)
 			if err != nil {
 				continue
 			}
@@ -578,7 +587,7 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 }
 
 func (ls *LogService) ProviderStatsByRange(platform string, rangeKey string) ([]ProviderDailyStat, error) {
-	window := resolveStatsWindow(rangeKey, time.Now())
+	window := resolveStatsWindow(rangeKey, nowInBeijing())
 	records, err := selectRequestLogRecords(
 		platform,
 		window.currentStart,
@@ -650,7 +659,7 @@ func (ls *LogService) ModelDailyStats(platform string) ([]ModelDailyStat, error)
 }
 
 func (ls *LogService) ModelStatsByRange(platform string, rangeKey string) ([]ModelDailyStat, error) {
-	window := resolveStatsWindow(rangeKey, time.Now())
+	window := resolveStatsWindow(rangeKey, nowInBeijing())
 	records, err := selectRequestLogRecords(
 		platform,
 		window.currentStart,
@@ -980,9 +989,12 @@ func (ls *LogService) calculateCost(model string, usage modelpricing.UsageSnapsh
 
 func parseCreatedAt(record xdb.Record) (time.Time, bool) {
 	if t := record.GetTime("created_at"); t != nil {
-		return t.In(time.Local), true
+		return t.In(beijingLocation), true
 	}
-	raw := strings.TrimSpace(record.GetString("created_at"))
+	return parseCreatedAtString(strings.TrimSpace(record.GetString("created_at")))
+}
+
+func parseCreatedAtString(raw string) (time.Time, bool) {
 	if raw == "" {
 		return time.Time{}, false
 	}
@@ -998,21 +1010,21 @@ func parseCreatedAt(record xdb.Record) (time.Time, bool) {
 	}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed.In(time.Local), true
+			return parsed.In(beijingLocation), true
 		}
-		if parsed, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
-			return parsed.In(time.Local), true
+		if parsed, err := time.ParseInLocation(layout, raw, beijingLocation); err == nil {
+			return parsed.In(beijingLocation), true
 		}
 	}
 
 	if normalized := strings.Replace(raw, " ", "T", 1); normalized != raw {
 		if parsed, err := time.Parse(time.RFC3339, normalized); err == nil {
-			return parsed.In(time.Local), true
+			return parsed.In(beijingLocation), true
 		}
 	}
 
 	if len(raw) >= len("2006-01-02") {
-		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], time.Local); err == nil {
+		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], beijingLocation); err == nil {
 			return parsed, false
 		}
 	}
@@ -1023,7 +1035,7 @@ func parseCreatedAt(record xdb.Record) (time.Time, bool) {
 func parseTimeInput(value string) (time.Time, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
-		return startOfDay(time.Now()), nil
+		return startOfDay(nowInBeijing()), nil
 	}
 	layouts := []string{
 		time.RFC3339,
@@ -1036,19 +1048,19 @@ func parseTimeInput(value string) (time.Time, error) {
 	}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed.In(time.Local), nil
+			return parsed.In(beijingLocation), nil
 		}
-		if parsed, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
-			return parsed.In(time.Local), nil
+		if parsed, err := time.ParseInLocation(layout, raw, beijingLocation); err == nil {
+			return parsed.In(beijingLocation), nil
 		}
 	}
 	if normalized := strings.Replace(raw, " ", "T", 1); normalized != raw {
 		if parsed, err := time.Parse(time.RFC3339, normalized); err == nil {
-			return parsed.In(time.Local), nil
+			return parsed.In(beijingLocation), nil
 		}
 	}
 	if len(raw) >= len("2006-01-02") {
-		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], time.Local); err == nil {
+		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], beijingLocation); err == nil {
 			return parsed, nil
 		}
 	}
@@ -1056,23 +1068,37 @@ func parseTimeInput(value string) (time.Time, error) {
 }
 
 func dayFromTimestamp(value string) string {
+	if parsed, ok := parseCreatedAtString(strings.TrimSpace(value)); ok {
+		return parsed.Format("2006-01-02")
+	}
 	if len(value) >= len("2006-01-02") {
-		if t, err := time.ParseInLocation(timeLayout, value, time.Local); err == nil {
-			return t.Format("2006-01-02")
-		}
 		return value[:10]
 	}
 	return value
 }
 
+func formatCreatedAtBoundary(t time.Time) string {
+	return t.In(time.UTC).Format(timeLayout)
+}
+
 func startOfDay(t time.Time) time.Time {
+	t = inBeijing(t)
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
 }
 
 func startOfHour(t time.Time) time.Time {
+	t = inBeijing(t)
 	y, m, d := t.Date()
 	return time.Date(y, m, d, t.Hour(), 0, 0, 0, t.Location())
+}
+
+func nowInBeijing() time.Time {
+	return time.Now().In(beijingLocation)
+}
+
+func inBeijing(t time.Time) time.Time {
+	return t.In(beijingLocation)
 }
 
 func min(a, b int) int {

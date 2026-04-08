@@ -9,6 +9,7 @@ import {
   type StatsRange,
 } from '../services/logs'
 import { getLatestResults, HealthStatus, type ProviderTimeline } from '../services/healthcheck'
+import { formatBeijingDateTime } from '../utils/beijingTime'
 
 const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini']
 const REFRESH_INTERVAL = 60
@@ -121,14 +122,14 @@ export function useStatsDashboard() {
   const formatPercent = (value?: number) => `${((value ?? 0) * 100).toFixed(1)}%`
 
   const formatActivityTime = (value: string) => {
-    const date = new Date(value.replace(' ', 'T'))
-    if (Number.isNaN(date.getTime())) return value
-    const tag = locale.value === 'zh' ? 'zh-CN' : 'en-US'
-    return date.toLocaleString(tag, {
+    return formatBeijingDateTime(value, locale.value === 'zh' ? 'zh' : 'en', {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      second: undefined,
+      year: undefined,
+      hour12: false,
     })
   }
 

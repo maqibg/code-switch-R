@@ -36,7 +36,13 @@ const {
 const lastUpdatedLabel = computed(() => {
   if (!lastUpdated.value) return '-'
   const tag = locale.value === 'zh' ? 'zh-CN' : 'en-US'
-  return lastUpdated.value.toLocaleTimeString(tag, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return lastUpdated.value.toLocaleTimeString(tag, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  })
 })
 </script>
 

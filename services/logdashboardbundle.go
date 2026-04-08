@@ -20,20 +20,20 @@ type DashboardBundle struct {
 }
 
 type aggregateSnapshot struct {
-	Requests       int64
-	InputTokens    int64
-	OutputTokens   int64
-	Reasoning      int64
-	CacheCreate    int64
-	CacheRead      int64
-	CostTotal      float64
-	CostInput      float64
-	CostOutput     float64
+	Requests        int64
+	InputTokens     int64
+	OutputTokens    int64
+	Reasoning       int64
+	CacheCreate     int64
+	CacheRead       int64
+	CostTotal       float64
+	CostInput       float64
+	CostOutput      float64
 	CostCacheCreate float64
-	CostCacheRead  float64
-	Successes      int64
-	DurationSumSec float64
-	DurationCount  int64
+	CostCacheRead   float64
+	Successes       int64
+	DurationSumSec  float64
+	DurationCount   int64
 }
 
 func (ls *LogService) GetDashboardBundle(rangeKey string, recentLimit int) (DashboardBundle, error) {
@@ -44,7 +44,7 @@ func (ls *LogService) GetDashboardBundle(rangeKey string, recentLimit int) (Dash
 	if err != nil {
 		return DashboardBundle{}, err
 	}
-	window := resolveStatsWindow(rangeKey, time.Now())
+	window := resolveStatsWindow(rangeKey, nowInBeijing())
 
 	current, err := queryAggregateSnapshot(db, window.currentStart, window.currentEnd, "")
 	if err != nil {
@@ -458,10 +458,10 @@ func buildRangeArgs(start *time.Time, end time.Time, platform string) (string, [
 	args := make([]interface{}, 0, 3)
 	if start != nil {
 		clauses = append(clauses, "created_at >= ?")
-		args = append(args, start.Format(timeLayout))
+		args = append(args, formatCreatedAtBoundary(*start))
 	}
 	clauses = append(clauses, "created_at < ?")
-	args = append(args, end.Format(timeLayout))
+	args = append(args, formatCreatedAtBoundary(end))
 	if platform != "" {
 		clauses = append(clauses, "platform = ?")
 		args = append(args, platform)
@@ -482,11 +482,11 @@ func buildRangeOnlyArgs(start *time.Time, end time.Time) []interface{} {
 func bucketExpr(bucket string) string {
 	switch bucket {
 	case seriesBucketHour:
-		return "strftime('%Y-%m-%d %H:00:00', created_at)"
+		return "strftime('%Y-%m-%d %H:00:00', datetime(created_at, '+8 hours'))"
 	case seriesBucketMonth:
-		return "strftime('%Y-%m', created_at)"
+		return "strftime('%Y-%m', datetime(created_at, '+8 hours'))"
 	default:
-		return "strftime('%Y-%m-%d', created_at)"
+		return "strftime('%Y-%m-%d', datetime(created_at, '+8 hours'))"
 	}
 }
 

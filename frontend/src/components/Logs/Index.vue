@@ -186,6 +186,7 @@
 import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { formatBeijingDateTime, parseStoredUTCTimestamp } from '../../utils/beijingTime'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import {
@@ -214,7 +215,7 @@ import { Line } from 'vue-chartjs'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 
 const logs = ref<RequestLog[]>([])
@@ -292,25 +293,7 @@ const closeTokenDetailModal = () => {
 }
 
 const parseLogDate = (value?: string) => {
-  if (!value) return null
-  const normalize = value.replace(' ', 'T')
-  const attempts = [value, `${normalize}`, `${normalize}Z`]
-  for (const candidate of attempts) {
-    const parsed = new Date(candidate)
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed
-    }
-  }
-  const match = value.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{4}) UTC$/)
-  if (match) {
-    const [, day, time, zone] = match
-    const zoneFormatted = `${zone.slice(0, 3)}:${zone.slice(3)}`
-    const parsed = new Date(`${day}T${time}${zoneFormatted}`)
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed
-    }
-  }
-  return null
+  return parseStoredUTCTimestamp(value)
 }
 
 const chartData = computed(() => {
@@ -544,9 +527,7 @@ const backToHome = () => {
 const padHour = (num: number) => num.toString().padStart(2, '0')
 
 const formatTime = (value?: string) => {
-  const date = parseLogDate(value)
-  if (!date) return value || '—'
-  return `${date.getFullYear()}-${padHour(date.getMonth() + 1)}-${padHour(date.getDate())} ${padHour(date.getHours())}:${padHour(date.getMinutes())}:${padHour(date.getSeconds())}`
+  return formatBeijingDateTime(value, locale.value === 'zh' ? 'zh' : 'en')
 }
 
 const formatStream = (value?: boolean | number) => {
