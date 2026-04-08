@@ -64,31 +64,6 @@
             <p>{{ t('components.mcp.toolbar.summary', { count: visibleServers.length, platform: activePlatformLabel }) }}</p>
           </div>
           <div class="mcp-toolbar-actions">
-            <button
-              class="mcp-toolbar-btn"
-              :disabled="loading"
-              @click="reload"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M20.5 8a8.5 8.5 0 10-2.38 7.41"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M20.5 4v4h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <span>{{ t('components.mcp.controls.refresh') }}</span>
-            </button>
             <button class="mcp-toolbar-btn" @click="openCreateModal">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -114,6 +89,31 @@
                 />
               </svg>
               <span>{{ t('components.mcp.controls.import') }}</span>
+            </button>
+            <button
+              class="mcp-toolbar-btn"
+              :disabled="loading"
+              @click="reload"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M20.5 8a8.5 8.5 0 10-2.38 7.41"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M20.5 4v4h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>{{ t('components.mcp.controls.refresh') }}</span>
             </button>
             <button class="mcp-toolbar-btn" @click="openExportModal">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1157,9 +1157,10 @@ watch(activePlatform, () => {
 }
 
 .mcp-toolbar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: end;
+  align-content: start;
   gap: 10px;
 }
 
@@ -1460,12 +1461,13 @@ html.dark .mcp-tab-button:hover {
 
   .mcp-toolbar-actions {
     width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-content: stretch;
   }
 
   .mcp-toolbar-btn {
-    flex: 1 1 calc(50% - 10px);
     justify-content: center;
+    width: 100%;
   }
 }
 
