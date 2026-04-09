@@ -1,3 +1,13 @@
+# Code Switch v2.6.31
+
+## 更新亮点
+- **项目内 GitHub 图标链接修正**：首页工具栏里的 GitHub 图标现在直接打开 `https://github.com/maqibg/code-switch-R`。
+
+## 修复
+- 修复项目内 GitHub 图标仍指向旧仓库 / release 页面，而不是当前仓库主页的问题。
+
+---
+
 # Code Switch v2.6.30
 
 ## 更新亮点

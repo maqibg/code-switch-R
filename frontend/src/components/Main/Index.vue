@@ -1066,7 +1066,7 @@ const resolvedTheme = computed(() => {
   return themeMode.value
 })
 const themeIcon = computed(() => (resolvedTheme.value === 'dark' ? 'moon' : 'sun'))
-const releasePageUrl = 'https://github.com/Rogers-F/code-switch-R/releases'
+const projectGithubUrl = 'https://github.com/maqibg/code-switch-R'
 const releaseApiUrl = 'https://api.github.com/repos/Rogers-F/code-switch-R/releases/latest'
 
 const heatmapContainerRef = ref<HTMLElement | null>(null)
@@ -2380,7 +2380,7 @@ const toggleTheme = () => {
 }
 
 const handleGithubClick = () => {
-  Browser.OpenURL(releasePageUrl).catch(() => {
+  Browser.OpenURL(projectGithubUrl).catch(() => {
     console.error('failed to open github')
   })
 }
