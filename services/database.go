@@ -66,6 +66,9 @@ func InitDatabase() error {
 	if err := ensureBlacklistTables(); err != nil {
 		return fmt.Errorf("初始化黑名单表失败: %w", err)
 	}
+	if err := ensureProviderAliasTable(); err != nil {
+		return fmt.Errorf("初始化 provider_alias 表失败: %w", err)
+	}
 
 	// 5. 预热连接池：强制建立数据库连接，避免首次写入时失败
 	var count int
@@ -132,6 +135,38 @@ func ensureBlacklistTables() error {
 		if err != nil {
 			return fmt.Errorf("插入默认设置 %s 失败: %w", s.key, err)
 		}
+	}
+
+	return nil
+}
+
+// ensureProviderAliasTable 创建 provider_alias 表,用于 rename 后 48h 内承接旧名 in-flight 写入。
+func ensureProviderAliasTable() error {
+	db, err := xdb.DB("default")
+	if err != nil {
+		return fmt.Errorf("获取数据库连接失败: %w", err)
+	}
+
+	const createSQL = `CREATE TABLE IF NOT EXISTS provider_alias (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		platform TEXT NOT NULL,
+		provider_id INTEGER NOT NULL,
+		alias_name TEXT NOT NULL COLLATE NOCASE,
+		canonical_name TEXT NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		expires_at DATETIME NOT NULL,
+		UNIQUE(platform, alias_name)
+	)`
+	if _, err := db.Exec(createSQL); err != nil {
+		return fmt.Errorf("创建 provider_alias 表失败: %w", err)
+	}
+
+	const createIndexSQL = `
+		CREATE INDEX IF NOT EXISTS idx_provider_alias_pid ON provider_alias(platform, provider_id);
+		CREATE INDEX IF NOT EXISTS idx_provider_alias_expires ON provider_alias(expires_at);
+	`
+	if _, err := db.Exec(createIndexSQL); err != nil {
+		return fmt.Errorf("创建 provider_alias 索引失败: %w", err)
 	}
 
 	return nil

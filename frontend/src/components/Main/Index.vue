@@ -560,7 +560,6 @@
                     type="text"
                     :placeholder="t('components.main.form.placeholders.name')"
                     required
-                    :disabled="Boolean(modalState.editingId)"
                   />
                 </label>
 
@@ -1032,7 +1031,7 @@ import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import CLIConfigEditor from '../common/CLIConfigEditor.vue'
 import CustomCliConfigEditor from '../common/CustomCliConfigEditor.vue'
-import { LoadProviders, SaveProviders, DuplicateProvider } from '../../../bindings/codeswitch/services/providerservice'
+import { LoadProviders, SaveProviders, DuplicateProvider, RenameProvider } from '../../../bindings/codeswitch/services/providerservice'
 import { GetProviders as GetGeminiProviders, UpdateProvider as UpdateGeminiProvider, AddProvider as AddGeminiProvider, DeleteProvider as DeleteGeminiProvider, ReorderProviders as ReorderGeminiProviders } from '../../../bindings/codeswitch/services/geminiservice'
 import { fetchProxyStatus, enableProxy, disableProxy } from '../../services/claudeSettings'
 import { fetchGeminiProxyStatus, enableGeminiProxy, disableGeminiProxy } from '../../services/geminiSettings'
@@ -2679,10 +2678,34 @@ const submitModal = async (): Promise<boolean> => {
   }
 
   if (editingCard.value) {
+    // 若 name 发生变化,先走独立 RenameProvider RPC(后端事务改名 request_log/blacklist/health_check_history 并写 48h alias)。
+    // Gemini 不走此路径(它的 persistProviders 通过 delete+add 处理改名)。
+    if (name && name !== editingCard.value.name && modalState.tabId !== 'gemini') {
+      // others tab 需要 custom:{toolId} 格式，与 persistProviders 逻辑保持一致
+      let renameKind: string
+      if (modalState.tabId === 'others') {
+        if (!selectedToolId.value) {
+          showToast(t('components.main.customCli.selectToolFirst'), 'error')
+          return false
+        }
+        renameKind = getCustomProviderKind(selectedToolId.value)
+      } else {
+        renameKind = modalState.tabId
+      }
+      try {
+        await RenameProvider(renameKind, editingCard.value.id, name)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(msg || 'Rename failed', 'error')
+        return false
+      }
+    }
+
     // 仅当 level 变化时才重新排序，避免破坏同级拖拽顺序
     const prevLevel = normalizeLevel(editingCard.value.level)
     const nextLevel = normalizeLevel(modalState.form.level)
     Object.assign(editingCard.value, {
+      name: name || editingCard.value.name,
       apiUrl: apiUrl || editingCard.value.apiUrl,
       apiKey,
       officialSite,

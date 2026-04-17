@@ -187,14 +187,25 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 		nameByID[p.ID] = p.Name
 	}
 
+	// 解析 platform(alias 校验需要)。失败时跳过 alias 校验(比如 gemini/unknown kind)
+	aliasPlatform, aliasErr := resolvePlatform(kind)
+
 	// 验证每个 provider 的配置，并清除旧字段
 	validationErrors := make([]string, 0)
 	for i := range providers {
 		p := &providers[i]
 
-		// 规则：name 不可修改（黑名单/统计以 name 为 key，改名会导致数据丢失）
+		// 规则：name 不可修改（走独立 RenameProvider 路径,SaveProviders 只允许既有 name）
 		if oldName, ok := nameByID[p.ID]; ok && oldName != p.Name {
-			return fmt.Errorf("provider id %d 的 name 不可修改（会导致黑名单和统计数据丢失）", p.ID)
+			return fmt.Errorf("provider id %d 的 name 不可修改(请使用 RenameProvider)", p.ID)
+		}
+
+		// 规则:名字不得占用其他 provider 的 48h 活动 alias
+		// 防止 "A→B 后新建同名 A" 被 alias resolver 静默归并到 B 的历史里
+		if aliasErr == nil {
+			if err := checkNameNotOccupiedByAlias(aliasPlatform, p.ID, p.Name); err != nil {
+				return err
+			}
 		}
 
 		// 验证模型配置
@@ -396,19 +407,19 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 
 	// 5. 克隆配置（深拷贝）
 	cloned := &Provider{
-		ID:      newID,
-		Name:    source.Name + " (副本)",
-		APIURL:  source.APIURL,
-		APIKey:  source.APIKey,
-		Site:    source.Site,
-		Icon:    source.Icon,
-		Tint:    source.Tint,
-		Accent:  source.Accent,
-		Enabled: false, // 默认禁用，避免与源供应商冲突
-		Level:   source.Level,
+		ID:                   newID,
+		Name:                 source.Name + " (副本)",
+		APIURL:               source.APIURL,
+		APIKey:               source.APIKey,
+		Site:                 source.Site,
+		Icon:                 source.Icon,
+		Tint:                 source.Tint,
+		Accent:               source.Accent,
+		Enabled:              false, // 默认禁用，避免与源供应商冲突
+		Level:                source.Level,
 		APIEndpoint:          source.APIEndpoint,          // 复制端点配置
-		UpstreamProtocol:      source.UpstreamProtocol,      // 复制上游协议配置
-		ConnectivityAuthType:  source.ConnectivityAuthType,  // 复制认证方式
+		UpstreamProtocol:     source.UpstreamProtocol,     // 复制上游协议配置
+		ConnectivityAuthType: source.ConnectivityAuthType, // 复制认证方式
 		// 可用性监控配置
 		AvailabilityMonitorEnabled: source.AvailabilityMonitorEnabled,
 		ConnectivityAutoBlacklist:  false, // 副本默认关闭自动拉黑
@@ -449,7 +460,7 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 
 // IsModelSupported 检查 provider 是否支持指定的模型
 // 支持条件：1) 模型在 SupportedModels 中（精确或通配符匹配）
-//          2) 模型在 ModelMapping 的 key 中（精确或通配符匹配）
+//  2. 模型在 ModelMapping 的 key 中（精确或通配符匹配）
 func (p *Provider) IsModelSupported(modelName string) bool {
 	// 向后兼容：如果未配置白名单和映射，假设支持所有模型
 	if (p.SupportedModels == nil || len(p.SupportedModels) == 0) &&
@@ -652,7 +663,8 @@ func matchWildcard(pattern, text string) bool {
 // applyWildcardMapping 应用通配符映射
 // 将 pattern 中的 * 匹配部分替换到 replacement 的 * 位置
 // 示例: pattern="claude-*", replacement="anthropic/claude-*", input="claude-sonnet-4"
-//      输出: "anthropic/claude-sonnet-4"
+//
+//	输出: "anthropic/claude-sonnet-4"
 func applyWildcardMapping(pattern, replacement, input string) string {
 	// 如果 pattern 或 replacement 没有通配符，直接返回 replacement
 	if !strings.Contains(pattern, "*") || !strings.Contains(replacement, "*") {

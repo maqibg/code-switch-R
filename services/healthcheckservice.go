@@ -66,16 +66,16 @@ type HealthCheckHistory struct {
 
 // ProviderTimeline Provider 时间线（用于前端展示）
 type ProviderTimeline struct {
-	ProviderID                 int64                `json:"providerId"`
-	ProviderName               string               `json:"providerName"`
-	Platform                   string               `json:"platform"`
-	AvailabilityMonitorEnabled bool                 `json:"availabilityMonitorEnabled"`
-	ConnectivityAutoBlacklist  bool                 `json:"connectivityAutoBlacklist"`
-	AvailabilityConfig         *AvailabilityConfig  `json:"availabilityConfig,omitempty"` // 高级配置
-	Items                      []HealthCheckResult  `json:"items"`                        // 历史记录
-	Latest                     *HealthCheckResult   `json:"latest"`                       // 最新一条
-	Uptime                     float64              `json:"uptime"`                       // 可用率
-	AvgLatencyMs               int                  `json:"avgLatencyMs"`                 // 平均延迟
+	ProviderID                 int64               `json:"providerId"`
+	ProviderName               string              `json:"providerName"`
+	Platform                   string              `json:"platform"`
+	AvailabilityMonitorEnabled bool                `json:"availabilityMonitorEnabled"`
+	ConnectivityAutoBlacklist  bool                `json:"connectivityAutoBlacklist"`
+	AvailabilityConfig         *AvailabilityConfig `json:"availabilityConfig,omitempty"` // 高级配置
+	Items                      []HealthCheckResult `json:"items"`                        // 历史记录
+	Latest                     *HealthCheckResult  `json:"latest"`                       // 最新一条
+	Uptime                     float64             `json:"uptime"`                       // 可用率
+	AvgLatencyMs               int                 `json:"avgLatencyMs"`                 // 平均延迟
 }
 
 // AvailabilityFailureCounter 可用性失败计数器（独立于真实请求）
@@ -93,7 +93,7 @@ type HealthCheckService struct {
 	settingsService  *SettingsService
 
 	mu            sync.RWMutex
-	failCounters  map[string]*AvailabilityFailureCounter // key: platform:providerName
+	failCounters  map[string]*AvailabilityFailureCounter  // key: platform:providerName
 	latestResults map[string]map[int64]*HealthCheckResult // platform -> providerID -> result
 
 	// 后台轮询
@@ -750,6 +750,9 @@ func (hcs *HealthCheckService) saveResult(result *HealthCheckResult) error {
 		return fmt.Errorf("数据库写入队列未初始化")
 	}
 
+	// 若 provider 在检测过程中被 rename,把旧名兑换成新名再落库
+	canonicalName := ResolveProviderAlias(result.Platform, result.ProviderName)
+
 	const insertSQL = `
 		INSERT INTO health_check_history (provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -757,7 +760,7 @@ func (hcs *HealthCheckService) saveResult(result *HealthCheckResult) error {
 
 	return GlobalDBQueue.Exec(insertSQL,
 		result.ProviderID,
-		result.ProviderName,
+		canonicalName,
 		result.Platform,
 		result.Model,
 		result.Endpoint,

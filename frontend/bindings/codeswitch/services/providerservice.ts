@@ -29,6 +29,15 @@ export function SaveProviders(kind: string, providers: $models.Provider[]): $Can
     return $Call.ByID(1034860836, kind, providers);
 }
 
+/**
+ * RenameProvider 改名供应商,事务更新 request_log / provider_blacklist / health_check_history
+ * 并写入 48h alias 用于承接 in-flight 请求。
+ * 注意:此处使用 ByName,下一次 wails3 bindings 生成会替换为 ByID。
+ */
+export function RenameProvider(kind: string, id: number, newName: string): $CancellablePromise<void> {
+    return $Call.ByName("codeswitch/services.ProviderService.RenameProvider", kind, id, newName);
+}
+
 export function Start(): $CancellablePromise<void> {
     return $Call.ByID(194327613);
 }

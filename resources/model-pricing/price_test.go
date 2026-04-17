@@ -1,0 +1,358 @@
+package modelpricing
+
+import (
+	"testing"
+)
+
+func newTestService(t *testing.T) *Service {
+	t.Helper()
+	svc, err := NewService()
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+	return svc
+}
+
+// TestSampleSpecSkipped 确保 JSON 里的 sample_spec 文档条目不污染 pricingMap。
+func TestSampleSpecSkipped(t *testing.T) {
+	svc := newTestService(t)
+	if _, ok := svc.pricingMap["sample_spec"]; ok {
+		t.Fatal("sample_spec 应该被跳过,当前仍在 pricingMap 中")
+	}
+}
+
+// TestOverlayAliases 检验 overlay 映射的裸名能查到价格。
+func TestOverlayAliases(t *testing.T) {
+	svc := newTestService(t)
+	cases := []string{
+		"qwen-max", "qwen-plus", "qwen-turbo", "qwen-coder", "qwen-flash",
+		"qwen3-coder-flash", "qwen3-coder-plus",
+		"kimi-latest", "kimi-k2-0711-preview",
+		"glm-4.5", "glm-4.5-air", "glm-4.6",
+	}
+	for _, m := range cases {
+		entry, ok := svc.getPricing(m)
+		if !ok || entry == nil {
+			t.Errorf("overlay 别名 %q 应该有定价", m)
+		}
+	}
+}
+
+// TestFamilyFallback 检验 family fallback 规则按前缀命中 vendor 版。
+func TestFamilyFallback(t *testing.T) {
+	svc := newTestService(t)
+	cases := map[string]string{
+		// qwen- 前缀没有 dashscope/ 对应项时,family fallback 也能尝试拼接命中
+		"qwen-plus-latest":      "dashscope/qwen-plus-latest",
+		"qwen3-max-preview":     "dashscope/qwen3-max-preview",
+		"kimi-thinking-preview": "moonshot/kimi-thinking-preview",
+	}
+	for input, expectedKey := range cases {
+		entry, ok := svc.getPricing(input)
+		if !ok || entry == nil {
+			t.Errorf("family fallback 应该为 %q 命中 %q", input, expectedKey)
+		}
+		// 验证 expectedKey 在 pricingMap 中存在(前提校验)
+		if _, exists := svc.pricingMap[expectedKey]; !exists {
+			t.Errorf("前提失败:%q 不在 pricingMap,测试用例需更新", expectedKey)
+		}
+	}
+}
+
+// TestSubstringFallbackRemoved 确保删除了无序 substring fallback 后,
+// 明显不合法的模型名不会被意外命中。
+func TestSubstringFallbackRemoved(t *testing.T) {
+	svc := newTestService(t)
+	// "grok" 裸名不应该命中任何 xai/grok-*(之前的 substring 会随机命中一个)
+	if entry, ok := svc.getPricing("grok"); ok && entry != nil {
+		t.Errorf("裸名 'grok' 不应该命中任何条目(意味着 substring fallback 未删除)")
+	}
+	if entry, ok := svc.getPricing("totally-nonexistent-model-xyz"); ok && entry != nil {
+		t.Errorf("不存在的模型不应该命中,得到:%v", entry)
+	}
+}
+
+// TestExactAndAliasCandidates 检验基础的 gpt-5-codex→gpt-5 与 region 去前缀仍生效。
+func TestExactAndAliasCandidates(t *testing.T) {
+	svc := newTestService(t)
+
+	// gpt-5 本身必须存在
+	if _, ok := svc.getPricing("gpt-5"); !ok {
+		t.Fatal("前提失败:gpt-5 应存在于 pricingMap")
+	}
+	// gpt-5-codex 应该通过 alias 候选命中 gpt-5(如果 pricingMap 里没有直接定义)
+	if _, ok := svc.getPricing("gpt-5-codex"); !ok {
+		t.Error("gpt-5-codex 应该通过 alias 回退到 gpt-5")
+	}
+
+	// anthropic 前缀去除
+	if _, ok := svc.pricingMap["anthropic.claude-sonnet-4-5-20250929-v1:0"]; ok {
+		// 已经带前缀,测试去掉 us. 前缀应命中
+		if _, ok := svc.getPricing("us.anthropic.claude-sonnet-4-5-20250929-v1:0"); !ok {
+			t.Error("region 前缀去除应命中 anthropic.claude-sonnet-4-5-20250929-v1:0")
+		}
+	}
+}
+
+// TestTieredPricing 检验 tiered_pricing 分段价生效。
+// 用 dashscope/qwen-flash 做样本(它有 2 段:[0,256k] / [256k,1M])。
+func TestTieredPricing(t *testing.T) {
+	svc := newTestService(t)
+
+	entry, ok := svc.pricingMap["dashscope/qwen-flash"]
+	if !ok {
+		t.Skip("dashscope/qwen-flash 不在当前 JSON 中,跳过")
+	}
+	if len(entry.TieredPricing) < 2 {
+		t.Fatalf("期望 dashscope/qwen-flash 有 >=2 个 tier,实际 %d", len(entry.TieredPricing))
+	}
+
+	// 低档位:10k prompt tokens 应落在 [0, 256k] band
+	low := svc.CalculateCost("dashscope/qwen-flash", UsageSnapshot{
+		InputTokens:  10000,
+		OutputTokens: 1000,
+	})
+	if !low.IsTiered {
+		t.Error("低档应标记 IsTiered=true")
+	}
+	if !low.HasPricing {
+		t.Error("低档应有定价")
+	}
+
+	// 高档位:500k prompt tokens 应落在 [256k, 1M] band
+	high := svc.CalculateCost("dashscope/qwen-flash", UsageSnapshot{
+		InputTokens:  500000,
+		OutputTokens: 1000,
+	})
+	if !high.IsTiered {
+		t.Error("高档应标记 IsTiered=true")
+	}
+
+	// 高档输入单价应严格大于低档(qwen-flash 256k+ 贵 5 倍)
+	lowRate := low.InputCost / 10000
+	highRate := high.InputCost / 500000
+	if highRate <= lowRate {
+		t.Errorf("tiered_pricing 高档单价 %.9f 应该 > 低档 %.9f", highRate, lowRate)
+	}
+}
+
+// TestAbove200kPricing 验证长上下文 above_200k 字段在超阈值时被消费。
+func TestAbove200kPricing(t *testing.T) {
+	svc := newTestService(t)
+
+	// 找一个带 above_200k 的 anthropic 模型
+	var target string
+	for k, v := range svc.pricingMap {
+		if v.InputCostPerTokenAbove200k > 0 && v.InputCostPerToken > 0 &&
+			v.InputCostPerTokenAbove200k > v.InputCostPerToken {
+			target = k
+			break
+		}
+	}
+	if target == "" {
+		t.Skip("没有找到带 above_200k 字段的模型,跳过")
+	}
+
+	short := svc.CalculateCost(target, UsageSnapshot{InputTokens: 50000, OutputTokens: 1000})
+	long := svc.CalculateCost(target, UsageSnapshot{InputTokens: 250000, OutputTokens: 1000})
+
+	shortRate := short.InputCost / 50000
+	longRate := long.InputCost / 250000
+
+	if longRate <= shortRate {
+		t.Errorf("超 200k 单价 %.9f 应该 > 短上下文 %.9f (model=%s)", longRate, shortRate, target)
+	}
+	if !long.IsLongContext {
+		t.Errorf("超 200k 应标记 IsLongContext=true (model=%s)", target)
+	}
+}
+
+// TestCalculateCostBasic 基础 token 计费(无 tiered/无 above 阈值)。
+func TestCalculateCostBasic(t *testing.T) {
+	svc := newTestService(t)
+	cost := svc.CalculateCost("gpt-5", UsageSnapshot{
+		InputTokens:  1000,
+		OutputTokens: 500,
+	})
+	if !cost.HasPricing {
+		t.Error("gpt-5 应有定价")
+	}
+	if cost.TotalCost <= 0 {
+		t.Errorf("gpt-5 TotalCost 应 >0,实际 %f", cost.TotalCost)
+	}
+}
+
+// TestUnknownModelNoPricing 未知模型不应强行给价。
+func TestUnknownModelNoPricing(t *testing.T) {
+	svc := newTestService(t)
+	cost := svc.CalculateCost("this-model-definitely-does-not-exist-xyz-123", UsageSnapshot{
+		InputTokens:  1000,
+		OutputTokens: 500,
+	})
+	if cost.HasPricing {
+		t.Error("未知模型不应有定价")
+	}
+	if cost.TotalCost != 0 {
+		t.Errorf("未知模型 TotalCost 应为 0,实际 %f", cost.TotalCost)
+	}
+}
+
+// TestFamilyFallbackOrder 确保 qwen3- 优先于 qwen- 匹配(顺序依赖)。
+func TestFamilyFallbackOrder(t *testing.T) {
+	cands := familyFallbackCandidates("qwen3-coder-new-version")
+	if len(cands) == 0 {
+		t.Fatal("qwen3- 应命中 family 规则")
+	}
+	if cands[0] != "dashscope/qwen3-coder-new-version" {
+		t.Errorf("首选应是 dashscope/qwen3-coder-new-version,实际 %v", cands)
+	}
+}
+
+// TestCandidatesDeduplication 确保候选列表去重。
+func TestCandidatesDeduplication(t *testing.T) {
+	// 没有 region/anthropic 前缀的模型应只产生 1 个候选
+	c := buildCandidates("gpt-4")
+	if len(c) != 1 {
+		t.Errorf("gpt-4 期望 1 个候选,实际 %d: %v", len(c), c)
+	}
+}
+
+// TestGpt5CodexAliasCandidate 直接验证 gpt-5-codex 的候选列表含 gpt-5,
+// 即便 pricingMap 里 gpt-5-codex 本身存在,别名链条依然生效。
+func TestGpt5CodexAliasCandidate(t *testing.T) {
+	cands := buildCandidates("gpt-5-codex")
+	found := false
+	for _, c := range cands {
+		if c == "gpt-5" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("gpt-5-codex 候选应包含 gpt-5,实际 %v", cands)
+	}
+}
+
+// TestTierBoundaryExact 锁定 [lo, hi) 语义:range 上界值本身归入下一档。
+func TestTierBoundaryExact(t *testing.T) {
+	bands := []TieredPricingBand{
+		{Range: [2]float64{0, 256000}, InputCostPerToken: 1e-7, OutputCostPerToken: 2e-7},
+		{Range: [2]float64{256000, 1000000}, InputCostPerToken: 5e-7, OutputCostPerToken: 1e-6},
+	}
+	// 255999 应命中低档
+	if pickTier(bands, 255999).InputCostPerToken != 1e-7 {
+		t.Error("255999 应落在低档 [0, 256000)")
+	}
+	// 256000 恰好等于上界,应归入高档
+	if pickTier(bands, 256000).InputCostPerToken != 5e-7 {
+		t.Error("256000 应归入高档 [256000, 1000000)")
+	}
+	// 超过最大 band:返回最后一段
+	if pickTier(bands, 2000000).InputCostPerToken != 5e-7 {
+		t.Error("超过最大 band 应返回最后一段")
+	}
+}
+
+// TestAbove272kPricing 验证 272k 档位(GPT-5.x 系列)。
+func TestAbove272kPricing(t *testing.T) {
+	svc := newTestService(t)
+
+	var target string
+	for k, v := range svc.pricingMap {
+		if v.InputCostPerTokenAbove272k > 0 && v.InputCostPerToken > 0 &&
+			v.InputCostPerTokenAbove272k > v.InputCostPerToken {
+			target = k
+			break
+		}
+	}
+	if target == "" {
+		t.Skip("当前 JSON 没有 above_272k 模型")
+	}
+
+	short := svc.CalculateCost(target, UsageSnapshot{InputTokens: 100000, OutputTokens: 1000})
+	long := svc.CalculateCost(target, UsageSnapshot{InputTokens: 300000, OutputTokens: 1000})
+
+	if !long.IsLongContext {
+		t.Errorf("300k prompt 应标记 IsLongContext (model=%s)", target)
+	}
+	if long.InputCost/300000 <= short.InputCost/100000 {
+		t.Errorf("272k+ 单价应 > 基础价 (model=%s)", target)
+	}
+}
+
+// TestAbove200kCacheTokenRates 验证超 200k 时 cache_read/cache_create 切到对应档位单价。
+// 样本:anthropic.claude-3-5-sonnet-20240620-v1:0
+//
+//	cache_read_input_token_cost = 3e-07
+//	cache_read_input_token_cost_above_200k_tokens = 6e-07
+func TestAbove200kCacheTokenRates(t *testing.T) {
+	svc := newTestService(t)
+	target := "anthropic.claude-3-5-sonnet-20240620-v1:0"
+	entry, ok := svc.pricingMap[target]
+	if !ok {
+		t.Skip(target + " 不在 JSON 中")
+	}
+	if entry.CacheReadInputTokenCostAbove200k == 0 {
+		t.Skip(target + " 未携带 cache_read_above_200k 字段")
+	}
+
+	// 纯 input 超 200k + 一些 cache_read
+	res := svc.CalculateCost(target, UsageSnapshot{
+		InputTokens:     250000,
+		OutputTokens:    1000,
+		CacheReadTokens: 10000,
+	})
+	if !res.IsLongContext {
+		t.Fatal("期望 IsLongContext=true")
+	}
+	expected := 10000 * entry.CacheReadInputTokenCostAbove200k
+	if res.CacheReadCost < expected*0.999 || res.CacheReadCost > expected*1.001 {
+		t.Errorf("CacheReadCost 期望 ~%f(使用 above_200k 单价),实际 %f",
+			expected, res.CacheReadCost)
+	}
+}
+
+// TestCache1hFromJSONFirst 验证 1h cache_create 价优先吃 JSON 的
+// cache_creation_input_token_cost_above_1hr 字段,而不是硬编码的 opus/sonnet/haiku 映射。
+// 样本:claude-3-haiku-20240307 JSON 里 above_1hr = 6e-06,
+// 硬编码给 haiku 1.6e-06(相差 ~4 倍)。
+func TestCache1hFromJSONFirst(t *testing.T) {
+	svc := newTestService(t)
+	target := "claude-3-haiku-20240307"
+	entry, ok := svc.pricingMap[target]
+	if !ok {
+		t.Skip(target + " 不在 JSON 中")
+	}
+	if entry.CacheCreationInputTokenCostAbove1Hr == 0 {
+		t.Skip(target + " 无 above_1hr 字段")
+	}
+
+	res := svc.CalculateCost(target, UsageSnapshot{
+		InputTokens:  1000,
+		OutputTokens: 100,
+		CacheCreation: &CacheCreationDetail{
+			Ephemeral1hTokens: 10000,
+		},
+		CacheCreateTokens: 10000,
+	})
+	// 期望:1h 价应该用 JSON 的 6e-06,不是硬编码的 1.6e-06
+	jsonRate := entry.CacheCreationInputTokenCostAbove1Hr
+	expected := 10000 * jsonRate
+	if res.Ephemeral1hCost < expected*0.999 || res.Ephemeral1hCost > expected*1.001 {
+		t.Errorf("Ephemeral1hCost 期望 ~%f(使用 JSON above_1hr %f),实际 %f",
+			expected, jsonRate, res.Ephemeral1hCost)
+	}
+}
+
+// TestOverlayMissingTargetFailFast 验证 overlay 里 target 不存在时启动失败。
+// 用替换 overlayFile 的方式模拟错误配置(恢复原值避免影响其他测试)。
+func TestOverlayMissingTargetFailFast(t *testing.T) {
+	original := overlayFile
+	defer func() { overlayFile = original }()
+
+	overlayFile = []byte(`{"aliases": {"fake-model": "this-target-does-not-exist-xyz"}}`)
+	// 需要绕过 sync.Once,直接调用 NewService
+	if _, err := NewService(); err == nil {
+		t.Error("overlay 映射到不存在的 target,NewService 应返回 error")
+	}
+}
