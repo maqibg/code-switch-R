@@ -25,17 +25,22 @@ export function LoadProviders(kind: string): $CancellablePromise<$models.Provide
     });
 }
 
-export function SaveProviders(kind: string, providers: $models.Provider[]): $CancellablePromise<void> {
-    return $Call.ByID(1034860836, kind, providers);
-}
-
 /**
- * RenameProvider 改名供应商,事务更新 request_log / provider_blacklist / health_check_history
- * 并写入 48h alias 用于承接 in-flight 请求。
- * 注意:此处使用 ByName,下一次 wails3 bindings 生成会替换为 ByID。
+ * RenameProvider 改名 provider:事务更新 DB 中按 name 存储的历史数据,
+ * 写入 48h alias 兜底 in-flight 请求,最后原子替换配置文件。
+ * 
+ * 校验规则:
+ *   - newName 非空且 trim 后与 oldName 不等
+ *   - 同 kind 下不存在其它 provider 用同名(当前 snapshot)
+ *   - 48h 内 alias 表未占用该 newName
+ *   - 该 provider_id 在 48h 内未 rename 过(禁止链式)
  */
 export function RenameProvider(kind: string, id: number, newName: string): $CancellablePromise<void> {
-    return $Call.ByName("codeswitch/services.ProviderService.RenameProvider", kind, id, newName);
+    return $Call.ByID(2498164164, kind, id, newName);
+}
+
+export function SaveProviders(kind: string, providers: $models.Provider[]): $CancellablePromise<void> {
+    return $Call.ByID(1034860836, kind, providers);
 }
 
 export function Start(): $CancellablePromise<void> {

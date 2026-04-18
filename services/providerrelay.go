@@ -844,8 +844,9 @@ func (prs *ProviderRelayService) forwardRequest(
 			INSERT INTO request_log (
 				platform, model, provider, http_code,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
-				reasoning_tokens, is_stream, duration_sec
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				reasoning_tokens, is_stream, duration_sec,
+				ephemeral_5m_tokens, ephemeral_1h_tokens
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			requestLog.Platform,
 			requestLog.Model,
@@ -858,6 +859,8 @@ func (prs *ProviderRelayService) forwardRequest(
 			requestLog.ReasoningTokens,
 			boolToInt(requestLog.IsStream),
 			requestLog.DurationSec,
+			requestLog.Ephemeral5mTokens,
+			requestLog.Ephemeral1hTokens,
 		)
 
 		if err != nil {
@@ -1082,14 +1085,21 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		return err
 	}
 
-	if err := ensureRequestLogColumn(db, "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"); err != nil {
-		return err
+	// 历史新增列按声明顺序补齐,旧库也能顺利升级。新增列只需在末尾追加一行。
+	migrations := []struct {
+		column     string
+		definition string
+	}{
+		{"created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"},
+		{"is_stream", "INTEGER DEFAULT 0"},
+		{"duration_sec", "REAL DEFAULT 0"},
+		{"ephemeral_5m_tokens", "INTEGER DEFAULT 0"},
+		{"ephemeral_1h_tokens", "INTEGER DEFAULT 0"},
 	}
-	if err := ensureRequestLogColumn(db, "is_stream", "INTEGER DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "duration_sec", "REAL DEFAULT 0"); err != nil {
-		return err
+	for _, m := range migrations {
+		if err := ensureRequestLogColumn(db, m.column, m.definition); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1144,14 +1154,18 @@ func parseEventPayload(payload string, parser func(string, *ReqeustLog), usage *
 }
 
 type ReqeustLog struct {
-	ID                int64   `json:"id"`
-	Platform          string  `json:"platform"` // claude、codex 或 gemini
-	Model             string  `json:"model"`
-	Provider          string  `json:"provider"` // provider name
-	HttpCode          int     `json:"http_code"`
-	InputTokens       int     `json:"input_tokens"`
-	OutputTokens      int     `json:"output_tokens"`
-	CacheCreateTokens int     `json:"cache_create_tokens"`
+	ID                int64  `json:"id"`
+	Platform          string `json:"platform"` // claude、codex 或 gemini
+	Model             string `json:"model"`
+	Provider          string `json:"provider"` // provider name
+	HttpCode          int    `json:"http_code"`
+	InputTokens       int    `json:"input_tokens"`
+	OutputTokens      int    `json:"output_tokens"`
+	CacheCreateTokens int    `json:"cache_create_tokens"`
+	// Ephemeral5mTokens/Ephemeral1hTokens 分别对应 cache_creation.ephemeral_5m/1h_input_tokens。
+	// 为 0 时按 CacheCreateTokens 全量当 5m 计费(旧数据兼容)。
+	Ephemeral5mTokens int     `json:"ephemeral_5m_tokens"`
+	Ephemeral1hTokens int     `json:"ephemeral_1h_tokens"`
 	CacheReadTokens   int     `json:"cache_read_tokens"`
 	ReasoningTokens   int     `json:"reasoning_tokens"`
 	IsStream          bool    `json:"is_stream"`
@@ -1174,6 +1188,9 @@ func ClaudeCodeParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 	usage.OutputTokens += int(gjson.Get(data, "message.usage.output_tokens").Int())
 	usage.CacheCreateTokens += int(gjson.Get(data, "message.usage.cache_creation_input_tokens").Int())
 	usage.CacheReadTokens += int(gjson.Get(data, "message.usage.cache_read_input_tokens").Int())
+	// cache_creation 子对象拆分 5m/1h,用于 Anthropic 不同 TTL 价差
+	usage.Ephemeral5mTokens += int(gjson.Get(data, "message.usage.cache_creation.ephemeral_5m_input_tokens").Int())
+	usage.Ephemeral1hTokens += int(gjson.Get(data, "message.usage.cache_creation.ephemeral_1h_input_tokens").Int())
 
 	usage.InputTokens += int(gjson.Get(data, "usage.input_tokens").Int())
 	usage.OutputTokens += int(gjson.Get(data, "usage.output_tokens").Int())
@@ -1436,13 +1453,15 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 				INSERT INTO request_log (
 					platform, model, provider, http_code,
 					input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
-					reasoning_tokens, is_stream, duration_sec
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					reasoning_tokens, is_stream, duration_sec,
+					ephemeral_5m_tokens, ephemeral_1h_tokens
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`,
 				requestLog.Platform, requestLog.Model, requestLog.Provider, requestLog.HttpCode,
 				requestLog.InputTokens, requestLog.OutputTokens, requestLog.CacheCreateTokens,
 				requestLog.CacheReadTokens, requestLog.ReasoningTokens,
 				boolToInt(requestLog.IsStream), requestLog.DurationSec,
+				requestLog.Ephemeral5mTokens, requestLog.Ephemeral1hTokens,
 			)
 		}()
 

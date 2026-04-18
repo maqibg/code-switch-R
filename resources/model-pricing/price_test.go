@@ -356,3 +356,127 @@ func TestOverlayMissingTargetFailFast(t *testing.T) {
 		t.Error("overlay 映射到不存在的 target,NewService 应返回 error")
 	}
 }
+
+// TestCacheHitFallback 验证 DeepSeek 等使用 cache_hit 字段的模型,
+// ensureCachePricing 会把它当作 cache_read 价,不再掉到 0.1x 兜底。
+func TestCacheHitFallback(t *testing.T) {
+	svc := newTestService(t)
+	entry, ok := svc.pricingMap["deepseek/deepseek-r1"]
+	if !ok {
+		t.Skip("deepseek/deepseek-r1 不在 JSON 中")
+	}
+	if entry.InputCostPerTokenCacheHit == 0 {
+		t.Skip("deepseek/deepseek-r1 无 cache_hit 字段")
+	}
+	if entry.CacheReadInputTokenCost != entry.InputCostPerTokenCacheHit {
+		t.Errorf("期望 CacheReadInputTokenCost=%g(来自 cache_hit),实际 %g",
+			entry.InputCostPerTokenCacheHit, entry.CacheReadInputTokenCost)
+	}
+}
+
+// TestPriorityServiceTier 验证 UsageSnapshot.ServiceTier=priority 时使用 *_priority 字段。
+func TestPriorityServiceTier(t *testing.T) {
+	svc := newTestService(t)
+
+	var target string
+	for k, v := range svc.pricingMap {
+		if v.InputCostPerTokenPriority > 0 && v.InputCostPerTokenPriority > v.InputCostPerToken {
+			target = k
+			break
+		}
+	}
+	if target == "" {
+		t.Skip("当前 JSON 没有 priority 字段模型")
+	}
+
+	defaultCost := svc.CalculateCost(target, UsageSnapshot{InputTokens: 1000, OutputTokens: 100})
+	priorityCost := svc.CalculateCost(target, UsageSnapshot{
+		InputTokens:  1000,
+		OutputTokens: 100,
+		ServiceTier:  ServiceTierPriority,
+	})
+
+	if priorityCost.InputCost <= defaultCost.InputCost {
+		t.Errorf("priority tier 单价应 > default (model=%s): priority=%g default=%g",
+			target, priorityCost.InputCost, defaultCost.InputCost)
+	}
+}
+
+// TestPriorityLongContextNotBelowPriorityBase 验证:模型有 priority 基础字段但缺对应
+// above_Xk_priority 时,priority 长上下文请求不应低于 priority 基础价(防止 gpt-5.4 类陷阱)。
+func TestPriorityLongContextNotBelowPriorityBase(t *testing.T) {
+	svc := newTestService(t)
+
+	// 构造一个合成 entry:有 output base/priority,有 above_272k default,无 above_272k priority
+	synthetic := &PricingEntry{
+		InputCostPerToken:           2.5e-6,
+		InputCostPerTokenPriority:   5e-6,
+		OutputCostPerToken:          1.5e-5,
+		OutputCostPerTokenPriority:  3e-5,
+		InputCostPerTokenAbove272k:  5e-6,
+		OutputCostPerTokenAbove272k: 2.25e-5, // default 长上下文 < priority 基础
+	}
+	band := synthetic.resolveLongContextBand(300000, ServiceTierPriority)
+	if !band.active {
+		t.Fatal("应该命中 >272k band")
+	}
+	// priority output 应该至少是 priority base 3e-5,而不是 default above_272k 2.25e-5
+	if band.outputPerTok < synthetic.OutputCostPerTokenPriority {
+		t.Errorf("priority+>272k 输出价不应低于 priority 基础价 %g,实际 %g",
+			synthetic.OutputCostPerTokenPriority, band.outputPerTok)
+	}
+	// input/cacheRead 同样验证不低于 priority 基础价
+	if band.inputPerTok < synthetic.InputCostPerTokenPriority {
+		t.Errorf("priority+>272k 输入价不应低于 priority 基础价 %g,实际 %g",
+			synthetic.InputCostPerTokenPriority, band.inputPerTok)
+	}
+
+	// 对比 default 请求仍吃 above_272k default
+	bandDef := synthetic.resolveLongContextBand(300000, ServiceTierDefault)
+	if bandDef.outputPerTok != synthetic.OutputCostPerTokenAbove272k {
+		t.Errorf("default+>272k 输出价应 = above_272k default,实际 %g", bandDef.outputPerTok)
+	}
+
+	_ = svc // 保留 svc 以复用 helper 风格
+}
+
+// TestLongContextTierStrictMatch 验证精确匹配 only,不再无序 fallback 到任意 tier。
+func TestLongContextTierStrictMatch(t *testing.T) {
+	svc := newTestService(t)
+	cost := svc.CalculateCost("unknown-model-xyz[1m]", UsageSnapshot{InputTokens: 250000})
+	if cost.IsLongContext {
+		t.Error("未注册的 [1m] 模型不应命中 longContextTier")
+	}
+}
+
+// TestCacheCreationSplit 验证 Ephemeral5m/1h 拆分时 1h 价生效。
+func TestCacheCreationSplit(t *testing.T) {
+	svc := newTestService(t)
+	target := "claude-3-haiku-20240307"
+	entry, ok := svc.pricingMap[target]
+	if !ok {
+		t.Skip(target + " 不在 JSON 中")
+	}
+	if entry.CacheCreationInputTokenCostAbove1Hr == 0 {
+		t.Skip(target + " 无 above_1hr 字段")
+	}
+
+	// 总 cache create 15000 token = 5000 5m + 10000 1h
+	res := svc.CalculateCost(target, UsageSnapshot{
+		InputTokens:       1000,
+		OutputTokens:      100,
+		CacheCreateTokens: 15000,
+		CacheCreation: &CacheCreationDetail{
+			Ephemeral5mTokens: 5000,
+			Ephemeral1hTokens: 10000,
+		},
+	})
+	expected5m := 5000 * entry.CacheCreationInputTokenCost
+	expected1h := 10000 * entry.CacheCreationInputTokenCostAbove1Hr
+	if res.Ephemeral5mCost < expected5m*0.999 || res.Ephemeral5mCost > expected5m*1.001 {
+		t.Errorf("Ephemeral5mCost 期望 ~%f,实际 %f", expected5m, res.Ephemeral5mCost)
+	}
+	if res.Ephemeral1hCost < expected1h*0.999 || res.Ephemeral1hCost > expected1h*1.001 {
+		t.Errorf("Ephemeral1hCost 期望 ~%f,实际 %f", expected1h, res.Ephemeral1hCost)
+	}
+}

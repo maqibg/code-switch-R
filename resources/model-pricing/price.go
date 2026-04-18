@@ -48,6 +48,8 @@ type PricingEntry struct {
 	OutputCostPerReasoningToken float64 `json:"output_cost_per_reasoning_token"`
 	CacheCreationInputTokenCost float64 `json:"cache_creation_input_token_cost"`
 	CacheReadInputTokenCost     float64 `json:"cache_read_input_token_cost"`
+	// DeepSeek 等将 cache_read 以 cache_hit 命名,当 cache_read 缺失时作回退。
+	InputCostPerTokenCacheHit float64 `json:"input_cost_per_token_cache_hit"`
 
 	// 128k 档(少数 Gemini 系列)
 	InputCostPerTokenAbove128k  float64 `json:"input_cost_per_token_above_128k_tokens"`
@@ -69,8 +71,29 @@ type PricingEntry struct {
 	CacheCreationInputTokenCostAbove1Hr         float64 `json:"cache_creation_input_token_cost_above_1hr"`
 	CacheCreationInputTokenCostAbove1HrAbove200 float64 `json:"cache_creation_input_token_cost_above_1hr_above_200k_tokens"`
 
+	// Priority service tier(OpenAI/Azure 提供的更贵但响应更快的档位)。
+	InputCostPerTokenPriority                float64 `json:"input_cost_per_token_priority"`
+	OutputCostPerTokenPriority               float64 `json:"output_cost_per_token_priority"`
+	CacheReadInputTokenCostPriority          float64 `json:"cache_read_input_token_cost_priority"`
+	InputCostPerTokenAbove200kPriority       float64 `json:"input_cost_per_token_above_200k_tokens_priority"`
+	OutputCostPerTokenAbove200kPriority      float64 `json:"output_cost_per_token_above_200k_tokens_priority"`
+	CacheReadInputTokenCostAbove200kPriority float64 `json:"cache_read_input_token_cost_above_200k_tokens_priority"`
+	InputCostPerTokenAbove272kPriority       float64 `json:"input_cost_per_token_above_272k_tokens_priority"`
+	OutputCostPerTokenAbove272kPriority      float64 `json:"output_cost_per_token_above_272k_tokens_priority"`
+	CacheReadInputTokenCostAbove272kPriority float64 `json:"cache_read_input_token_cost_above_272k_tokens_priority"`
+
 	TieredPricing []TieredPricingBand `json:"tiered_pricing,omitempty"`
 }
+
+// ServiceTier 描述 OpenAI/Azure 等上游请求时选的服务档位,影响单价。
+type ServiceTier string
+
+const (
+	// ServiceTierDefault 标准档位(不指定时的默认行为)。
+	ServiceTierDefault ServiceTier = ""
+	// ServiceTierPriority 优先档位,上游单价更高但延迟更低。
+	ServiceTierPriority ServiceTier = "priority"
+)
 
 // TieredPricingBand 表示 tiered_pricing 中的单段。range 语义为 [lo, hi),
 // 上界值本身归入下一档(实现见 pickTier)。
@@ -94,6 +117,8 @@ type UsageSnapshot struct {
 	CacheCreateTokens int
 	CacheReadTokens   int
 	CacheCreation     *CacheCreationDetail
+	// ServiceTier 当前请求实际走的服务档位;空值视为 default,不影响定价。
+	ServiceTier ServiceTier
 }
 
 // CacheCreationDetail 细分缓存创建 tokens。
@@ -199,7 +224,18 @@ func (s *Service) CalculateCost(model string, usage UsageSnapshot) CostBreakdown
 	// 长上下文档位只解析一次,tiered 场景跳过(tiered 优先级更高)。
 	var longBand longContextBand
 	if len(entry.TieredPricing) == 0 {
-		longBand = entry.resolveLongContextBand(totalPromptTokens)
+		longBand = entry.resolveLongContextBand(totalPromptTokens, usage.ServiceTier)
+	}
+
+	// 默认档价格(priority tier 时吃 *_priority 字段)
+	priority := usage.ServiceTier == ServiceTierPriority
+	baseInput := entry.InputCostPerToken
+	baseOutput := entry.OutputCostPerToken
+	baseCacheRead := entry.CacheReadInputTokenCost
+	if priority {
+		baseInput = firstNonZero(entry.InputCostPerTokenPriority, baseInput)
+		baseOutput = firstNonZero(entry.OutputCostPerTokenPriority, baseOutput)
+		baseCacheRead = firstNonZero(entry.CacheReadInputTokenCostPriority, baseCacheRead)
 	}
 
 	// 价格档位选择优先级:tiered_pricing > longContextTier > above_272k > above_200k > above_128k > 基础价。
@@ -210,21 +246,21 @@ func (s *Service) CalculateCost(model string, usage UsageSnapshot) CostBreakdown
 		breakdown.InputCost = float64(usage.InputTokens) * band.InputCostPerToken
 		breakdown.OutputCost = float64(usage.OutputTokens) * band.OutputCostPerToken
 		breakdown.CacheReadCost = float64(usage.CacheReadTokens) *
-			firstNonZero(band.CacheReadInputTokenCost, entry.CacheReadInputTokenCost)
+			firstNonZero(band.CacheReadInputTokenCost, baseCacheRead)
 	case useLong:
 		breakdown.IsLongContext = true
 		breakdown.InputCost = float64(usage.InputTokens) * longTier.Input
 		breakdown.OutputCost = float64(usage.OutputTokens) * longTier.Output
-		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * entry.CacheReadInputTokenCost
+		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * baseCacheRead
 	case longBand.active:
 		breakdown.IsLongContext = true
 		breakdown.InputCost = float64(usage.InputTokens) * longBand.inputPerTok
 		breakdown.OutputCost = float64(usage.OutputTokens) * longBand.outputPerTok
 		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * longBand.cacheRead
 	default:
-		breakdown.InputCost = float64(usage.InputTokens) * entry.InputCostPerToken
-		breakdown.OutputCost = float64(usage.OutputTokens) * entry.OutputCostPerToken
-		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * entry.CacheReadInputTokenCost
+		breakdown.InputCost = float64(usage.InputTokens) * baseInput
+		breakdown.OutputCost = float64(usage.OutputTokens) * baseOutput
+		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * baseCacheRead
 	}
 
 	if usage.ReasoningTokens > 0 && entry.OutputCostPerReasoningToken > 0 {
@@ -275,23 +311,43 @@ type longContextBand struct {
 }
 
 // resolveLongContextBand 按 prompt tokens 选择 >272k / >200k / >128k 档,未超阈值返回 active=false。
-func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int) longContextBand {
+// tier=priority 时回退顺序:组合档 priority > 基础 priority > 组合档 default。
+// 保证 priority 长上下文永远不会低于"priority 基础单价",避免某些模型缺组合字段导致低计费
+// (例:gpt-5.4 有 output_cost_per_token_priority 但无 output_cost_per_token_above_272k_tokens_priority)。
+func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int, tier ServiceTier) longContextBand {
+	priority := tier == ServiceTierPriority
 	if totalPromptTokens > 272000 && e.InputCostPerTokenAbove272k > 0 {
+		input := e.InputCostPerTokenAbove272k
+		output := firstNonZero(e.OutputCostPerTokenAbove272k, e.OutputCostPerToken)
+		cacheRead := firstNonZero(e.CacheReadInputTokenCostAbove272k, e.CacheReadInputTokenCost)
+		if priority {
+			input = firstNonZero(e.InputCostPerTokenAbove272kPriority, e.InputCostPerTokenPriority, input)
+			output = firstNonZero(e.OutputCostPerTokenAbove272kPriority, e.OutputCostPerTokenPriority, output)
+			cacheRead = firstNonZero(e.CacheReadInputTokenCostAbove272kPriority, e.CacheReadInputTokenCostPriority, cacheRead)
+		}
 		return longContextBand{
 			active:        true,
-			inputPerTok:   e.InputCostPerTokenAbove272k,
-			outputPerTok:  firstNonZero(e.OutputCostPerTokenAbove272k, e.OutputCostPerToken),
-			cacheRead:     firstNonZero(e.CacheReadInputTokenCostAbove272k, e.CacheReadInputTokenCost),
+			inputPerTok:   input,
+			outputPerTok:  output,
+			cacheRead:     cacheRead,
 			cacheCreate:   firstNonZero(e.CacheCreationInputTokenCostAbove272, e.CacheCreationInputTokenCost),
 			cacheCreate1h: 0,
 		}
 	}
 	if totalPromptTokens > 200000 && e.InputCostPerTokenAbove200k > 0 {
+		input := e.InputCostPerTokenAbove200k
+		output := firstNonZero(e.OutputCostPerTokenAbove200k, e.OutputCostPerToken)
+		cacheRead := firstNonZero(e.CacheReadInputTokenCostAbove200k, e.CacheReadInputTokenCost)
+		if priority {
+			input = firstNonZero(e.InputCostPerTokenAbove200kPriority, e.InputCostPerTokenPriority, input)
+			output = firstNonZero(e.OutputCostPerTokenAbove200kPriority, e.OutputCostPerTokenPriority, output)
+			cacheRead = firstNonZero(e.CacheReadInputTokenCostAbove200kPriority, e.CacheReadInputTokenCostPriority, cacheRead)
+		}
 		return longContextBand{
 			active:        true,
-			inputPerTok:   e.InputCostPerTokenAbove200k,
-			outputPerTok:  firstNonZero(e.OutputCostPerTokenAbove200k, e.OutputCostPerToken),
-			cacheRead:     firstNonZero(e.CacheReadInputTokenCostAbove200k, e.CacheReadInputTokenCost),
+			inputPerTok:   input,
+			outputPerTok:  output,
+			cacheRead:     cacheRead,
 			cacheCreate:   firstNonZero(e.CacheCreationInputTokenCostAbove200, e.CacheCreationInputTokenCost),
 			cacheCreate1h: e.CacheCreationInputTokenCostAbove1HrAbove200,
 		}
@@ -389,13 +445,13 @@ func familyFallbackCandidates(model string) []string {
 	return out
 }
 
+// longContextTier 根据 [1m] 后缀匹配用户自定义的 1M 长上下文价目。
+// 严格精确匹配,不再无序 fallback 到任意 tier(避免未来加新模型被随机命中)。
+// 优先级:JSON 的 above_200k/272k 字段 > 此机制,见 CalculateCost。
 func (s *Service) longContextTier(model string, usage UsageSnapshot) (LongContextPricing, bool) {
 	totalInput := usage.InputTokens + usage.CacheCreateTokens + usage.CacheReadTokens
-	if strings.Contains(strings.ToLower(model), "[1m]") && totalInput > 200000 && len(s.longContexts) > 0 {
+	if strings.Contains(strings.ToLower(model), "[1m]") && totalInput > 200000 {
 		if tier, ok := s.longContexts[model]; ok {
-			return tier, true
-		}
-		for _, tier := range s.longContexts {
 			return tier, true
 		}
 	}
@@ -426,8 +482,9 @@ func ensureCachePricing(entry *PricingEntry) {
 	if entry.CacheCreationInputTokenCost == 0 && entry.InputCostPerToken > 0 {
 		entry.CacheCreationInputTokenCost = entry.InputCostPerToken * 1.25
 	}
-	if entry.CacheReadInputTokenCost == 0 && entry.InputCostPerToken > 0 {
-		entry.CacheReadInputTokenCost = entry.InputCostPerToken * 0.1
+	if entry.CacheReadInputTokenCost == 0 {
+		// DeepSeek/novita/zai 等用 cache_hit 命名缓存命中价,优先吃它再退回 10% 兜底
+		entry.CacheReadInputTokenCost = firstNonZero(entry.InputCostPerTokenCacheHit, entry.InputCostPerToken*0.1)
 	}
 }
 
