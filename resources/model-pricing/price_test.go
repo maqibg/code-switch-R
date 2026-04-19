@@ -1,8 +1,26 @@
 package modelpricing
 
 import (
+	"math"
+	"sync"
 	"testing"
 )
+
+// assertApprox 容忍 0.1% 相对误差(或 1e-15 绝对下限),用于比例外推等浮点链式断言。
+// 精确相等场景应直接用 ==,不要用这个 helper。
+func assertApprox(t *testing.T, got, want float64) {
+	t.Helper()
+	const rel = 1e-3
+	const abs = 1e-15
+	diff := math.Abs(got - want)
+	limit := math.Abs(want) * rel
+	if limit < abs {
+		limit = abs
+	}
+	if diff > limit {
+		t.Fatalf("got=%g want=%g diff=%g limit=%g", got, want, diff, limit)
+	}
+}
 
 func newTestService(t *testing.T) *Service {
 	t.Helper()
@@ -478,5 +496,166 @@ func TestCacheCreationSplit(t *testing.T) {
 	}
 	if res.Ephemeral1hCost < expected1h*0.999 || res.Ephemeral1hCost > expected1h*1.001 {
 		t.Errorf("Ephemeral1hCost 期望 ~%f,实际 %f", expected1h, res.Ephemeral1hCost)
+	}
+}
+
+// TestFlexServiceTier 验证 ServiceTierFlex 时基础档 input/output/cache_read 切到 *_flex 字段。
+// 动态扫 pricingMap 找首个同时具备 3 个 *_flex 字段的模型,不硬编码模型名。
+func TestFlexServiceTier(t *testing.T) {
+	svc := newTestService(t)
+	var model string
+	var entry *PricingEntry
+	for k, v := range svc.pricingMap {
+		if v.InputCostPerTokenFlex > 0 && v.OutputCostPerTokenFlex > 0 && v.CacheReadInputTokenCostFlex > 0 {
+			model = k
+			entry = v
+			break
+		}
+	}
+	if model == "" {
+		t.Skip("JSON 中无同时带 3 个 *_flex 字段的模型")
+	}
+
+	usage := UsageSnapshot{
+		InputTokens:     1000,
+		OutputTokens:    100,
+		CacheReadTokens: 200,
+	}
+	flexUsage := usage
+	flexUsage.ServiceTier = ServiceTierFlex
+
+	flexCost := svc.CalculateCost(model, flexUsage)
+	defaultCost := svc.CalculateCost(model, usage)
+
+	assertApprox(t, flexCost.InputCost, float64(usage.InputTokens)*entry.InputCostPerTokenFlex)
+	assertApprox(t, flexCost.OutputCost, float64(usage.OutputTokens)*entry.OutputCostPerTokenFlex)
+	assertApprox(t, flexCost.CacheReadCost, float64(usage.CacheReadTokens)*entry.CacheReadInputTokenCostFlex)
+
+	if flexCost.TotalCost >= defaultCost.TotalCost {
+		t.Fatalf("flex total=%g 应小于 default total=%g", flexCost.TotalCost, defaultCost.TotalCost)
+	}
+}
+
+// TestStandardServiceTierAliasesDefault 验证 standard 和 observed-default 都 alias 到 default,
+// 与空值 ServiceTierDefault 计费完全相等(== 精确比,不用 approx)。
+// 样本挑一个带 *_flex 字段的模型,确认 alias 路径不会误走 flex 分支。
+func TestStandardServiceTierAliasesDefault(t *testing.T) {
+	svc := newTestService(t)
+	var model string
+	for k, v := range svc.pricingMap {
+		if v.InputCostPerTokenFlex > 0 && v.InputCostPerToken > 0 {
+			model = k
+			break
+		}
+	}
+	if model == "" {
+		t.Skip("JSON 中无带 *_flex 字段的模型可做 alias 区分测试")
+	}
+	baseUsage := UsageSnapshot{
+		InputTokens:     1000,
+		OutputTokens:    100,
+		CacheReadTokens: 200,
+	}
+	defaultCost := svc.CalculateCost(model, baseUsage)
+
+	for _, tier := range []ServiceTier{ServiceTierStandard, ServiceTierObservedDefault} {
+		u := baseUsage
+		u.ServiceTier = tier
+		got := svc.CalculateCost(model, u)
+		if got.InputCost != defaultCost.InputCost ||
+			got.OutputCost != defaultCost.OutputCost ||
+			got.CacheReadCost != defaultCost.CacheReadCost ||
+			got.TotalCost != defaultCost.TotalCost {
+			t.Fatalf("tier=%q 应与 default 完全相等: got=%+v default=%+v", tier, got, defaultCost)
+		}
+	}
+}
+
+// TestFlexLongContextScalesFromDefaultLongBand 验证 300k prompt + flex tier 时,
+// 长窗口 band 按短窗口 flex/default 比例外推(JSON 无 *_flex_above_* 字段,走 scaleLongRate 路径)。
+// 使用合成 PricingEntry,不依赖 JSON 样本,公式独立可验证。
+func TestFlexLongContextScalesFromDefaultLongBand(t *testing.T) {
+	entry := &PricingEntry{
+		InputCostPerToken:                2.5e-06,
+		InputCostPerTokenFlex:            1.25e-06,
+		InputCostPerTokenAbove272k:       5e-06,
+		OutputCostPerToken:               1.5e-05,
+		OutputCostPerTokenFlex:           7.5e-06,
+		OutputCostPerTokenAbove272k:      2.25e-05,
+		CacheReadInputTokenCost:          2.5e-07,
+		CacheReadInputTokenCostFlex:      1.3e-07,
+		CacheReadInputTokenCostAbove272k: 5e-07,
+	}
+
+	band := entry.resolveLongContextBand(300000, ServiceTierFlex)
+	if !band.active {
+		t.Fatal("300k prompt 应命中 >272k band")
+	}
+
+	// 预期:长窗默认价 × (flex基础 / default基础)
+	expectedInput := 5e-06 * (1.25e-06 / 2.5e-06)       // = 2.5e-06
+	expectedOutput := 2.25e-05 * (7.5e-06 / 1.5e-05)    // = 1.125e-05
+	expectedCacheRead := 5e-07 * (1.3e-07 / 2.5e-07)    // = 2.6e-07
+
+	assertApprox(t, band.inputPerTok, expectedInput)
+	assertApprox(t, band.outputPerTok, expectedOutput)
+	assertApprox(t, band.cacheRead, expectedCacheRead)
+
+	// 比例外推后的 flex 长窗 input 应严格低于 default 长窗
+	if band.inputPerTok >= entry.InputCostPerTokenAbove272k {
+		t.Errorf("flex 长窗 input %g 应低于 default above_272k %g",
+			band.inputPerTok, entry.InputCostPerTokenAbove272k)
+	}
+
+	// default tier 长窗不受 flex 影响
+	bandDef := entry.resolveLongContextBand(300000, ServiceTierDefault)
+	if bandDef.inputPerTok != entry.InputCostPerTokenAbove272k {
+		t.Errorf("default 长窗 input 应 = above_272k default %g,实际 %g",
+			entry.InputCostPerTokenAbove272k, bandDef.inputPerTok)
+	}
+}
+
+// TestUnknownTierWarningOnce 验证 NormalizeObservedServiceTier:
+//   - 同一未知值多次调用只触发 onUnknown 一次
+//   - 不同未知值分别触发一次
+//   - 已知值(priority/flex/standard/default/空)不触发
+//   - 未知值原样返回 lower 后的字符串(保留 raw 审计)
+func TestUnknownTierWarningOnce(t *testing.T) {
+	var seen sync.Map
+	var warned []string
+	onUnknown := func(tier string) {
+		if _, loaded := seen.LoadOrStore(tier, struct{}{}); loaded {
+			return
+		}
+		warned = append(warned, tier)
+	}
+
+	cases := []struct {
+		raw  string
+		want ServiceTier
+	}{
+		{" economy ", ServiceTier("economy")},
+		{"ECONOMY", ServiceTier("economy")},
+		{"turbo", ServiceTier("turbo")},
+		{"priority", ServiceTierPriority},
+		{"flex", ServiceTierFlex},
+		{"standard", ServiceTierStandard},
+		{"default", ServiceTierObservedDefault},
+		{"", ServiceTierDefault},
+	}
+	for _, c := range cases {
+		if got := NormalizeObservedServiceTier(c.raw, onUnknown); got != c.want {
+			t.Errorf("NormalizeObservedServiceTier(%q) = %q, want %q", c.raw, got, c.want)
+		}
+	}
+
+	if len(warned) != 2 {
+		t.Fatalf("len(warned)=%d, want 2; warned=%v", len(warned), warned)
+	}
+	if warned[0] != "economy" {
+		t.Errorf("warned[0]=%q, want \"economy\"", warned[0])
+	}
+	if warned[1] != "turbo" {
+		t.Errorf("warned[1]=%q, want \"turbo\"", warned[1])
 	}
 }

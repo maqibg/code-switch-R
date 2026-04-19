@@ -82,6 +82,12 @@ type PricingEntry struct {
 	OutputCostPerTokenAbove272kPriority      float64 `json:"output_cost_per_token_above_272k_tokens_priority"`
 	CacheReadInputTokenCostAbove272kPriority float64 `json:"cache_read_input_token_cost_above_272k_tokens_priority"`
 
+	// Flex service tier 低价异步档位字段,常用于非实时任务,定价通常与批处理同价。
+	// 仅有基础三项;JSON 中无长上下文 flex 变体,长窗口由 scaleLongRate 按比例外推。
+	InputCostPerTokenFlex       float64 `json:"input_cost_per_token_flex"`
+	OutputCostPerTokenFlex      float64 `json:"output_cost_per_token_flex"`
+	CacheReadInputTokenCostFlex float64 `json:"cache_read_input_token_cost_flex"`
+
 	TieredPricing []TieredPricingBand `json:"tiered_pricing,omitempty"`
 }
 
@@ -89,11 +95,66 @@ type PricingEntry struct {
 type ServiceTier string
 
 const (
-	// ServiceTierDefault 标准档位(不指定时的默认行为)。
+	// ServiceTierDefault 标准档位(空值/不指定时的默认行为)。
 	ServiceTierDefault ServiceTier = ""
+	// ServiceTierObservedDefault 上游明确回传 "default" 字面量,与 ServiceTierDefault 区分观测态。
+	ServiceTierObservedDefault ServiceTier = "default"
+	// ServiceTierStandard 部分平台用 "standard" 表示默认档,计费与 default 一致。
+	ServiceTierStandard ServiceTier = "standard"
 	// ServiceTierPriority 优先档位,上游单价更高但延迟更低。
 	ServiceTierPriority ServiceTier = "priority"
+	// ServiceTierFlex 低价异步档位,通常与批处理同价。
+	ServiceTierFlex ServiceTier = "flex"
 )
+
+// NormalizeObservedServiceTier 把上游原始 tier 字符串归一化成 ServiceTier。
+// 已知值原样返回(保留 ObservedDefault vs Default 的区分,用于审计)。
+// 空值返回 ServiceTierDefault 且不触发 onUnknown。
+// 未知非空值触发 onUnknown 回调(一次性告警由调用方实现),并原样返回 lower 后的字符串。
+func NormalizeObservedServiceTier(raw string, onUnknown func(string)) ServiceTier {
+	tier := strings.ToLower(strings.TrimSpace(raw))
+	switch tier {
+	case "":
+		return ServiceTierDefault
+	case string(ServiceTierObservedDefault):
+		return ServiceTierObservedDefault
+	case string(ServiceTierStandard):
+		return ServiceTierStandard
+	case string(ServiceTierPriority):
+		return ServiceTierPriority
+	case string(ServiceTierFlex):
+		return ServiceTierFlex
+	default:
+		if onUnknown != nil {
+			onUnknown(tier)
+		}
+		return ServiceTier(tier)
+	}
+}
+
+// normalizeServiceTier 把 tier 折叠为 pricing 能消费的三档(default/priority/flex)。
+// standard 与 observed-default 均归到 default;未知值按 default 计费。
+func normalizeServiceTier(tier ServiceTier) ServiceTier {
+	normalized := NormalizeObservedServiceTier(string(tier), nil)
+	switch normalized {
+	case ServiceTierPriority, ServiceTierFlex:
+		return normalized
+	default:
+		return ServiceTierDefault
+	}
+}
+
+// scaleLongRate 用短窗口 tier/default 的价格比,按比例缩放一个已解析好的长窗口默认价。
+// longDefault 必须是调用方已完成 fallback 的有效长窗口单价,例如
+// firstNonZero(aboveBandRate, baseRate)。
+// 任一输入 <=0 时保守回退到 longDefault:longDefault<=0 说明调用前提不成立,
+// tierBase/defaultBase 缺失则避免把长窗口单价降到 0。
+func scaleLongRate(longDefault, tierBase, defaultBase float64) float64 {
+	if longDefault <= 0 || tierBase <= 0 || defaultBase <= 0 {
+		return longDefault
+	}
+	return longDefault * (tierBase / defaultBase)
+}
 
 // TieredPricingBand 表示 tiered_pricing 中的单段。range 语义为 [lo, hi),
 // 上界值本身归入下一档(实现见 pickTier)。
@@ -220,22 +281,27 @@ func (s *Service) CalculateCost(model string, usage UsageSnapshot) CostBreakdown
 	}
 
 	totalPromptTokens := usage.InputTokens + usage.CacheCreateTokens + usage.CacheReadTokens
+	tier := normalizeServiceTier(usage.ServiceTier)
 
 	// 长上下文档位只解析一次,tiered 场景跳过(tiered 优先级更高)。
 	var longBand longContextBand
 	if len(entry.TieredPricing) == 0 {
-		longBand = entry.resolveLongContextBand(totalPromptTokens, usage.ServiceTier)
+		longBand = entry.resolveLongContextBand(totalPromptTokens, tier)
 	}
 
-	// 默认档价格(priority tier 时吃 *_priority 字段)
-	priority := usage.ServiceTier == ServiceTierPriority
+	// 默认档价格,按 tier 重新取值(priority/flex 吃对应 *_priority/*_flex 字段)
 	baseInput := entry.InputCostPerToken
 	baseOutput := entry.OutputCostPerToken
 	baseCacheRead := entry.CacheReadInputTokenCost
-	if priority {
+	switch tier {
+	case ServiceTierPriority:
 		baseInput = firstNonZero(entry.InputCostPerTokenPriority, baseInput)
 		baseOutput = firstNonZero(entry.OutputCostPerTokenPriority, baseOutput)
 		baseCacheRead = firstNonZero(entry.CacheReadInputTokenCostPriority, baseCacheRead)
+	case ServiceTierFlex:
+		baseInput = firstNonZero(entry.InputCostPerTokenFlex, baseInput)
+		baseOutput = firstNonZero(entry.OutputCostPerTokenFlex, baseOutput)
+		baseCacheRead = firstNonZero(entry.CacheReadInputTokenCostFlex, baseCacheRead)
 	}
 
 	// 价格档位选择优先级:tiered_pricing > longContextTier > above_272k > above_200k > above_128k > 基础价。
@@ -313,17 +379,22 @@ type longContextBand struct {
 // resolveLongContextBand 按 prompt tokens 选择 >272k / >200k / >128k 档,未超阈值返回 active=false。
 // tier=priority 时回退顺序:组合档 priority > 基础 priority > 组合档 default。
 // 保证 priority 长上下文永远不会低于"priority 基础单价",避免某些模型缺组合字段导致低计费
-// (例:gpt-5.4 有 output_cost_per_token_priority 但无 output_cost_per_token_above_272k_tokens_priority)。
+// (例:部分 272k+ 模型有 output_cost_per_token_priority 但无 output_cost_per_token_above_272k_tokens_priority)。
+// tier=flex 时:JSON 无 *_flex_above_200k/272k 字段,由 scaleLongRate 按短窗 flex/default 比例外推长窗单价。
 func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int, tier ServiceTier) longContextBand {
-	priority := tier == ServiceTierPriority
 	if totalPromptTokens > 272000 && e.InputCostPerTokenAbove272k > 0 {
 		input := e.InputCostPerTokenAbove272k
 		output := firstNonZero(e.OutputCostPerTokenAbove272k, e.OutputCostPerToken)
 		cacheRead := firstNonZero(e.CacheReadInputTokenCostAbove272k, e.CacheReadInputTokenCost)
-		if priority {
+		switch tier {
+		case ServiceTierPriority:
 			input = firstNonZero(e.InputCostPerTokenAbove272kPriority, e.InputCostPerTokenPriority, input)
 			output = firstNonZero(e.OutputCostPerTokenAbove272kPriority, e.OutputCostPerTokenPriority, output)
 			cacheRead = firstNonZero(e.CacheReadInputTokenCostAbove272kPriority, e.CacheReadInputTokenCostPriority, cacheRead)
+		case ServiceTierFlex:
+			input = scaleLongRate(input, e.InputCostPerTokenFlex, e.InputCostPerToken)
+			output = scaleLongRate(output, e.OutputCostPerTokenFlex, e.OutputCostPerToken)
+			cacheRead = scaleLongRate(cacheRead, e.CacheReadInputTokenCostFlex, e.CacheReadInputTokenCost)
 		}
 		return longContextBand{
 			active:        true,
@@ -338,10 +409,15 @@ func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int, tier Servic
 		input := e.InputCostPerTokenAbove200k
 		output := firstNonZero(e.OutputCostPerTokenAbove200k, e.OutputCostPerToken)
 		cacheRead := firstNonZero(e.CacheReadInputTokenCostAbove200k, e.CacheReadInputTokenCost)
-		if priority {
+		switch tier {
+		case ServiceTierPriority:
 			input = firstNonZero(e.InputCostPerTokenAbove200kPriority, e.InputCostPerTokenPriority, input)
 			output = firstNonZero(e.OutputCostPerTokenAbove200kPriority, e.OutputCostPerTokenPriority, output)
 			cacheRead = firstNonZero(e.CacheReadInputTokenCostAbove200kPriority, e.CacheReadInputTokenCostPriority, cacheRead)
+		case ServiceTierFlex:
+			input = scaleLongRate(input, e.InputCostPerTokenFlex, e.InputCostPerToken)
+			output = scaleLongRate(output, e.OutputCostPerTokenFlex, e.OutputCostPerToken)
+			cacheRead = scaleLongRate(cacheRead, e.CacheReadInputTokenCostFlex, e.CacheReadInputTokenCost)
 		}
 		return longContextBand{
 			active:        true,

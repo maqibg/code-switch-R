@@ -13,12 +13,29 @@ import (
 	"sync"
 	"time"
 
+	modelpricing "codeswitch/resources/model-pricing"
+
 	"github.com/daodao97/xgo/xdb"
 	"github.com/daodao97/xgo/xrequest"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+// warnedServiceTiers 去重容器:首次见到未知 service_tier 时告警,之后静默。
+var warnedServiceTiers sync.Map
+
+// warnUnknownTier 在首次遇到未知 service_tier 值时打印一次警告。
+// 同值的后续请求静默,不同未知 tier 分别告警一次。
+func warnUnknownTier(tier string) {
+	if tier == "" {
+		return
+	}
+	if _, loaded := warnedServiceTiers.LoadOrStore(tier, struct{}{}); loaded {
+		return
+	}
+	fmt.Printf("⚠️  unknown service_tier=%q,保留原值入库,按 default 档计费\n", tier)
+}
 
 // LastUsedProvider 最后使用的供应商信息
 // @author sm
@@ -1216,8 +1233,8 @@ func collectAnthropicUsage(data, prefix string, usage *ReqeustLog) {
 	maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, prefix+".cache_read_input_tokens").Int()))
 	maxIntInto(&usage.Ephemeral5mTokens, int(gjson.Get(data, prefix+".cache_creation.ephemeral_5m_input_tokens").Int()))
 	maxIntInto(&usage.Ephemeral1hTokens, int(gjson.Get(data, prefix+".cache_creation.ephemeral_1h_input_tokens").Int()))
-	if tier := strings.TrimSpace(gjson.Get(data, prefix+".service_tier").String()); tier != "" {
-		usage.ServiceTier = strings.ToLower(tier)
+	if rawTier := gjson.Get(data, prefix+".service_tier").String(); strings.TrimSpace(rawTier) != "" {
+		usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier, warnUnknownTier))
 	}
 }
 
@@ -1236,8 +1253,8 @@ func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 	usage.ReasoningTokens += int(gjson.Get(data, "response.usage.output_tokens_details.reasoning_tokens").Int())
 	// service_tier 可能在 response.service_tier 或 response.usage.service_tier,两路径都尝试
 	for _, path := range []string{"response.service_tier", "response.usage.service_tier"} {
-		if tier := strings.TrimSpace(gjson.Get(data, path).String()); tier != "" {
-			usage.ServiceTier = strings.ToLower(tier)
+		if rawTier := gjson.Get(data, path).String(); strings.TrimSpace(rawTier) != "" {
+			usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier, warnUnknownTier))
 			break
 		}
 	}
