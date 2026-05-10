@@ -37,7 +37,7 @@ jobs:
           node-version: '22'
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.88
 
       - name: Install frontend dependencies
         run: cd frontend && npm install
@@ -112,7 +112,7 @@ jobs:
           node-version: '22'
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.88
 
       - name: Install frontend dependencies
         run: cd frontend && npm install
@@ -224,7 +224,7 @@ jobs:
             libwebkit2gtk-4.1-dev
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.88
 
       - name: Install frontend dependencies
         run: cd frontend && npm install
@@ -244,7 +244,9 @@ jobs:
         run: wails3 task linux:generate:dotdesktop
 
       - name: Create AppImage
-        run: wails3 task linux:create:appimage
+        run: |
+          mkdir -p bin
+          wails3 task linux:create:appimage
 
       - name: Rename AppImage
         run: |
