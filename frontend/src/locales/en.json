@@ -103,7 +103,8 @@
     "platforms": {
       "claude": "Claude Code",
       "codex": "Codex",
-      "gemini": "Gemini"
+      "gemini": "Gemini",
+      "deepseekcode": "DeepSeekCode"
     },
     "cards": {
       "requests": "Today's Requests",
@@ -859,11 +860,11 @@
       "platforms": {
         "claude": "Claude Code",
         "codex": "Codex",
-        "gemini": "Gemini CLI"
+        "gemini": "Gemini CLI",
+        "deepseekcode": "DeepSeekCode"
       },
       "form": {
         "createTitle": "Create MCP server",
-        "editTitle": "Edit MCP server",
         "name": "Server name",
         "type": "Type",
         "command": "Command",
@@ -990,7 +991,8 @@
       },
       "platform": {
         "claude": "Claude Code",
-        "codex": "Codex"
+        "codex": "Codex",
+        "deepseekcode": "DeepSeekCode"
       },
       "groups": {
         "project": "Project Skills",

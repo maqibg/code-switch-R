@@ -23,8 +23,9 @@ const (
 	skillStoreFile = "skill.json"
 
 	// 平台常量
-	skillPlatformClaude = "claude"
-	skillPlatformCodex  = "codex"
+	skillPlatformClaude       = "claude"
+	skillPlatformCodex        = "codex"
+	skillPlatformDeepSeekCode = "deepseekcode"
 
 	// 安装位置常量
 	skillLocationUser    = "user"
@@ -152,6 +153,8 @@ func (ss *SkillService) getInstallPath(platform, location string) (string, error
 	switch platform {
 	case skillPlatformCodex:
 		configDir = ".codex"
+	case skillPlatformDeepSeekCode:
+		configDir = ".deepseek-code"
 	case skillPlatformClaude:
 		fallthrough
 	default:
