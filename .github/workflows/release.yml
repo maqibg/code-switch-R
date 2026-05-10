@@ -246,7 +246,13 @@ jobs:
       - name: Create AppImage
         run: |
           mkdir -p bin
-          wails3 task linux:create:appimage
+          # wails3 generate appimage 内部 rename 可能因 outputdir 解析问题失败,
+          # 但 AppImage 文件已生成在 build 目录中,手动处理即可
+          wails3 task linux:create:appimage || true
+          # 从 build 目录手动查找并移动 AppImage 到 bin/
+          find build/linux -name "*.AppImage" -exec mv {} bin/ \; 2>/dev/null || true
+          echo "Files in bin/:"
+          ls -la bin/
 
       - name: Rename AppImage
         run: |
