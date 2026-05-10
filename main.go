@@ -118,6 +118,7 @@ func main() {
 	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, notificationService, appSettings, ":18100")
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
+	deepseekCodeSettings := services.NewDeepSeekCodeSettingsService(providerRelay.Addr())
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
 	logService := services.NewLogService()
 	mcpService := services.NewMCPService()
@@ -138,7 +139,7 @@ func main() {
 	updateService := services.NewUpdateService(AppVersion)
 	consoleService := services.NewConsoleService()
 	customCliService := services.NewCustomCliService(providerRelay.Addr())
-	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService)
+	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService, deepseekCodeSettings)
 	frontendPreferencesService := services.NewFrontendPreferencesService()
 
 	go func() {
@@ -246,6 +247,7 @@ func main() {
 			application.NewService(consoleService),
 			application.NewService(customCliService),
 			application.NewService(networkService),
+			application.NewService(deepseekCodeSettings),
 			application.NewService(frontendPreferencesService),
 		},
 		Assets: application.AssetOptions{

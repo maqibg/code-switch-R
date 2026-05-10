@@ -11,7 +11,7 @@ import {
 import { getLatestResults, HealthStatus, type ProviderTimeline } from '../services/healthcheck'
 import { formatBeijingDateTime } from '../utils/beijingTime'
 
-const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini']
+const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode']
 const REFRESH_INTERVAL = 60
 const RANGE_CACHE_TTL_MS = 45_000
 
@@ -76,6 +76,7 @@ export function useStatsDashboard() {
     claude: emptyStats(),
     codex: emptyStats(),
     gemini: emptyStats(),
+    deepseekcode: emptyStats(),
   })
 
   const rangeCache = new Map<StatsRange, CacheEntry>()

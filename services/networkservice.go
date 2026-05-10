@@ -37,9 +37,10 @@ type NetworkSettings struct {
 
 // TargetCli 目标 CLI 工具配置
 type TargetCli struct {
-	ClaudeCode bool `json:"claudeCode"`
-	Codex      bool `json:"codex"`
-	Gemini     bool `json:"gemini"`
+	ClaudeCode   bool `json:"claudeCode"`
+	Codex        bool `json:"codex"`
+	Gemini       bool `json:"gemini"`
+	DeepSeekCode bool `json:"deepseekCode"`
 }
 
 // WSLDetection WSL 检测结果
@@ -56,12 +57,13 @@ type ConfigureResult struct {
 
 // NetworkService 网络配置服务
 type NetworkService struct {
-	mu            sync.Mutex
-	settingsPath  string
-	relayAddr     string
-	claudeService *ClaudeSettingsService
-	codexService  *CodexSettingsService
-	geminiService *GeminiService
+	mu                 sync.Mutex
+	settingsPath       string
+	relayAddr          string
+	claudeService      *ClaudeSettingsService
+	codexService       *CodexSettingsService
+	geminiService      *GeminiService
+	deepseekCodeService *DeepSeekCodeSettingsService
 }
 
 // NewNetworkService 创建网络服务
@@ -70,6 +72,7 @@ func NewNetworkService(
 	claudeService *ClaudeSettingsService,
 	codexService *CodexSettingsService,
 	geminiService *GeminiService,
+	deepseekCodeService *DeepSeekCodeSettingsService,
 ) *NetworkService {
 	configDir, err := getAppConfigDir()
 	if err != nil {
@@ -77,11 +80,12 @@ func NewNetworkService(
 	}
 
 	return &NetworkService{
-		settingsPath:  filepath.Join(configDir, networkSettingsFile),
-		relayAddr:     relayAddr,
-		claudeService: claudeService,
-		codexService:  codexService,
-		geminiService: geminiService,
+		settingsPath:        filepath.Join(configDir, networkSettingsFile),
+		relayAddr:           relayAddr,
+		claudeService:       claudeService,
+		codexService:        codexService,
+		geminiService:       geminiService,
+		deepseekCodeService: deepseekCodeService,
 	}
 }
 
@@ -93,9 +97,10 @@ func (ns *NetworkService) defaultSettings() NetworkSettings {
 		CurrentAddress: "127.0.0.1:18100",
 		WSLAutoConfig:  false, // 默认关闭
 		TargetCli: TargetCli{
-			ClaudeCode: true,
-			Codex:      true,
-			Gemini:     true,
+			ClaudeCode:   true,
+			Codex:        true,
+			Gemini:       true,
+			DeepSeekCode: true,
 		},
 	}
 }

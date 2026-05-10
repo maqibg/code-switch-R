@@ -6,11 +6,12 @@ export interface ClaudeProxyStatus {
   base_url: string
 }
 
-type Platform = 'claude' | 'codex'
+type Platform = 'claude' | 'codex' | 'deepseekcode'
 
 const serviceNames: Record<Platform, string> = {
   claude: 'codeswitch/services.ClaudeSettingsService',
   codex: 'codeswitch/services.CodexSettingsService',
+  deepseekcode: 'codeswitch/services.DeepSeekCodeSettingsService',
 }
 
 const callByPlatform = async <T = unknown>(platform: Platform, method: string, payload?: any[]): Promise<T> => {

@@ -349,6 +349,9 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/gemini/v1beta/*any", prs.geminiProxyHandler("/v1beta"))
 	router.POST("/gemini/v1/*any", prs.geminiProxyHandler("/v1"))
 
+	// DeepSeekCode 端点 — 请求格式为标准 Anthropic Messages API
+	router.POST("/deepseekcode/v1/messages", prs.proxyHandler("deepseekcode", "/v1/messages"))
+
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
 	router.POST("/custom/:toolId/v1/messages", prs.customCliProxyHandler())

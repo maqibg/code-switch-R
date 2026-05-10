@@ -1081,12 +1081,14 @@ const proxyStates = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
+  deepseekcode: false,
   others: false,
 })
 const proxyBusy = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
+  deepseekcode: false,
   others: false,
 })
 
@@ -1095,6 +1097,7 @@ const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
   claude: null,
   codex: null,
   gemini: null,
+  deepseekcode: null,
   others: null,
 })
 
@@ -1109,6 +1112,8 @@ const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) =>
       id = await Call.ByName('codeswitch/services.CodexSettingsService.GetDirectAppliedProviderID')
     } else if (tab === 'gemini') {
       id = await Call.ByName('codeswitch/services.GeminiService.GetDirectAppliedProviderID')
+    } else if (tab === 'deepseekcode') {
+      id = await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.GetDirectAppliedProviderID')
     }
     directAppliedIds[tab] = id
   } catch (error) {
@@ -1130,6 +1135,8 @@ const handleDirectApply = async (card: AutomationCard) => {
       if (index === -1 || !geminiProvidersCache.value[index]) return
       const realId = geminiProvidersCache.value[index].id
       await Call.ByName('codeswitch/services.GeminiService.ApplySingleProvider', realId)
+    } else if (tab === 'deepseekcode') {
+      await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.ApplySingleProvider', card.id)
     }
     await refreshDirectAppliedStatus(tab)
     showToast(t('components.main.directApply.success', { name: card.name }), 'success')
@@ -1155,18 +1162,21 @@ const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDai
   claude: {},
   codex: {},
   gemini: {},
+  deepseekcode: {},
   others: {},
 })
 const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
+  deepseekcode: false,
   others: false,
 })
 const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
+  deepseekcode: false,
   others: false,
 })
 let providerStatsTimer: number | undefined
@@ -1197,6 +1207,7 @@ const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, Blacklist
   claude: {},
   codex: {},
   gemini: {},
+  deepseekcode: {},
   others: {},
 })
 let blacklistTimer: number | undefined
@@ -1206,6 +1217,7 @@ const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, Conne
   claude: {},
   codex: {},
   gemini: {},
+  deepseekcode: {},
   others: {},
 })
 
@@ -1214,6 +1226,7 @@ const availabilityResultsMap = reactive<Record<ProviderTab, Record<number, Provi
   claude: {},
   codex: {},
   gemini: {},
+  deepseekcode: {},
   others: {},
 })
 
@@ -1468,6 +1481,7 @@ const tabs = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'codex', label: 'Codex' },
   { id: 'gemini', label: 'Gemini' },
+  { id: 'deepseekcode', label: 'DeepSeekCode' },
   { id: 'others', label: '其他' },
 ] as const
 type ProviderTab = (typeof tabs)[number]['id']
@@ -1477,6 +1491,7 @@ const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: createAutomationCards(automationCardGroups.claude),
   codex: createAutomationCards(automationCardGroups.codex),
   gemini: [],
+  deepseekcode: [],
   others: [],
 })
 const draggingId = ref<number | null>(null)
@@ -1712,7 +1727,7 @@ const refreshProxyState = async (tab: ProviderTab) => {
       const status = await fetchGeminiProxyStatus()
       proxyStates[tab] = Boolean(status?.enabled)
     } else {
-      const status = await fetchProxyStatus(tab as 'claude' | 'codex')
+      const status = await fetchProxyStatus(tab as 'claude' | 'codex' | 'deepseekcode')
       proxyStates[tab] = Boolean(status?.enabled)
     }
   } catch (error) {
@@ -1747,9 +1762,9 @@ const onProxyToggle = async () => {
       }
     } else {
       if (nextState) {
-        await enableProxy(tab as 'claude' | 'codex')
+        await enableProxy(tab as 'claude' | 'codex' | 'deepseekcode')
       } else {
-        await disableProxy(tab as 'claude' | 'codex')
+        await disableProxy(tab as 'claude' | 'codex' | 'deepseekcode')
       }
     }
     proxyStates[tab] = nextState
@@ -1770,7 +1785,7 @@ const loadProviderStats = async (tab: ProviderTab) => {
   providerStatsLoading[tab] = true
   try {
     // Gemini 统计数据目前通过相同的日志接口，直接查询
-    const stats = await fetchProviderDailyStats(tab as 'claude' | 'codex' | 'gemini')
+    const stats = await fetchProviderDailyStats(tab as 'claude' | 'codex' | 'gemini' | 'deepseekcode')
     const mapped: Record<string, ProviderDailyStat> = {}
     ;(stats ?? []).forEach((stat) => {
       mapped[normalizeProviderKey(stat.provider)] = stat
@@ -2251,6 +2266,7 @@ const connectivityTestModelOptions = computed(() => {
     claude: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
     codex: ['gpt-5.1', 'gpt-5.1-codex'],
     gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+    deepseekcode: ['deepseek-chat', 'deepseek-reasoner'],
   }
   return options[modalState.tabId] || options.claude
 })
