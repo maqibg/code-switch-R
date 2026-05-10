@@ -142,7 +142,7 @@ func resolveStatsWindow(rangeKey string, now time.Time) statsWindow {
 
 func selectRequestLogRecords(platform string, start *time.Time, fields ...string) ([]xdb.Record, error) {
 	selectFields := append([]string{}, fields...)
-	selectFields = append(selectFields, "created_at")
+	selectFields = append(selectFields, "created_at", "ephemeral_5m_tokens", "ephemeral_1h_tokens", "service_tier")
 
 	model := xdb.New("request_log")
 	options := []xdb.Option{
@@ -166,13 +166,24 @@ func selectRequestLogRecords(platform string, start *time.Time, fields ...string
 }
 
 func buildUsageSnapshot(record xdb.Record) modelpricing.UsageSnapshot {
-	return modelpricing.UsageSnapshot{
+	total := record.GetInt("cache_create_tokens")
+	fiveM := record.GetInt("ephemeral_5m_tokens")
+	oneH := record.GetInt("ephemeral_1h_tokens")
+	snap := modelpricing.UsageSnapshot{
 		InputTokens:       record.GetInt("input_tokens"),
 		OutputTokens:      record.GetInt("output_tokens"),
 		ReasoningTokens:   record.GetInt("reasoning_tokens"),
-		CacheCreateTokens: record.GetInt("cache_create_tokens"),
+		CacheCreateTokens: total,
 		CacheReadTokens:   record.GetInt("cache_read_tokens"),
+		ServiceTier:       modelpricing.ServiceTier(strings.ToLower(strings.TrimSpace(record.GetString("service_tier")))),
 	}
+	if fiveM > 0 || oneH > 0 {
+		snap.CacheCreation = &modelpricing.CacheCreationDetail{
+			Ephemeral5mTokens: fiveM,
+			Ephemeral1hTokens: oneH,
+		}
+	}
+	return snap
 }
 
 func recordInWindow(record xdb.Record, start *time.Time, end time.Time) bool {
@@ -231,6 +242,9 @@ func (ls *LogService) CostSince(start string, platform string) (float64, error) 
 			"reasoning_tokens",
 			"cache_create_tokens",
 			"cache_read_tokens",
+			"ephemeral_5m_tokens",
+			"ephemeral_1h_tokens",
+			"service_tier",
 		),
 	}
 	if platform != "" {
@@ -245,17 +259,33 @@ func (ls *LogService) CostSince(start string, platform string) (float64, error) 
 	}
 	total := 0.0
 	for _, record := range records {
-		usage := modelpricing.UsageSnapshot{
-			InputTokens:       record.GetInt("input_tokens"),
-			OutputTokens:      record.GetInt("output_tokens"),
-			ReasoningTokens:   record.GetInt("reasoning_tokens"),
-			CacheCreateTokens: record.GetInt("cache_create_tokens"),
-			CacheReadTokens:   record.GetInt("cache_read_tokens"),
-		}
+		usage := buildSnapshotFromRecord(record)
 		cost := ls.calculateCost(record.GetString("model"), usage)
 		total += cost.TotalCost
 	}
 	return total, nil
+}
+
+// buildSnapshotFromRecord 从 request_log 记录构造定价输入,统一处理 ephemeral 拆分 + service_tier。
+func buildSnapshotFromRecord(record xdb.Record) modelpricing.UsageSnapshot {
+	total := record.GetInt("cache_create_tokens")
+	fiveM := record.GetInt("ephemeral_5m_tokens")
+	oneH := record.GetInt("ephemeral_1h_tokens")
+	snap := modelpricing.UsageSnapshot{
+		InputTokens:       record.GetInt("input_tokens"),
+		OutputTokens:      record.GetInt("output_tokens"),
+		ReasoningTokens:   record.GetInt("reasoning_tokens"),
+		CacheCreateTokens: total,
+		CacheReadTokens:   record.GetInt("cache_read_tokens"),
+		ServiceTier:       modelpricing.ServiceTier(strings.ToLower(strings.TrimSpace(record.GetString("service_tier")))),
+	}
+	if fiveM > 0 || oneH > 0 {
+		snap.CacheCreation = &modelpricing.CacheCreationDetail{
+			Ephemeral5mTokens: fiveM,
+			Ephemeral1hTokens: oneH,
+		}
+	}
+	return snap
 }
 
 func NewLogService() *LogService {
@@ -319,11 +349,14 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 			InputTokens:       record.GetInt("input_tokens"),
 			OutputTokens:      record.GetInt("output_tokens"),
 			CacheCreateTokens: record.GetInt("cache_create_tokens"),
+			Ephemeral5mTokens: record.GetInt("ephemeral_5m_tokens"),
+			Ephemeral1hTokens: record.GetInt("ephemeral_1h_tokens"),
 			CacheReadTokens:   record.GetInt("cache_read_tokens"),
 			ReasoningTokens:   record.GetInt("reasoning_tokens"),
 			CreatedAt:         record.GetString("created_at"),
 			IsStream:          record.GetBool("is_stream"),
 			DurationSec:       record.GetFloat64("duration_sec"),
+			ServiceTier:       record.GetString("service_tier"),
 		}
 		if !loadStoredCost(&logEntry, record) {
 			ls.decorateCost(&logEntry)
@@ -435,6 +468,9 @@ func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
 			"reasoning_tokens",
 			"cache_create_tokens",
 			"cache_read_tokens",
+			"ephemeral_5m_tokens",
+			"ephemeral_1h_tokens",
+			"service_tier",
 			"created_at",
 		),
 		xdb.OrderByDesc("created_at"),
@@ -460,21 +496,10 @@ func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
 			hourBuckets[hourKey] = bucket
 		}
 		bucket.TotalRequests++
-		input := record.GetInt("input_tokens")
-		output := record.GetInt("output_tokens")
-		reasoning := record.GetInt("reasoning_tokens")
-		cacheCreate := record.GetInt("cache_create_tokens")
-		cacheRead := record.GetInt("cache_read_tokens")
-		bucket.InputTokens += int64(input)
-		bucket.OutputTokens += int64(output)
-		bucket.ReasoningTokens += int64(reasoning)
-		usage := modelpricing.UsageSnapshot{
-			InputTokens:       input,
-			OutputTokens:      output,
-			ReasoningTokens:   reasoning,
-			CacheCreateTokens: cacheCreate,
-			CacheReadTokens:   cacheRead,
-		}
+		usage := buildSnapshotFromRecord(record)
+		bucket.InputTokens += int64(usage.InputTokens)
+		bucket.OutputTokens += int64(usage.OutputTokens)
+		bucket.ReasoningTokens += int64(usage.ReasoningTokens)
 		cost := ls.calculateCost(record.GetString("model"), usage)
 		bucket.TotalCost += cost.TotalCost
 	}
@@ -618,12 +643,8 @@ func (ls *LogService) ProviderStatsByRange(platform string, rangeKey string) ([]
 			statMap[provider] = stat
 		}
 		httpCode := record.GetInt("http_code")
-		input := record.GetInt("input_tokens")
-		output := record.GetInt("output_tokens")
-		reasoning := record.GetInt("reasoning_tokens")
-		cacheCreate := record.GetInt("cache_create_tokens")
-		cacheRead := record.GetInt("cache_read_tokens")
-		cost := ls.calculateCost(record.GetString("model"), buildUsageSnapshot(record))
+		usage := buildUsageSnapshot(record)
+		cost := ls.calculateCost(record.GetString("model"), usage)
 		stat.TotalRequests++
 		// 只有 HTTP 200-299 才算成功，其他（包括 0）都算失败
 		if httpCode >= 200 && httpCode < 300 {
@@ -631,11 +652,11 @@ func (ls *LogService) ProviderStatsByRange(platform string, rangeKey string) ([]
 		} else {
 			stat.FailedRequests++
 		}
-		stat.InputTokens += int64(input)
-		stat.OutputTokens += int64(output)
-		stat.ReasoningTokens += int64(reasoning)
-		stat.CacheCreateTokens += int64(cacheCreate)
-		stat.CacheReadTokens += int64(cacheRead)
+		stat.InputTokens += int64(usage.InputTokens)
+		stat.OutputTokens += int64(usage.OutputTokens)
+		stat.ReasoningTokens += int64(usage.ReasoningTokens)
+		stat.CacheCreateTokens += int64(usage.CacheCreateTokens)
+		stat.CacheReadTokens += int64(usage.CacheReadTokens)
 		stat.CostTotal += cost.TotalCost
 	}
 	stats := make([]ProviderDailyStat, 0, len(statMap))
@@ -967,6 +988,13 @@ func (ls *LogService) decorateCost(logEntry *ReqeustLog) {
 		ReasoningTokens:   logEntry.ReasoningTokens,
 		CacheCreateTokens: logEntry.CacheCreateTokens,
 		CacheReadTokens:   logEntry.CacheReadTokens,
+		ServiceTier:       modelpricing.ServiceTier(strings.ToLower(strings.TrimSpace(logEntry.ServiceTier))),
+	}
+	if logEntry.Ephemeral5mTokens > 0 || logEntry.Ephemeral1hTokens > 0 {
+		usage.CacheCreation = &modelpricing.CacheCreationDetail{
+			Ephemeral5mTokens: logEntry.Ephemeral5mTokens,
+			Ephemeral1hTokens: logEntry.Ephemeral1hTokens,
+		}
 	}
 	cost := ls.pricing.CalculateCost(logEntry.Model, usage)
 	logEntry.HasPricing = cost.HasPricing

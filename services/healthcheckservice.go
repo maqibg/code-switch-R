@@ -759,6 +759,9 @@ func (hcs *HealthCheckService) saveResult(result *HealthCheckResult) error {
 		return fmt.Errorf("数据库写入队列未初始化")
 	}
 
+	// 若 provider 在检测过程中被 rename,把旧名兑换成新名再落库
+	canonicalName := ResolveProviderAlias(result.Platform, result.ProviderName)
+
 	const insertSQL = `
 		INSERT INTO health_check_history (provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -766,7 +769,7 @@ func (hcs *HealthCheckService) saveResult(result *HealthCheckResult) error {
 
 	return GlobalDBQueue.Exec(insertSQL,
 		result.ProviderID,
-		result.ProviderName,
+		canonicalName,
 		result.Platform,
 		result.Model,
 		result.Endpoint,

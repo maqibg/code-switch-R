@@ -22,6 +22,21 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+// warnedServiceTiers 去重容器:首次见到未知 service_tier 时告警,之后静默。
+var warnedServiceTiers sync.Map
+
+// warnUnknownTier 在首次遇到未知 service_tier 值时打印一次警告。
+// 同值的后续请求静默,不同未知 tier 分别告警一次。
+func warnUnknownTier(tier string) {
+	if tier == "" {
+		return
+	}
+	if _, loaded := warnedServiceTiers.LoadOrStore(tier, struct{}{}); loaded {
+		return
+	}
+	fmt.Printf("⚠️  unknown service_tier=%q,保留原值入库,按 default 档计费\n", tier)
+}
+
 // LastUsedProvider 最后使用的供应商信息
 // @author sm
 type LastUsedProvider struct {
@@ -829,7 +844,8 @@ func (prs *ProviderRelayService) forwardRequest(
 	start := time.Now()
 	defer func() {
 		requestLog.DurationSec = time.Since(start).Seconds()
-		applyStoredRequestCost(requestLog)
+		// 若请求过程中发生 rename,把旧名兑换成新名再落库
+		requestLog.Provider = ResolveProviderAlias(requestLog.Platform, requestLog.Provider)
 
 		// 【修复】判空保护：避免队列未初始化时 panic
 		if GlobalDBQueueLogs == nil {
@@ -846,9 +862,8 @@ func (prs *ProviderRelayService) forwardRequest(
 				platform, model, provider, http_code,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 				reasoning_tokens, is_stream, duration_sec,
-				input_cost, output_cost, reasoning_cost, cache_create_cost, cache_read_cost,
-				ephemeral_5m_cost, ephemeral_1h_cost, total_cost, has_pricing, cost_calculated
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ephemeral_5m_tokens, ephemeral_1h_tokens, service_tier
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			requestLog.Platform,
 			requestLog.Model,
@@ -861,16 +876,9 @@ func (prs *ProviderRelayService) forwardRequest(
 			requestLog.ReasoningTokens,
 			boolToInt(requestLog.IsStream),
 			requestLog.DurationSec,
-			requestLog.InputCost,
-			requestLog.OutputCost,
-			requestLog.ReasoningCost,
-			requestLog.CacheCreateCost,
-			requestLog.CacheReadCost,
-			requestLog.Ephemeral5mCost,
-			requestLog.Ephemeral1hCost,
-			requestLog.TotalCost,
-			boolToInt(requestLog.HasPricing),
-			1,
+			requestLog.Ephemeral5mTokens,
+			requestLog.Ephemeral1hTokens,
+			requestLog.ServiceTier,
 		)
 
 		if err != nil {
@@ -1067,32 +1075,6 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-func applyStoredRequestCost(requestLog *ReqeustLog) {
-	if requestLog == nil || strings.TrimSpace(requestLog.Model) == "" {
-		return
-	}
-	svc, err := modelpricing.DefaultService()
-	if err != nil || svc == nil {
-		return
-	}
-	cost := svc.CalculateCost(requestLog.Model, modelpricing.UsageSnapshot{
-		InputTokens:       requestLog.InputTokens,
-		OutputTokens:      requestLog.OutputTokens,
-		ReasoningTokens:   requestLog.ReasoningTokens,
-		CacheCreateTokens: requestLog.CacheCreateTokens,
-		CacheReadTokens:   requestLog.CacheReadTokens,
-	})
-	requestLog.InputCost = cost.InputCost
-	requestLog.OutputCost = cost.OutputCost
-	requestLog.ReasoningCost = cost.ReasoningCost
-	requestLog.CacheCreateCost = cost.CacheCreateCost
-	requestLog.CacheReadCost = cost.CacheReadCost
-	requestLog.Ephemeral5mCost = cost.Ephemeral5mCost
-	requestLog.Ephemeral1hCost = cost.Ephemeral1hCost
-	requestLog.TotalCost = cost.TotalCost
-	requestLog.HasPricing = cost.HasPricing
-}
-
 func ensureRequestLogColumn(db *sql.DB, column string, definition string) error {
 	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('request_log') WHERE name = '%s'", column)
 	var count int
@@ -1153,14 +1135,22 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		return err
 	}
 
-	if err := ensureRequestLogColumn(db, "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"); err != nil {
-		return err
+	// 历史新增列按声明顺序补齐,旧库也能顺利升级。新增列只需在末尾追加一行。
+	migrations := []struct {
+		column     string
+		definition string
+	}{
+		{"created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"},
+		{"is_stream", "INTEGER DEFAULT 0"},
+		{"duration_sec", "REAL DEFAULT 0"},
+		{"ephemeral_5m_tokens", "INTEGER DEFAULT 0"},
+		{"ephemeral_1h_tokens", "INTEGER DEFAULT 0"},
+		{"service_tier", "TEXT DEFAULT ''"},
 	}
-	if err := ensureRequestLogColumn(db, "is_stream", "INTEGER DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "duration_sec", "REAL DEFAULT 0"); err != nil {
-		return err
+	for _, m := range migrations {
+		if err := ensureRequestLogColumn(db, m.column, m.definition); err != nil {
+			return err
+		}
 	}
 	if err := ensureRequestLogColumn(db, "input_cost", "REAL DEFAULT 0"); err != nil {
 		return err
@@ -1247,57 +1237,135 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 }
 
 func parseEventPayload(payload string, parser func(string, *ReqeustLog), usage *ReqeustLog) {
-	lines := strings.Split(payload, "\n")
-	for _, line := range lines {
+	hasData := false
+	for _, line := range strings.Split(payload, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "data:") {
-			parser(strings.TrimPrefix(line, "data: "), usage)
+			hasData = true
+			// SSE 规范允许 "data:xxx" 和 "data: xxx",统一剥掉 "data:" 再 trim 空格
+			parser(strings.TrimSpace(strings.TrimPrefix(line, "data:")), usage)
+		}
+	}
+	// 非流式响应(无 data: 前缀)直接把 payload 当完整 JSON 喂给 parser
+	if !hasData {
+		if body := strings.TrimSpace(payload); body != "" {
+			parser(body, usage)
 		}
 	}
 }
 
 type ReqeustLog struct {
-	ID                int64   `json:"id"`
-	Platform          string  `json:"platform"` // claude、codex 或 gemini
-	Model             string  `json:"model"`
-	Provider          string  `json:"provider"` // provider name
-	HttpCode          int     `json:"http_code"`
-	InputTokens       int     `json:"input_tokens"`
-	OutputTokens      int     `json:"output_tokens"`
-	CacheCreateTokens int     `json:"cache_create_tokens"`
+	ID                int64  `json:"id"`
+	Platform          string `json:"platform"` // claude、codex 或 gemini
+	Model             string `json:"model"`
+	Provider          string `json:"provider"` // provider name
+	HttpCode          int    `json:"http_code"`
+	InputTokens       int    `json:"input_tokens"`
+	OutputTokens      int    `json:"output_tokens"`
+	CacheCreateTokens int    `json:"cache_create_tokens"`
+	// Ephemeral5mTokens/Ephemeral1hTokens 分别对应 cache_creation.ephemeral_5m/1h_input_tokens。
+	// 为 0 时按 CacheCreateTokens 全量当 5m 计费(旧数据兼容)。
+	Ephemeral5mTokens int     `json:"ephemeral_5m_tokens"`
+	Ephemeral1hTokens int     `json:"ephemeral_1h_tokens"`
 	CacheReadTokens   int     `json:"cache_read_tokens"`
 	ReasoningTokens   int     `json:"reasoning_tokens"`
 	IsStream          bool    `json:"is_stream"`
 	DurationSec       float64 `json:"duration_sec"`
 	CreatedAt         string  `json:"created_at"`
-	InputCost         float64 `json:"input_cost"`
-	OutputCost        float64 `json:"output_cost"`
-	ReasoningCost     float64 `json:"reasoning_cost"`
-	CacheCreateCost   float64 `json:"cache_create_cost"`
-	CacheReadCost     float64 `json:"cache_read_cost"`
-	Ephemeral5mCost   float64 `json:"ephemeral_5m_cost"`
-	Ephemeral1hCost   float64 `json:"ephemeral_1h_cost"`
-	TotalCost         float64 `json:"total_cost"`
-	HasPricing        bool    `json:"has_pricing"`
+	// ServiceTier 上游实际分配的档位(default/priority/flex 等),空=未区分。
+	ServiceTier     string  `json:"service_tier"`
+	InputCost       float64 `json:"input_cost"`
+	OutputCost      float64 `json:"output_cost"`
+	ReasoningCost   float64 `json:"reasoning_cost"`
+	CacheCreateCost float64 `json:"cache_create_cost"`
+	CacheReadCost   float64 `json:"cache_read_cost"`
+	Ephemeral5mCost float64 `json:"ephemeral_5m_cost"`
+	Ephemeral1hCost float64 `json:"ephemeral_1h_cost"`
+	TotalCost       float64 `json:"total_cost"`
+	HasPricing      bool    `json:"has_pricing"`
 }
 
 // claude code usage parser
+// 覆盖三种场景:
+//  1. SSE message_start.message.usage (input/cache 一次性)
+//  2. SSE message_delta.usage (output/cache cumulative,按事件累积上报同一请求的最终值)
+//  3. 非流式根级 usage (单次完整 snapshot)
+//
+// 对每个字段取 max,既兼容 message_delta 的累计语义,也兼容多事件重复出现的字段,避免重复计费。
+// 参考 https://docs.anthropic.com/en/api/messages-streaming
 func ClaudeCodeParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
-	usage.InputTokens += int(gjson.Get(data, "message.usage.input_tokens").Int())
-	usage.OutputTokens += int(gjson.Get(data, "message.usage.output_tokens").Int())
-	usage.CacheCreateTokens += int(gjson.Get(data, "message.usage.cache_creation_input_tokens").Int())
-	usage.CacheReadTokens += int(gjson.Get(data, "message.usage.cache_read_input_tokens").Int())
-
-	usage.InputTokens += int(gjson.Get(data, "usage.input_tokens").Int())
-	usage.OutputTokens += int(gjson.Get(data, "usage.output_tokens").Int())
+	collectAnthropicUsage(data, "message.usage", usage)
+	collectAnthropicUsage(data, "usage", usage)
+	clampCacheEphemerals(usage)
 }
 
-// codex usage parser
+// collectAnthropicUsage 从指定前缀(message.usage 或 usage)提取 Anthropic 字段,取 max 避免 += 累计导致的翻倍。
+func collectAnthropicUsage(data, prefix string, usage *ReqeustLog) {
+	maxIntInto(&usage.InputTokens, int(gjson.Get(data, prefix+".input_tokens").Int()))
+	maxIntInto(&usage.OutputTokens, int(gjson.Get(data, prefix+".output_tokens").Int()))
+	maxIntInto(&usage.CacheCreateTokens, int(gjson.Get(data, prefix+".cache_creation_input_tokens").Int()))
+	maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, prefix+".cache_read_input_tokens").Int()))
+	maxIntInto(&usage.Ephemeral5mTokens, int(gjson.Get(data, prefix+".cache_creation.ephemeral_5m_input_tokens").Int()))
+	maxIntInto(&usage.Ephemeral1hTokens, int(gjson.Get(data, prefix+".cache_creation.ephemeral_1h_input_tokens").Int()))
+	if rawTier := gjson.Get(data, prefix+".service_tier").String(); strings.TrimSpace(rawTier) != "" {
+		usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier, warnUnknownTier))
+	}
+}
+
+// maxIntInto 把 candidate 大于 *dst 时写回,用于流式 cumulative 字段合并。
+func maxIntInto(dst *int, candidate int) {
+	if candidate > *dst {
+		*dst = candidate
+	}
+}
+
+// codex usage parser(OpenAI Responses API)
 func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 	usage.InputTokens += int(gjson.Get(data, "response.usage.input_tokens").Int())
 	usage.OutputTokens += int(gjson.Get(data, "response.usage.output_tokens").Int())
 	usage.CacheReadTokens += int(gjson.Get(data, "response.usage.input_tokens_details.cached_tokens").Int())
 	usage.ReasoningTokens += int(gjson.Get(data, "response.usage.output_tokens_details.reasoning_tokens").Int())
+	// service_tier 可能在 response.service_tier 或 response.usage.service_tier,两路径都尝试
+	for _, path := range []string{"response.service_tier", "response.usage.service_tier"} {
+		if rawTier := gjson.Get(data, path).String(); strings.TrimSpace(rawTier) != "" {
+			usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier, warnUnknownTier))
+			break
+		}
+	}
+}
+
+// clampCacheEphemerals 兜底 Anthropic ephemeral 拆分的异常情况:
+// 若 5m+1h > total,打印一次警告并截断到 total(保留 5m 优先级,1h 截掉超出部分)。
+// 若 split 非零但 total 为 0,把 total 回填为 split 之和,避免 total 被漏传导致 create cost 计 0。
+func clampCacheEphemerals(usage *ReqeustLog) {
+	if usage == nil {
+		return
+	}
+	split := usage.Ephemeral5mTokens + usage.Ephemeral1hTokens
+	if split == 0 {
+		return
+	}
+	if usage.CacheCreateTokens == 0 {
+		usage.CacheCreateTokens = split
+		return
+	}
+	if split > usage.CacheCreateTokens {
+		fmt.Printf("⚠️  ephemeral split(%d)>total(%d),截断 1h=%d 到可用额度\n",
+			split, usage.CacheCreateTokens, usage.Ephemeral1hTokens)
+		overflow := split - usage.CacheCreateTokens
+		if usage.Ephemeral1hTokens >= overflow {
+			usage.Ephemeral1hTokens -= overflow
+			return
+		}
+		// 1h 截到 0 还不够,再从 5m 截剩余
+		remaining := overflow - usage.Ephemeral1hTokens
+		usage.Ephemeral1hTokens = 0
+		if usage.Ephemeral5mTokens >= remaining {
+			usage.Ephemeral5mTokens -= remaining
+		} else {
+			usage.Ephemeral5mTokens = 0
+		}
+	}
 }
 
 // gemini usage parser (流式响应专用)
@@ -1538,7 +1606,8 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		// 保存日志的 defer
 		defer func() {
 			requestLog.DurationSec = time.Since(start).Seconds()
-			applyStoredRequestCost(requestLog)
+			// 若请求过程中发生 rename,把旧名兑换成新名再落库
+			requestLog.Provider = ResolveProviderAlias(requestLog.Platform, requestLog.Provider)
 			if GlobalDBQueueLogs == nil {
 				return
 			}
@@ -1549,18 +1618,13 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 					platform, model, provider, http_code,
 					input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 					reasoning_tokens, is_stream, duration_sec,
-					input_cost, output_cost, reasoning_cost, cache_create_cost, cache_read_cost,
-					ephemeral_5m_cost, ephemeral_1h_cost, total_cost, has_pricing, cost_calculated
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						ephemeral_5m_tokens, ephemeral_1h_tokens, service_tier
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`,
 				requestLog.Platform, requestLog.Model, requestLog.Provider, requestLog.HttpCode,
 				requestLog.InputTokens, requestLog.OutputTokens, requestLog.CacheCreateTokens,
 				requestLog.CacheReadTokens, requestLog.ReasoningTokens,
-				boolToInt(requestLog.IsStream), requestLog.DurationSec,
-				requestLog.InputCost, requestLog.OutputCost, requestLog.ReasoningCost,
-				requestLog.CacheCreateCost, requestLog.CacheReadCost,
-				requestLog.Ephemeral5mCost, requestLog.Ephemeral1hCost,
-				requestLog.TotalCost, boolToInt(requestLog.HasPricing), 1,
+					requestLog.Ephemeral5mTokens, requestLog.Ephemeral1hTokens, requestLog.ServiceTier,
 			)
 		}()
 

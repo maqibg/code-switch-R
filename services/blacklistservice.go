@@ -41,6 +41,7 @@ func NewBlacklistService(settingsService *SettingsService, notificationService *
 
 // RecordSuccess 记录 provider 成功，清零连续失败计数，执行降级和宽恕逻辑
 func (bs *BlacklistService) RecordSuccess(platform string, providerName string) error {
+	providerName = ResolveProviderAlias(platform, providerName)
 	db, err := xdb.DB("default")
 	if err != nil {
 		return fmt.Errorf("获取数据库连接失败: %w", err)
@@ -168,6 +169,7 @@ func (bs *BlacklistService) RecordSuccess(platform string, providerName string) 
 
 // RecordFailure 记录 provider 失败，连续失败次数达到阈值时自动拉黑（支持等级拉黑）
 func (bs *BlacklistService) RecordFailure(platform string, providerName string) error {
+	providerName = ResolveProviderAlias(platform, providerName)
 	// 检查拉黑功能是否启用
 	if !bs.settingsService.IsBlacklistEnabled() {
 		log.Printf("🚫 拉黑功能已关闭，跳过 provider %s/%s 的失败记录", platform, providerName)
@@ -443,6 +445,7 @@ func (bs *BlacklistService) getLevelDuration(level int, config *BlacklistLevelCo
 
 // IsBlacklisted 检查 provider 是否在黑名单中
 func (bs *BlacklistService) IsBlacklisted(platform string, providerName string) (bool, *time.Time) {
+	providerName = ResolveProviderAlias(platform, providerName)
 	// 如果拉黑功能已关闭，始终返回未拉黑
 	if !bs.settingsService.IsBlacklistEnabled() {
 		return false, nil
@@ -482,6 +485,7 @@ func (bs *BlacklistService) IsBlacklisted(platform string, providerName string) 
 
 // ManualUnblockAndReset 手动解除拉黑（保留等级，如需清零请调用 ManualResetLevel）
 func (bs *BlacklistService) ManualUnblockAndReset(platform string, providerName string) error {
+	providerName = ResolveProviderAlias(platform, providerName)
 	db, err := xdb.DB("default")
 	if err != nil {
 		return fmt.Errorf("获取数据库连接失败: %w", err)
@@ -529,6 +533,7 @@ func (bs *BlacklistService) ManualUnblock(platform string, providerName string) 
 
 // ManualResetLevel 手动清零等级（不解除拉黑，仅重置等级）
 func (bs *BlacklistService) ManualResetLevel(platform string, providerName string) error {
+	providerName = ResolveProviderAlias(platform, providerName)
 	db, err := xdb.DB("default")
 	if err != nil {
 		return fmt.Errorf("获取数据库连接失败: %w", err)
@@ -746,8 +751,8 @@ func (bs *BlacklistService) GetBlacklistStatus(platform string) ([]BlacklistStat
 // 满足以下所有条件时返回 true：
 // 1. 黑名单总开关已启用
 // 2. 且满足以下任一：
-//    - 等级拉黑开启
-//    - 等级拉黑关闭但 fallbackMode="fixed"
+//   - 等级拉黑开启
+//   - 等级拉黑关闭但 fallbackMode="fixed"
 func (bs *BlacklistService) ShouldUseFixedMode() bool {
 	// 首先检查全局开关
 	if !bs.settingsService.IsBlacklistEnabled() {

@@ -1,0 +1,16 @@
+{
+  "aliases": {
+    "qwen-max": "dashscope/qwen-max",
+    "qwen-plus": "dashscope/qwen-plus",
+    "qwen-turbo": "dashscope/qwen-turbo",
+    "qwen-coder": "dashscope/qwen-coder",
+    "qwen-flash": "dashscope/qwen-flash",
+    "qwen3-coder-flash": "dashscope/qwen3-coder-flash",
+    "qwen3-coder-plus": "dashscope/qwen3-coder-plus",
+    "kimi-latest": "moonshot/kimi-latest",
+    "kimi-k2-0711-preview": "moonshot/kimi-k2-0711-preview",
+    "glm-4.5": "fireworks_ai/accounts/fireworks/models/glm-4p5",
+    "glm-4.5-air": "fireworks_ai/accounts/fireworks/models/glm-4p5-air",
+    "glm-4.6": "fireworks_ai/accounts/fireworks/models/glm-4p6"
+  }
+}
