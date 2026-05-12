@@ -14,6 +14,7 @@ const (
 	deepseekCodeSettingsFileName = "settings.json"
 	deepseekCodeBackupFileName   = "cc-studio.back.settings.json"
 	deepseekCodePlatform         = "deepseekcode"
+	deepseekCodeAuthPlaceholder  = "code-switch-r"
 )
 
 type DeepSeekCodeProxyStatus struct {
@@ -108,12 +109,17 @@ func (ds *DeepSeekCodeSettingsService) EnableProxy() error {
 			TargetPath:      settingsPath,
 			FileExisted:     fileExisted,
 			EnvExisted:      envRaw != nil,
-			InjectedBaseURL: ds.baseURL(),
+			InjectedBaseURL:        ds.baseURL(),
+			InjectedAuthToken:      deepseekCodeAuthPlaceholder,
 		}
 		if envRaw != nil {
 			if v, ok := envRaw["DEEPSEEK_BASE_URL"]; ok {
 				s := anyToString(v)
 				state.OriginalBaseURL = &s
+			}
+			if v, ok := envRaw["DEEPSEEK_API_KEY"]; ok {
+				s := anyToString(v)
+				state.OriginalAuthToken = &s
 			}
 		}
 		if err := SaveProxyState(deepseekCodePlatform, state); err != nil {
@@ -126,6 +132,7 @@ func (ds *DeepSeekCodeSettingsService) EnableProxy() error {
 		env = make(map[string]interface{})
 	}
 	env["DEEPSEEK_BASE_URL"] = ds.baseURL()
+	env["DEEPSEEK_API_KEY"] = deepseekCodeAuthPlaceholder
 	existingData["env"] = env
 
 	return AtomicWriteJSON(settingsPath, existingData)
@@ -172,6 +179,10 @@ func (ds *DeepSeekCodeSettingsService) DisableProxy() error {
 			delete(env, "DEEPSEEK_BASE_URL")
 			changed = true
 		}
+		if anyToString(env["DEEPSEEK_API_KEY"]) == deepseekCodeAuthPlaceholder {
+			delete(env, "DEEPSEEK_API_KEY")
+			changed = true
+		}
 
 		if changed {
 			payload["env"] = env
@@ -192,6 +203,12 @@ func (ds *DeepSeekCodeSettingsService) DisableProxy() error {
 		env["DEEPSEEK_BASE_URL"] = *state.OriginalBaseURL
 	} else {
 		delete(env, "DEEPSEEK_BASE_URL")
+	}
+
+	if state.OriginalAuthToken != nil {
+		env["DEEPSEEK_API_KEY"] = *state.OriginalAuthToken
+	} else {
+		delete(env, "DEEPSEEK_API_KEY")
 	}
 
 	if len(env) == 0 && !state.EnvExisted {
