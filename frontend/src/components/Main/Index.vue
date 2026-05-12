@@ -2287,6 +2287,7 @@ const getDefaultEndpoint = (platform: string) => {
   const defaults: Record<string, string> = {
     claude: '/v1/messages',
     codex: '/responses',
+    deepseekcode: '/v1/messages',
   }
   return defaults[platform] || '/v1/chat/completions'
 }
