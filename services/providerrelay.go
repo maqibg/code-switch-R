@@ -802,6 +802,8 @@ func (prs *ProviderRelayService) forwardRequest(
 	_ = convertInfo // 避免未使用警告
 
 	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
+	// 先清除客户端携带的 x-api-key（避免 DeepSeekCode 等 CLI 的占位 key 干扰）
+	delete(headers, "x-api-key")
 	authType := strings.ToLower(strings.TrimSpace(provider.ConnectivityAuthType))
 	switch authType {
 	case "x-api-key":
