@@ -239,7 +239,7 @@ func (ds *DeepSeekCodeSettingsService) baseURL() string {
 		addr = ":18100"
 	}
 	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
-		return addr
+		return strings.TrimSuffix(addr, "/") + "/deepseekcode"
 	}
 	host := addr
 	if strings.HasPrefix(host, ":") {
@@ -248,7 +248,7 @@ func (ds *DeepSeekCodeSettingsService) baseURL() string {
 	if !strings.Contains(host, "://") {
 		host = "http://" + host
 	}
-	return host
+	return strings.TrimSuffix(host, "/") + "/deepseekcode"
 }
 
 // ApplySingleProvider 直连应用单一供应商（仅在代理关闭时可用）
