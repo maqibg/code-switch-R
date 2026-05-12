@@ -94,7 +94,7 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if app == "" {
 		return nil, fmt.Errorf("缺少 'app' 参数")
 	}
-	if app != "claude" && app != "codex" && app != "gemini" {
+	if app != "claude" && app != "codex" && app != "gemini" && app != "deepseekcode" {
 		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 或 'gemini', 得到 '%s'", app)
 	}
 
@@ -201,6 +201,8 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 	case "gemini":
 		// Gemini 暂不支持通过 ProviderService 添加，返回友好提示
 		return "", fmt.Errorf("Gemini 供应商导入暂不支持，请使用 Gemini 页面手动添加")
+	case "deepseekcode":
+		kind = "deepseekcode"
 	default:
 		return "", fmt.Errorf("不支持的 app 类型: %s", merged.App)
 	}
@@ -299,6 +301,8 @@ func (s *DeepLinkService) parseAndMergeConfig(request *DeepLinkImportRequest) (*
 		s.mergeCodexConfig(&merged, configData)
 	case "gemini":
 		s.mergeGeminiConfig(&merged, configData)
+	case "deepseekcode":
+		s.mergeClaudeConfig(&merged, configData)
 	}
 
 	return &merged, nil

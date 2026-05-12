@@ -223,7 +223,8 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, er
 	result := map[string]LogStats{
 		"claude": {RangeKey: window.key, Series: []LogStatsSeries{}},
 		"codex":  {RangeKey: window.key, Series: []LogStatsSeries{}},
-		"gemini": {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"gemini":       {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"deepseekcode": {RangeKey: window.key, Series: []LogStatsSeries{}},
 	}
 	query := `
 		SELECT

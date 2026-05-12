@@ -279,7 +279,7 @@ func (prs *ProviderRelayService) Start() error {
 func (prs *ProviderRelayService) validateConfig() []string {
 	warnings := make([]string, 0)
 
-	for _, kind := range []string{"claude", "codex"} {
+	for _, kind := range []string{"claude", "codex", "deepseekcode"} {
 		providers, err := prs.providerService.LoadProviders(kind)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("[%s] 加载配置失败: %v", kind, err))
@@ -351,6 +351,7 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 
 	// DeepSeekCode 端点 — 请求格式为标准 Anthropic Messages API
 	router.POST("/deepseekcode/v1/messages", prs.proxyHandler("deepseekcode", "/v1/messages"))
+	router.GET("/deepseekcode/v1/models", prs.modelsHandler("deepseekcode"))
 
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
