@@ -275,6 +275,8 @@ func resolvePlatform(kind string) (string, error) {
 		return "claude", nil
 	case "codex":
 		return "codex", nil
+	case "deepseekcode", "deepseek_code", "deepseek-code":
+		return "deepseekcode", nil
 	default:
 		if strings.HasPrefix(kind, "custom:") {
 			return kind, nil

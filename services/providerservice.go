@@ -113,6 +113,8 @@ func providerFilePath(kind string) (string, error) {
 		filename = "claude-code.json"
 	case "codex":
 		filename = "codex.json"
+	case "deepseekcode", "deepseek_code", "deepseek-code":
+		filename = "deepseekcode.json"
 	default:
 		// 支持自定义 CLI 工具的供应商存储：custom:{tool-id}
 		if strings.HasPrefix(kind, "custom:") {

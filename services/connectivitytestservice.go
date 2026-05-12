@@ -81,6 +81,7 @@ func NewConnectivityTestService(
 			"claude": {},
 			"codex":  {},
 			"gemini": {},
+			"deepseekcode": {},
 		},
 		autoTestEnabled: false,
 	}

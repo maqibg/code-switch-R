@@ -120,6 +120,7 @@ func NewHealthCheckService(
 			"claude": {},
 			"codex":  {},
 			"gemini": {},
+			"deepseekcode": {},
 		},
 		pollInterval: time.Duration(DefaultPollIntervalSeconds) * time.Second,
 	}
@@ -181,7 +182,7 @@ func (hcs *HealthCheckService) GetLatestResults() (map[string][]ProviderTimeline
 	results := make(map[string][]ProviderTimeline)
 
 	// 遍历所有平台
-	for _, platform := range []string{"claude", "codex"} {
+	for _, platform := range []string{"claude", "codex", "deepseekcode"} {
 		providers, err := hcs.providerService.LoadProviders(platform)
 		if err != nil {
 			log.Printf("[HealthCheck] 加载 %s 供应商失败: %v", platform, err)
@@ -444,7 +445,7 @@ func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64)
 func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, error) {
 	results := make(map[string][]HealthCheckResult)
 
-	for _, platform := range []string{"claude", "codex"} {
+	for _, platform := range []string{"claude", "codex", "deepseekcode"} {
 		platformResults := hcs.checkAllProviders(platform)
 		results[platform] = platformResults
 	}
@@ -687,6 +688,8 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 		return "gpt-4o-mini"
 	case "gemini":
 		return "gemini-1.5-flash"
+	case "deepseekcode":
+		return "deepseek-chat"
 	default:
 		return "gpt-3.5-turbo"
 	}
@@ -710,6 +713,8 @@ func (hcs *HealthCheckService) getEffectiveEndpoint(provider *Provider, platform
 		return "/v1/messages"
 	case "codex":
 		return "/responses"
+	case "deepseekcode":
+		return "/v1/messages"
 	default:
 		return "/v1/chat/completions"
 	}
@@ -951,7 +956,7 @@ func (hcs *HealthCheckService) SetAutoAvailabilityPolling(enabled bool) {
 
 // runAllPlatformChecks 执行所有平台的检测
 func (hcs *HealthCheckService) runAllPlatformChecks() {
-	platforms := []string{"claude", "codex"}
+	platforms := []string{"claude", "codex", "deepseekcode"}
 	for _, platform := range platforms {
 		hcs.checkAllProviders(platform)
 	}
