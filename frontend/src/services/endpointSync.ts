@@ -1,6 +1,6 @@
 /**
  * 端点同步服务
- * 从 Claude、Codex、Gemini 三个平台获取供应商 API 端点
+ * 从各平台获取供应商 API 端点
  * @author sm
  */
 
@@ -12,7 +12,7 @@ import { GetProviders as GetGeminiProviders } from '../../bindings/codeswitch/se
  */
 export interface SyncedEndpoint {
   url: string                              // 标准化的基础 URL
-  source: 'claude' | 'codex' | 'gemini'   // 来源平台
+  source: 'claude' | 'codex' | 'gemini' | 'deepseekcode'   // 来源平台
   providerName: string                     // 供应商名称
 }
 
@@ -111,7 +111,28 @@ export async function fetchAllProviderEndpoints(): Promise<SyncedEndpoint[]> {
     console.error('获取 Gemini 供应商失败:', error)
   }
 
-  // 4. 去重：相同 URL 只保留第一个
+  try {
+    // 4. 获取 DeepSeekCode 供应商
+    const dsProviders = await LoadProviders('deepseekcode')
+    if (Array.isArray(dsProviders)) {
+      dsProviders.forEach((p: any) => {
+        if (p.apiUrl && p.apiUrl.trim()) {
+          const baseUrl = extractBaseUrl(p.apiUrl)
+          if (baseUrl) {
+            endpoints.push({
+              url: baseUrl,
+              source: 'deepseekcode',
+              providerName: p.name || 'DeepSeekCode Provider'
+            })
+          }
+        }
+      })
+    }
+  } catch (error) {
+    console.error('获取 DeepSeekCode 供应商失败:', error)
+  }
+
+  // 5. 去重：相同 URL 只保留第一个
   const uniqueEndpoints = new Map<string, SyncedEndpoint>()
   endpoints.forEach(ep => {
     if (!uniqueEndpoints.has(ep.url)) {

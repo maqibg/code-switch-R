@@ -13,7 +13,7 @@ interface Endpoint {
   url: string
   result: EndpointLatency | null
   testing: boolean
-  source: 'manual' | 'claude' | 'codex' | 'gemini'  // 新增：端点来源
+  source: 'manual' | 'claude' | 'codex' | 'gemini' | 'deepseekcode'  // 端点来源
   providerName?: string                              // 新增：供应商名称
 }
 

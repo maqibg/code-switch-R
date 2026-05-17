@@ -2756,7 +2756,7 @@ const submitModal = async (): Promise<boolean> => {
 
   // 保存 CLI 配置（仅支持 claude/codex/gemini 平台）
   const cliConfig = modalState.form.cliConfig
-  const supportedPlatforms: CLIPlatform[] = ['claude', 'codex', 'gemini']
+  const supportedPlatforms: CLIPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode']
   if (cliConfig && Object.keys(cliConfig).length > 0 && supportedPlatforms.includes(modalState.tabId as CLIPlatform)) {
     try {
       await saveCLIConfig(modalState.tabId as CLIPlatform, cliConfig)

@@ -38,9 +38,10 @@
           <span>{{ t('components.logs.filters.platform') }}</span>
           <select v-model="filters.platform" class="mac-select">
             <option value="">{{ t('components.logs.filters.allPlatforms') }}</option>
-            <option value="claude">Claude</option>
+            <option value="claude">Claude Code</option>
             <option value="codex">Codex</option>
             <option value="gemini">Gemini</option>
+            <option value="deepseekcode">DeepSeekCode</option>
           </select>
         </label>
         <label class="filter-field">
@@ -440,20 +441,6 @@ const stopCountdown = () => {
 
 const normalizeProviderName = (value: string) => value.trim()
 
-const syncProviderOptionsFromLogs = (items: RequestLog[]) => {
-  if (!items.length) return
-  const merged = new Set(providerOptions.value.map(normalizeProviderName).filter(Boolean))
-  for (const item of items) {
-    const name = normalizeProviderName(item.provider ?? '')
-    if (name) {
-      merged.add(name)
-    }
-  }
-  const next = Array.from(merged)
-  next.sort((a, b) => a.localeCompare(b))
-  providerOptions.value = next
-}
-
 const loadLogs = async () => {
   loading.value = true
   try {
@@ -483,7 +470,6 @@ const loadStats = async () => {
 
 const loadDashboard = async () => {
   await Promise.all([loadLogs(), loadStats(), loadProviderOptions()])
-  syncProviderOptionsFromLogs(logs.value)
 }
 
 const pagedLogs = computed(() => {

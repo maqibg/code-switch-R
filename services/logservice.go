@@ -38,7 +38,8 @@ const (
 )
 
 type LogService struct {
-	pricing *modelpricing.Service
+	pricing         *modelpricing.Service
+	providerService *ProviderService // 用于校验供应商是否仍存在于配置中
 }
 
 type dashboardAccumulator struct {
@@ -288,12 +289,12 @@ func buildSnapshotFromRecord(record xdb.Record) modelpricing.UsageSnapshot {
 	return snap
 }
 
-func NewLogService() *LogService {
+func NewLogService(providerService *ProviderService) *LogService {
 	svc, err := modelpricing.DefaultService()
 	if err != nil {
 		log.Printf("pricing service init failed: %v", err)
 	}
-	service := &LogService{pricing: svc}
+	service := &LogService{pricing: svc, providerService: providerService}
 	if svc != nil {
 		if err := service.backfillStoredRequestCosts(800); err != nil {
 			log.Printf("request_log 成本回填失败: %v", err)
@@ -380,14 +381,41 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	providers := make([]string, 0, len(records))
+
+	logProviders := make([]string, 0, len(records))
 	for _, record := range records {
 		name := strings.TrimSpace(record.GetString("provider"))
 		if name != "" {
-			providers = append(providers, name)
+			logProviders = append(logProviders, name)
 		}
 	}
-	return providers, nil
+
+	// 如果未注入 ProviderService（如测试环境），回退到不过滤
+	if ls.providerService == nil {
+		return logProviders, nil
+	}
+
+	// 从配置文件中获取当前存在的供应商名称集合
+	configuredSet := make(map[string]bool)
+	kinds := []string{"claude", "codex", "deepseekcode"}
+	if platform != "" && platform != "gemini" {
+		kinds = []string{platform}
+	}
+	for _, kind := range kinds {
+		providers, _ := ls.providerService.LoadProviders(kind)
+		for _, p := range providers {
+			configuredSet[p.Name] = true
+		}
+	}
+
+	// 只保留同时存在于配置中的供应商
+	result := make([]string, 0, len(logProviders))
+	for _, name := range logProviders {
+		if configuredSet[name] {
+			result = append(result, name)
+		}
+	}
+	return result, nil
 }
 
 func (ls *LogService) DashboardOverview(platform string) (DashboardOverview, error) {

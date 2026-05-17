@@ -120,7 +120,7 @@ func main() {
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	deepseekCodeSettings := services.NewDeepSeekCodeSettingsService(providerRelay.Addr())
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
-	logService := services.NewLogService()
+	logService := services.NewLogService(providerService)
 	mcpService := services.NewMCPService()
 	skillService := services.NewSkillService(appSettings)
 	promptService := services.NewPromptService()
