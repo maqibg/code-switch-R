@@ -2293,7 +2293,12 @@ const getDefaultEndpoint = (platform: string) => {
 }
 
 // 获取平台默认认证方式（默认 Bearer，与 v2.2.x 保持一致）
-const getDefaultAuthType = (_platform: string) => 'bearer'
+const getDefaultAuthType = (platform: string) => {
+  if (platform === 'claude' || platform === 'claude-code' || platform === 'deepseekcode') {
+    return 'x-api-key'
+  }
+  return 'bearer'
+}
 
 const getEffectiveConnectivityModel = (platform: string) => {
   const explicitModel = (

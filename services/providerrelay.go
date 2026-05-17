@@ -806,6 +806,14 @@ func (prs *ProviderRelayService) forwardRequest(
 	// 先清除客户端携带的 x-api-key（避免 DeepSeekCode 等 CLI 的占位 key 干扰）
 	delete(headers, "x-api-key")
 	authType := strings.ToLower(strings.TrimSpace(provider.ConnectivityAuthType))
+	if authType == "" {
+		// 平台默认认证方式（与连通性测试保持一致）
+		if kind == "claude" || kind == "deepseekcode" {
+			authType = "x-api-key"
+		} else {
+			authType = "bearer"
+		}
+	}
 	switch authType {
 	case "x-api-key":
 		// 仅当用户显式选择 x-api-key 时使用（Anthropic 官方 API）
@@ -814,7 +822,7 @@ func (prs *ProviderRelayService) forwardRequest(
 		if upstreamProtocol == UpstreamProtocolAnthropic {
 			headers["anthropic-version"] = "2023-06-01"
 		}
-	case "", "bearer":
+	case "bearer":
 		// 默认使用 Bearer token（兼容所有第三方中转）
 		headers["Authorization"] = fmt.Sprintf("Bearer %s", provider.APIKey)
 	default:
@@ -2427,11 +2435,19 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 
 	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
 	authType := strings.ToLower(strings.TrimSpace(selectedProvider.ConnectivityAuthType))
+	if authType == "" {
+		// 平台默认认证方式（与连通性测试保持一致）
+		if kind == "claude" || kind == "deepseekcode" {
+			authType = "x-api-key"
+		} else {
+			authType = "bearer"
+		}
+	}
 	switch authType {
 	case "x-api-key":
 		req.Header.Set("x-api-key", selectedProvider.APIKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
-	case "", "bearer":
+	case "bearer":
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", selectedProvider.APIKey))
 	default:
 		headerName := strings.TrimSpace(selectedProvider.ConnectivityAuthType)

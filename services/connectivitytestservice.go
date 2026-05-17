@@ -242,7 +242,8 @@ func (cts *ConnectivityTestService) getEffectiveAuthType(provider *Provider, pla
 		return authType
 	}
 	// 平台默认认证方式
-	if strings.ToLower(platform) == "claude" {
+	lower := strings.ToLower(platform)
+	if lower == "claude" || lower == "deepseekcode" {
 		return "x-api-key"
 	}
 	return "bearer"
