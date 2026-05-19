@@ -12,7 +12,7 @@ import { GetProviders as GetGeminiProviders } from '../../bindings/codeswitch/se
  */
 export interface SyncedEndpoint {
   url: string                              // 标准化的基础 URL
-  source: 'claude' | 'codex' | 'gemini' | 'deepseekcode'   // 来源平台
+  source: 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix'   // 来源平台
   providerName: string                     // 供应商名称
 }
 
@@ -132,7 +132,28 @@ export async function fetchAllProviderEndpoints(): Promise<SyncedEndpoint[]> {
     console.error('获取 DeepSeekCode 供应商失败:', error)
   }
 
-  // 5. 去重：相同 URL 只保留第一个
+  try {
+    // 5. 获取 Reasonix 供应商
+    const reasonixProviders = await LoadProviders('reasonix')
+    if (Array.isArray(reasonixProviders)) {
+      reasonixProviders.forEach((p: any) => {
+        if (p.apiUrl && p.apiUrl.trim()) {
+          const baseUrl = extractBaseUrl(p.apiUrl)
+          if (baseUrl) {
+            endpoints.push({
+              url: baseUrl,
+              source: 'reasonix',
+              providerName: p.name || 'Reasonix Provider'
+            })
+          }
+        }
+      })
+    }
+  } catch (error) {
+    console.error('获取 Reasonix 供应商失败:', error)
+  }
+
+  // 6. 去重：相同 URL 只保留第一个
   const uniqueEndpoints = new Map<string, SyncedEndpoint>()
   endpoints.forEach(ep => {
     if (!uniqueEndpoints.has(ep.url)) {

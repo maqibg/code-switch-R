@@ -1,6 +1,6 @@
 import { Call } from '@wailsio/runtime'
 
-export type LogPlatform = 'claude' | 'codex' | 'gemini' | 'deepseekcode'
+export type LogPlatform = 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix'
 export type StatsRange = 'today' | '7d' | '30d' | 'month' | 'all'
 
 export type RequestLog = {

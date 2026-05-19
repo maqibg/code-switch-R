@@ -325,10 +325,11 @@ const platforms = computed(() => [
   { value: 'claude' as const, label: t('components.skill.platform.claude') },
   { value: 'codex' as const, label: t('components.skill.platform.codex') },
   { value: 'deepseekcode' as const, label: t('components.skill.platform.deepseekcode') },
+  { value: 'reasonix' as const, label: t('components.skill.platform.reasonix') },
 ])
 
 // State
-const activePlatform = ref<'claude' | 'codex' | 'deepseekcode'>('claude')
+const activePlatform = ref<'claude' | 'codex' | 'deepseekcode' | 'reasonix'>('claude')
 const skills = ref<SkillSummary[]>([])
 const repoList = ref<SkillRepoConfig[]>([])
 const loading = ref(false)
@@ -380,7 +381,7 @@ const isInstallingSkill = (skill: SkillSummary) => processingSkill.value === ins
 const canInstallSkill = (skill: SkillSummary) => Boolean(skill.repo_owner && skill.repo_name)
 
 // Platform switching
-const switchPlatform = async (platform: 'claude' | 'codex' | 'deepseekcode') => {
+const switchPlatform = async (platform: 'claude' | 'codex' | 'deepseekcode' | 'reasonix') => {
   activePlatform.value = platform
   await loadSkillsForPlatform()
 }

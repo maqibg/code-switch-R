@@ -637,7 +637,7 @@ func (cts *ConnectivityTestService) stopAutoTest() {
 func (cts *ConnectivityTestService) runAllPlatformTests() {
 	// 仅轮询 ProviderService 支持的平台，避免无意义的错误日志
 	// Gemini 使用独立的 GeminiService，暂未接入
-	platforms := []string{"claude", "codex", "deepseekcode"}
+	platforms := []string{"claude", "codex", "deepseekcode", "reasonix"}
 	for _, platform := range platforms {
 		cts.TestAll(platform)
 	}

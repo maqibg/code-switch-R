@@ -119,6 +119,7 @@ func main() {
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	deepseekCodeSettings := services.NewDeepSeekCodeSettingsService(providerRelay.Addr())
+	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
 	logService := services.NewLogService(providerService)
 	mcpService := services.NewMCPService()
@@ -248,6 +249,7 @@ func main() {
 			application.NewService(customCliService),
 			application.NewService(networkService),
 			application.NewService(deepseekCodeSettings),
+			application.NewService(reasonixSettings),
 			application.NewService(frontendPreferencesService),
 		},
 		Assets: application.AssetOptions{

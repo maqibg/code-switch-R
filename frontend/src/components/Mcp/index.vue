@@ -574,6 +574,7 @@ const platformOptions = computed(() => [
   { id: 'codex' as McpPlatform, label: t('components.mcp.platforms.codex') },
   { id: 'gemini' as McpPlatform, label: t('components.mcp.platforms.gemini') },
   { id: 'deepseekcode' as McpPlatform, label: t('components.mcp.platforms.deepseekcode') },
+  { id: 'reasonix' as McpPlatform, label: t('components.mcp.platforms.reasonix') },
 ])
 
 const activePlatformLabel = computed(

@@ -42,6 +42,7 @@
             <option value="codex">Codex</option>
             <option value="gemini">Gemini</option>
             <option value="deepseekcode">DeepSeekCode</option>
+            <option value="reasonix">Reasonix</option>
           </select>
         </label>
         <label class="filter-field">

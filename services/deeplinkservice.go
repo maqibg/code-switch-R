@@ -94,8 +94,8 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if app == "" {
 		return nil, fmt.Errorf("缺少 'app' 参数")
 	}
-	if app != "claude" && app != "codex" && app != "gemini" && app != "deepseekcode" {
-		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 或 'gemini', 得到 '%s'", app)
+	if app != "claude" && app != "codex" && app != "gemini" && app != "deepseekcode" && app != "reasonix" {
+		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 'gemini', 'deepseekcode' 或 'reasonix', 得到 '%s'", app)
 	}
 
 	name := params.Get("name")
@@ -203,6 +203,8 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 		return "", fmt.Errorf("Gemini 供应商导入暂不支持，请使用 Gemini 页面手动添加")
 	case "deepseekcode":
 		kind = "deepseekcode"
+	case "reasonix":
+		kind = "reasonix"
 	default:
 		return "", fmt.Errorf("不支持的 app 类型: %s", merged.App)
 	}
@@ -303,6 +305,8 @@ func (s *DeepLinkService) parseAndMergeConfig(request *DeepLinkImportRequest) (*
 		s.mergeGeminiConfig(&merged, configData)
 	case "deepseekcode":
 		s.mergeClaudeConfig(&merged, configData)
+	case "reasonix":
+		s.mergeReasonixConfig(&merged, configData)
 	}
 
 	return &merged, nil
@@ -419,6 +423,25 @@ func (s *DeepLinkService) mergeGeminiConfig(request *DeepLinkImportRequest, conf
 	// 自动填充 homepage
 	if request.Homepage == "" && request.Endpoint != "" {
 		request.Homepage = inferHomepage(request.Endpoint, "https://ai.google.dev")
+	}
+}
+
+// mergeReasonixConfig 合并 Reasonix 配置（扁平 JSON 结构）
+func (s *DeepLinkService) mergeReasonixConfig(request *DeepLinkImportRequest, config map[string]interface{}) {
+	if request.APIKey == "" {
+		if apiKey, ok := config["apiKey"].(string); ok {
+			request.APIKey = apiKey
+		}
+	}
+
+	if request.Endpoint == "" {
+		if baseURL, ok := config["baseUrl"].(string); ok {
+			request.Endpoint = baseURL
+		}
+	}
+
+	if request.Homepage == "" && request.Endpoint != "" {
+		request.Homepage = inferHomepage(request.Endpoint, "https://platform.deepseek.com")
 	}
 }
 

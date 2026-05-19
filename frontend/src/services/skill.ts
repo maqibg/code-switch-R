@@ -11,7 +11,7 @@ export type SkillSummary = {
   // 新增字段
   enabled: boolean
   license_file?: string
-  platform: 'claude' | 'codex' | 'deepseekcode' | ''
+  platform: 'claude' | 'codex' | 'deepseekcode' | 'reasonix' | ''
   install_location: 'user' | 'project' | ''
 
   // 仓库字段
@@ -32,7 +32,7 @@ export type InstallSkillPayload = {
   repo_owner?: string
   repo_name?: string
   repo_branch?: string
-  platform?: 'claude' | 'codex' | 'deepseekcode'
+  platform?: 'claude' | 'codex' | 'deepseekcode' | 'reasonix'
   location?: 'user' | 'project'
 }
 
@@ -43,7 +43,7 @@ export const fetchSkills = async (): Promise<SkillSummary[]> => {
 }
 
 // 获取指定平台的技能列表（新方法）
-export const fetchSkillsForPlatform = async (platform: 'claude' | 'codex' | 'deepseekcode'): Promise<SkillSummary[]> => {
+export const fetchSkillsForPlatform = async (platform: 'claude' | 'codex' | 'deepseekcode' | 'reasonix'): Promise<SkillSummary[]> => {
   const response = await Call.ByName('codeswitch/services.SkillService.ListSkillsForPlatform', platform)
   return (response as SkillSummary[]) ?? []
 }

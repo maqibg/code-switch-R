@@ -30,6 +30,7 @@ const (
 	platCodex              = "codex"
 	platGemini             = "gemini"
 	platDeepSeekCode       = "deepseekcode"
+	platReasonix           = "reasonix"
 )
 
 var builtInServers = map[string]rawMCPServer{
@@ -85,6 +86,7 @@ type MCPServer struct {
 	EnabledInCodex      bool              `json:"enabled_in_codex"`
 	EnabledInGemini         bool              `json:"enabled_in_gemini"`
 	EnabledInDeepSeekCode   bool              `json:"enabled_in_deepseekcode"`
+	EnabledInReasonix       bool              `json:"enabled_in_reasonix"`
 	MissingPlaceholders []string          `json:"missing_placeholders"`
 }
 
@@ -152,6 +154,7 @@ func (ms *MCPService) ListServersForPlatform(platform string) ([]MCPServer, erro
 	codexEnabled := loadCodexEnabledServers()
 	geminiEnabled := loadGeminiEnabledServers()
 	deepseekEnabled := loadDeepSeekCodeEnabledServers()
+	reasonixEnabled := loadReasonixEnabledServers()
 
 	names := make([]string, 0, len(config))
 	for name := range config {
@@ -178,6 +181,7 @@ func (ms *MCPService) ListServersForPlatform(platform string) ([]MCPServer, erro
 			EnabledInCodex:  containsNormalized(codexEnabled, name),
 			EnabledInGemini:       containsNormalized(geminiEnabled, name),
 			EnabledInDeepSeekCode: containsNormalized(deepseekEnabled, name),
+			EnabledInReasonix:     containsNormalized(reasonixEnabled, name),
 		}
 		server.MissingPlaceholders = detectPlaceholders(server.URL, server.Args)
 		servers = append(servers, server)
@@ -234,6 +238,7 @@ func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServe
 			EnabledInCodex:  server.EnabledInCodex,
 			EnabledInGemini:       server.EnabledInGemini,
 			EnabledInDeepSeekCode: server.EnabledInDeepSeekCode,
+			EnabledInReasonix:     server.EnabledInReasonix,
 		}
 		raw[name] = rawMCPServer{
 			Type:           typ,
@@ -285,6 +290,10 @@ func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServe
 		}
 	case platDeepSeekCode:
 		if err := ms.syncDeepSeekCodeServers(normalized); err != nil {
+			return err
+		}
+	case platReasonix:
+		if err := ms.syncReasonixServers(normalized); err != nil {
 			return err
 		}
 	}
@@ -532,6 +541,8 @@ func normalizePlatform(value string) (string, bool) {
 		return "gemini", true
 	case "deepseekcode", "deepseek_code", "deepseek-code":
 		return "deepseekcode", true
+	case "reasonix":
+		return "reasonix", true
 	default:
 		return "", false
 	}
@@ -716,6 +727,52 @@ func (ms *MCPService) syncDeepSeekCodeServers(servers []MCPServer) error {
 	desired := make(map[string]claudeDesktopServer)
 	for _, server := range servers {
 		if !server.Enabled || !platformContains(server.EnablePlatform, platDeepSeekCode) {
+			continue
+		}
+		desired[server.Name] = buildClaudeDesktopEntry(server)
+	}
+	return writeJSONMCPServersPreservingLayout(path, "mcpServers", desired, 0o600)
+}
+
+func reasonixConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".reasonix", "config.json"), nil
+}
+
+func loadReasonixEnabledServers() map[string]struct{} {
+	result := map[string]struct{}{}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return result
+	}
+	path := filepath.Join(home, ".reasonix", "config.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return result
+	}
+	var payload struct {
+		Servers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return result
+	}
+	for name := range payload.Servers {
+		result[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
+	return result
+}
+
+func (ms *MCPService) syncReasonixServers(servers []MCPServer) error {
+	path, err := reasonixConfigPath()
+	if err != nil {
+		return err
+	}
+	desired := make(map[string]claudeDesktopServer)
+	for _, server := range servers {
+		if !server.Enabled || !platformContains(server.EnablePlatform, platReasonix) {
 			continue
 		}
 		desired[server.Name] = buildClaudeDesktopEntry(server)

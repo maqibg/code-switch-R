@@ -279,7 +279,7 @@ func (prs *ProviderRelayService) Start() error {
 func (prs *ProviderRelayService) validateConfig() []string {
 	warnings := make([]string, 0)
 
-	for _, kind := range []string{"claude", "codex", "deepseekcode"} {
+	for _, kind := range []string{"claude", "codex", "deepseekcode", "reasonix"} {
 		providers, err := prs.providerService.LoadProviders(kind)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("[%s] 加载配置失败: %v", kind, err))
@@ -352,6 +352,10 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	// DeepSeekCode 端点 — 请求格式为标准 Anthropic Messages API
 	router.POST("/deepseekcode/v1/messages", prs.proxyHandler("deepseekcode", "/v1/messages"))
 	router.GET("/deepseekcode/v1/models", prs.modelsHandler("deepseekcode"))
+
+	// Reasonix 端点 — 请求格式为 OpenAI Chat Completions
+	router.POST("/reasonix/chat/completions", prs.proxyHandler("reasonix", "/chat/completions"))
+	router.GET("/reasonix/models", prs.modelsHandler("reasonix"))
 
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
@@ -1243,6 +1247,8 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 			parserFn = CodexParseTokenUsageFromResponse
 		case "gemini":
 			parserFn = GeminiParseTokenUsageFromResponse
+		case "reasonix":
+			parserFn = ReasonixParseTokenUsageFromResponse
 		}
 		parseEventPayload(payload, parserFn, usage)
 
@@ -1346,6 +1352,14 @@ func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 			break
 		}
 	}
+}
+
+// reasonix usage parser(DeepSeek OpenAI-compatible Chat Completions API)
+func ReasonixParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+	maxIntInto(&usage.InputTokens, int(gjson.Get(data, "usage.prompt_tokens").Int()))
+	maxIntInto(&usage.OutputTokens, int(gjson.Get(data, "usage.completion_tokens").Int()))
+	maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, "usage.prompt_cache_hit_tokens").Int()))
+	maxIntInto(&usage.ReasoningTokens, int(gjson.Get(data, "usage.completion_tokens_details.reasoning_tokens").Int()))
 }
 
 // clampCacheEphemerals 兜底 Anthropic ephemeral 拆分的异常情况:

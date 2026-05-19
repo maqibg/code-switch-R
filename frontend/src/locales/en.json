@@ -104,7 +104,8 @@
       "claude": "Claude Code",
       "codex": "Codex",
       "gemini": "Gemini",
-      "deepseekcode": "DeepSeekCode"
+      "deepseekcode": "DeepSeekCode",
+      "reasonix": "Reasonix"
     },
     "cards": {
       "requests": "Today's Requests",
@@ -334,6 +335,7 @@
         "hostClaude": "Host Claude Code",
         "hostCodex": "Host Codex",
         "hostGemini": "Host Gemini CLI",
+        "hostReasonix": "Host Reasonix",
         "hostOthers": "Host Custom CLI",
         "tooltip": "Route traffic through the local relay to manage API keys centrally.",
         "statusOn": "Managed",
@@ -861,7 +863,8 @@
         "claude": "Claude Code",
         "codex": "Codex",
         "gemini": "Gemini CLI",
-        "deepseekcode": "DeepSeekCode"
+        "deepseekcode": "DeepSeekCode",
+        "reasonix": "Reasonix"
       },
       "form": {
         "createTitle": "Create MCP server",
@@ -992,7 +995,8 @@
       "platform": {
         "claude": "Claude Code",
         "codex": "Codex",
-        "deepseekcode": "DeepSeekCode"
+        "deepseekcode": "DeepSeekCode",
+        "reasonix": "Reasonix"
       },
       "groups": {
         "project": "Project Skills",

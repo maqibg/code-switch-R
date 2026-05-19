@@ -9,13 +9,14 @@ import { extractErrorMessage } from '../../utils/error'
 
 const { t } = useI18n()
 
-type Platform = 'claude' | 'codex' | 'gemini' | 'deepseekcode'
+type Platform = 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix'
 
 const platforms: { id: Platform; name: string }[] = [
   { id: 'claude', name: 'Claude Code' },
   { id: 'codex', name: 'Codex' },
   { id: 'gemini', name: 'Gemini' },
-  { id: 'deepseekcode', name: 'DeepSeekCode' }
+  { id: 'deepseekcode', name: 'DeepSeekCode' },
+  { id: 'reasonix', name: 'Reasonix' }
 ]
 
 const activePlatform = ref<Platform>('claude')

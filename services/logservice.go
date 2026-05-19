@@ -397,7 +397,7 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 
 	// 从配置文件中获取当前存在的供应商名称集合
 	configuredSet := make(map[string]bool)
-	kinds := []string{"claude", "codex", "deepseekcode"}
+	kinds := []string{"claude", "codex", "deepseekcode", "reasonix"}
 	if platform != "" && platform != "gemini" {
 		kinds = []string{platform}
 	}

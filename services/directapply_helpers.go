@@ -23,6 +23,8 @@ func providerFilePathNoCreate(kind string) (string, error) {
 		filename = "codex.json"
 	case "deepseekcode", "deepseek_code", "deepseek-code":
 		filename = "deepseekcode.json"
+	case "reasonix":
+		filename = "reasonix.json"
 	default:
 		return "", nil
 	}
