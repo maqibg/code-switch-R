@@ -1,0 +1,252 @@
+package services
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"strings"
+
+	"github.com/daodao97/xgo/xdb"
+)
+
+type deletedProvider struct {
+	ID   int64
+	Name string
+}
+
+func diffDeletedProviders(existing, next []Provider) []deletedProvider {
+	nextIDs := make(map[int64]struct{}, len(next))
+	nextNames := make(map[string]struct{}, len(next))
+	for _, p := range next {
+		if p.ID != 0 {
+			nextIDs[p.ID] = struct{}{}
+			continue
+		}
+		nextNames[p.Name] = struct{}{}
+	}
+
+	deleted := make([]deletedProvider, 0)
+	for _, p := range existing {
+		if p.ID != 0 {
+			if _, ok := nextIDs[p.ID]; !ok {
+				deleted = append(deleted, deletedProvider{ID: p.ID, Name: p.Name})
+			}
+			continue
+		}
+		if _, ok := nextNames[p.Name]; !ok {
+			deleted = append(deleted, deletedProvider{Name: p.Name})
+		}
+	}
+	return deleted
+}
+
+func cleanupDeletedProviders(platform string, providers []deletedProvider) error {
+	if len(providers) == 0 {
+		return nil
+	}
+	if err := ensureProviderDeleteTables(); err != nil {
+		return err
+	}
+
+	db, err := xdb.DB("default")
+	if err != nil {
+		return fmt.Errorf("获取数据库连接失败: %w", err)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启事务失败: %w", err)
+	}
+	for _, p := range providers {
+		if err := cleanupDeletedProviderTx(tx, platform, p); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交删除供应商数据清理事务失败: %w", err)
+	}
+	return nil
+}
+
+func ensureProviderDeleteTables() error {
+	if err := ensureRequestLogTable(); err != nil {
+		return fmt.Errorf("初始化 request_log 表失败: %w", err)
+	}
+	if err := ensureBlacklistTables(); err != nil {
+		return fmt.Errorf("初始化 provider_blacklist 表失败: %w", err)
+	}
+	if err := ensureHealthCheckHistoryTable(); err != nil {
+		return fmt.Errorf("初始化 health_check_history 表失败: %w", err)
+	}
+	if err := ensureProviderAliasTable(); err != nil {
+		return fmt.Errorf("初始化 provider_alias 表失败: %w", err)
+	}
+	return nil
+}
+
+func ensureHealthCheckHistoryTable() error {
+	db, err := xdb.DB("default")
+	if err != nil {
+		return fmt.Errorf("获取数据库连接失败: %w", err)
+	}
+
+	const createSQL = `CREATE TABLE IF NOT EXISTS health_check_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		provider_id INTEGER NOT NULL,
+		provider_name TEXT NOT NULL,
+		platform TEXT NOT NULL,
+		model TEXT,
+		endpoint TEXT,
+		status TEXT NOT NULL,
+		latency_ms INTEGER,
+		error_message TEXT,
+		checked_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`
+	if _, err := db.Exec(createSQL); err != nil {
+		return fmt.Errorf("创建 health_check_history 表失败: %w", err)
+	}
+	return ensureHealthCheckHistoryIndexes(db)
+}
+
+func ensureHealthCheckHistoryIndexes(db *sql.DB) error {
+	const createSQL = `
+		CREATE INDEX IF NOT EXISTS idx_health_provider ON health_check_history(platform, provider_name);
+		CREATE INDEX IF NOT EXISTS idx_health_checked_at ON health_check_history(checked_at);
+	`
+	if _, err := db.Exec(createSQL); err != nil {
+		return fmt.Errorf("创建 health_check_history 索引失败: %w", err)
+	}
+	return nil
+}
+
+func cleanupDeletedProvidersWithRollback(path string, existing []Provider, platform string, deleted []deletedProvider) error {
+	if err := cleanupDeletedProviders(platform, deleted); err == nil {
+		return nil
+	} else {
+		return rollbackProviderFile(path, existing, err)
+	}
+}
+
+func rollbackProviderFile(path string, providers []Provider, primary error) error {
+	originalBytes, err := serializeProviders(providers)
+	if err != nil {
+		return fmt.Errorf("清理已删除供应商数据失败: %w; 序列化回滚配置失败: %v", primary, err)
+	}
+	if err := atomicWriteFile(path, originalBytes, 0o644); err != nil {
+		return fmt.Errorf("清理已删除供应商数据失败: %w; 配置文件回滚失败: %v", primary, err)
+	}
+	return fmt.Errorf("清理已删除供应商数据失败: %w", primary)
+}
+
+func cleanupDeletedProviderByName(platform, providerName string) error {
+	if strings.TrimSpace(providerName) == "" {
+		return nil
+	}
+	return cleanupDeletedProviders(platform, []deletedProvider{{Name: providerName}})
+}
+
+func cleanupDeletedProviderTx(tx *sql.Tx, platform string, provider deletedProvider) error {
+	names, err := deletedProviderNames(tx, platform, provider)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range names {
+		if err := deleteDeletedProviderNameRows(tx, platform, name); err != nil {
+			return err
+		}
+	}
+	if err := deleteDeletedProviderIDRows(tx, platform, provider.ID); err != nil {
+		return err
+	}
+
+	log.Printf("[ProviderDelete] 已清理已删除供应商数据 platform=%s provider_id=%d provider_name=%q", platform, provider.ID, provider.Name)
+	return nil
+}
+
+func deleteDeletedProviderNameRows(tx *sql.Tx, platform, name string) error {
+	if _, err := tx.Exec(
+		`DELETE FROM request_log WHERE platform = ? AND provider = ?`,
+		platform, name,
+	); err != nil {
+		return fmt.Errorf("删除 request_log 失败: %w", err)
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM provider_blacklist WHERE platform = ? AND provider_name = ?`,
+		platform, name,
+	); err != nil {
+		return fmt.Errorf("删除 provider_blacklist 失败: %w", err)
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM health_check_history WHERE platform = ? AND provider_name = ?`,
+		platform, name,
+	); err != nil {
+		return fmt.Errorf("删除 health_check_history 失败: %w", err)
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM provider_alias WHERE platform = ? AND (alias_name = ? OR canonical_name = ?)`,
+		platform, name, name,
+	); err != nil {
+		return fmt.Errorf("删除 provider_alias 名称记录失败: %w", err)
+	}
+	return nil
+}
+
+func deleteDeletedProviderIDRows(tx *sql.Tx, platform string, providerID int64) error {
+	if providerID == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM health_check_history WHERE platform = ? AND provider_id = ?`,
+		platform, providerID,
+	); err != nil {
+		return fmt.Errorf("按 provider_id 删除 health_check_history 失败: %w", err)
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM provider_alias WHERE platform = ? AND provider_id = ?`,
+		platform, providerID,
+	); err != nil {
+		return fmt.Errorf("按 provider_id 删除 provider_alias 失败: %w", err)
+	}
+	return nil
+}
+
+func deletedProviderNames(tx *sql.Tx, platform string, provider deletedProvider) ([]string, error) {
+	names := make(map[string]struct{})
+	addName := func(name string) {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	addName(provider.Name)
+
+	rows, err := tx.Query(
+		`SELECT alias_name, canonical_name FROM provider_alias
+		 WHERE platform = ? AND (provider_id = ? OR alias_name = ? OR canonical_name = ?)`,
+		platform, provider.ID, provider.Name, provider.Name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询 provider_alias 失败: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var aliasName, canonicalName string
+		if err := rows.Scan(&aliasName, &canonicalName); err != nil {
+			return nil, fmt.Errorf("读取 provider_alias 失败: %w", err)
+		}
+		addName(aliasName)
+		addName(canonicalName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历 provider_alias 失败: %w", err)
+	}
+
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	return result, nil
+}

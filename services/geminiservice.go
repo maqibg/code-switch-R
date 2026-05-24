@@ -191,8 +191,20 @@ func (s *GeminiService) DeleteProvider(id string) error {
 
 	for i, p := range s.providers {
 		if p.ID == id {
+			originalProviders := append([]GeminiProvider(nil), s.providers...)
 			s.providers = append(s.providers[:i], s.providers[i+1:]...)
-			return s.saveProviders()
+			if err := s.saveProviders(); err != nil {
+				s.providers = originalProviders
+				return err
+			}
+			if err := cleanupDeletedProviderByName("gemini", p.Name); err != nil {
+				s.providers = originalProviders
+				if rollbackErr := s.saveProviders(); rollbackErr != nil {
+					return fmt.Errorf("清理已删除 Gemini 供应商数据失败: %w; 配置文件回滚失败: %v", err, rollbackErr)
+				}
+				return fmt.Errorf("清理已删除 Gemini 供应商数据失败: %w", err)
+			}
+			return nil
 		}
 	}
 	return fmt.Errorf("未找到 ID 为 '%s' 的供应商", id)

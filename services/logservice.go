@@ -141,7 +141,20 @@ func resolveStatsWindow(rangeKey string, now time.Time) statsWindow {
 	return window
 }
 
+type requestLogRecordFilter struct {
+	platform string
+	provider string
+	start    *time.Time
+}
+
 func selectRequestLogRecords(platform string, start *time.Time, fields ...string) ([]xdb.Record, error) {
+	return selectRequestLogRecordsByFilter(requestLogRecordFilter{
+		platform: platform,
+		start:    start,
+	}, fields...)
+}
+
+func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...string) ([]xdb.Record, error) {
 	selectFields := append([]string{}, fields...)
 	selectFields = append(selectFields, "created_at", "ephemeral_5m_tokens", "ephemeral_1h_tokens", "service_tier")
 
@@ -150,11 +163,14 @@ func selectRequestLogRecords(platform string, start *time.Time, fields ...string
 		xdb.Field(selectFields...),
 		xdb.OrderByAsc("created_at"),
 	}
-	if start != nil {
-		options = append(options, xdb.WhereGte("created_at", formatCreatedAtBoundary(*start)))
+	if filter.start != nil {
+		options = append(options, xdb.WhereGte("created_at", formatCreatedAtBoundary(*filter.start)))
 	}
-	if platform != "" {
-		options = append(options, xdb.WhereEq("platform", platform))
+	if filter.platform != "" {
+		options = append(options, xdb.WhereEq("platform", filter.platform))
+	}
+	if filter.provider != "" {
+		options = append(options, xdb.WhereEq("provider", filter.provider))
 	}
 	records, err := model.Selects(options...)
 	if err != nil {
@@ -326,6 +342,9 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 	if window.currentStart != nil {
 		options = append(options, xdb.WhereGte("created_at", formatCreatedAtBoundary(*window.currentStart)))
 	}
+	if strings.TrimSpace(rangeKey) != "" {
+		options = append(options, xdb.WhereLt("created_at", formatCreatedAtBoundary(window.currentEnd)))
+	}
 	if platform != "" {
 		options = append(options, xdb.WhereEq("platform", platform))
 	}
@@ -334,6 +353,9 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 	}
 	records, err := model.Selects(options...)
 	if err != nil {
+		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
+			return []ReqeustLog{}, nil
+		}
 		return nil, err
 	}
 	logs := make([]ReqeustLog, 0, len(records))
@@ -379,6 +401,9 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 	}
 	records, err := model.Selects(options...)
 	if err != nil {
+		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
+			return []string{}, nil
+		}
 		return nil, err
 	}
 
@@ -553,14 +578,25 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 }
 
 func (ls *LogService) StatsByRange(platform string, rangeKey string) (LogStats, error) {
+	return ls.statsByRange(platform, "", rangeKey)
+}
+
+func (ls *LogService) StatsByProviderAndRange(platform string, provider string, rangeKey string) (LogStats, error) {
+	return ls.statsByRange(platform, provider, rangeKey)
+}
+
+func (ls *LogService) statsByRange(platform string, provider string, rangeKey string) (LogStats, error) {
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
 	stats := LogStats{
 		RangeKey: window.key,
 		Series:   make([]LogStatsSeries, 0),
 	}
-	records, err := selectRequestLogRecords(
-		platform,
-		window.currentStart,
+	records, err := selectRequestLogRecordsByFilter(
+		requestLogRecordFilter{
+			platform: platform,
+			provider: provider,
+			start:    window.currentStart,
+		},
 		"model",
 		"input_tokens",
 		"output_tokens",
@@ -640,10 +676,21 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 }
 
 func (ls *LogService) ProviderStatsByRange(platform string, rangeKey string) ([]ProviderDailyStat, error) {
+	return ls.providerStatsByRange(platform, "", rangeKey)
+}
+
+func (ls *LogService) ProviderStatsByProviderAndRange(platform string, provider string, rangeKey string) ([]ProviderDailyStat, error) {
+	return ls.providerStatsByRange(platform, provider, rangeKey)
+}
+
+func (ls *LogService) providerStatsByRange(platform string, provider string, rangeKey string) ([]ProviderDailyStat, error) {
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
-	records, err := selectRequestLogRecords(
-		platform,
-		window.currentStart,
+	records, err := selectRequestLogRecordsByFilter(
+		requestLogRecordFilter{
+			platform: platform,
+			provider: provider,
+			start:    window.currentStart,
+		},
 		"provider",
 		"model",
 		"http_code",

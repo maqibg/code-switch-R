@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,13 @@ import (
 func setupRenameTestEnv(t *testing.T) string {
 	t.Helper()
 
+	closeDefaultTestDB()
+	resetTestAppConfigDir(t)
 	tmpHome := t.TempDir()
+	t.Cleanup(func() {
+		resetDefaultTestDB(t)
+		resetTestAppConfigDir(t)
+	})
 	t.Setenv("HOME", tmpHome)
 
 	configDir := filepath.Join(tmpHome, ".code-switch")
@@ -25,15 +32,7 @@ func setupRenameTestEnv(t *testing.T) string {
 	}
 
 	dbPath := filepath.Join(configDir, "app.db?cache=shared&mode=rwc")
-	if err := xdb.Inits([]xdb.Config{{Name: "default", Driver: "sqlite", DSN: dbPath}}); err != nil {
-		t.Fatalf("初始化 xdb 失败: %v", err)
-	}
-
-	db, err := xdb.DB("default")
-	if err != nil {
-		t.Fatalf("获取数据库失败: %v", err)
-	}
-	_, _ = db.Exec("PRAGMA busy_timeout = 30000")
+	db := initDefaultTestDB(t, dbPath)
 
 	schemas := []string{
 		`CREATE TABLE IF NOT EXISTS request_log (
@@ -41,6 +40,9 @@ func setupRenameTestEnv(t *testing.T) string {
 			platform TEXT, model TEXT, provider TEXT,
 			http_code INTEGER, input_tokens INTEGER, output_tokens INTEGER,
 			cache_create_tokens INTEGER, cache_read_tokens INTEGER,
+			ephemeral_5m_tokens INTEGER DEFAULT 0,
+			ephemeral_1h_tokens INTEGER DEFAULT 0,
+			service_tier TEXT DEFAULT '',
 			reasoning_tokens INTEGER, is_stream INTEGER DEFAULT 0,
 			duration_sec REAL DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -79,6 +81,63 @@ func setupRenameTestEnv(t *testing.T) string {
 	}
 
 	return tmpHome
+}
+
+func resetTestAppConfigDir(t *testing.T) {
+	t.Helper()
+	dir, err := getAppConfigDir()
+	if err != nil {
+		t.Fatalf("获取测试配置目录失败: %v", err)
+	}
+	if !isPathInsideTemp(dir) {
+		t.Fatalf("拒绝清理非临时测试配置目录: %s", dir)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("清理测试配置目录失败: %v", err)
+	}
+}
+
+func isPathInsideTemp(path string) bool {
+	rel, err := filepath.Rel(os.TempDir(), path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, "..")
+}
+
+func closeDefaultTestDB() {
+	db, err := xdb.DB("default")
+	if err == nil {
+		_ = db.Close()
+	}
+}
+
+func initDefaultTestDB(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
+	if err := xdb.Inits([]xdb.Config{{Name: "default", Driver: "sqlite", DSN: dsn}}); err != nil {
+		t.Fatalf("初始化 xdb 失败: %v", err)
+	}
+	db, err := xdb.DB("default")
+	if err != nil {
+		t.Fatalf("获取数据库失败: %v", err)
+	}
+	_, _ = db.Exec("PRAGMA busy_timeout = 30000")
+	return db
+}
+
+func resetDefaultTestDB(t *testing.T) {
+	t.Helper()
+	closeDefaultTestDB()
+	initDefaultTestDB(t, "file:codeswitch-test-default?mode=memory&cache=shared")
+	if err := ensureRequestLogTable(); err != nil {
+		t.Fatalf("重置 request_log 表失败: %v", err)
+	}
+	if err := ensureBlacklistTables(); err != nil {
+		t.Fatalf("重置黑名单表失败: %v", err)
+	}
+	if err := ensureProviderAliasTable(); err != nil {
+		t.Fatalf("重置 provider_alias 表失败: %v", err)
+	}
 }
 
 // saveProviderFixture 写入一组 provider 到 claude-code.json 作为初始状态。

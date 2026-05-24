@@ -79,7 +79,11 @@ export type LogStats = {
 export const fetchLogStats = async (
   platform: LogPlatform | '' = '',
   range: StatsRange = 'today',
+  provider = '',
 ): Promise<LogStats> => {
+  if (provider) {
+    return Call.ByName('codeswitch/services.LogService.StatsByProviderAndRange', platform, provider, range)
+  }
   if (range === 'today') {
     return Call.ByName('codeswitch/services.LogService.StatsSince', platform)
   }
@@ -132,7 +136,11 @@ export type ProviderDailyStat = {
 export const fetchProviderDailyStats = async (
   platform: LogPlatform | '' = '',
   range: StatsRange = 'today',
+  provider = '',
 ): Promise<ProviderDailyStat[]> => {
+  if (provider) {
+    return Call.ByName('codeswitch/services.LogService.ProviderStatsByProviderAndRange', platform, provider, range)
+  }
   if (range === 'today') {
     return Call.ByName('codeswitch/services.LogService.ProviderDailyStats', platform)
   }

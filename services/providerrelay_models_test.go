@@ -11,6 +11,8 @@ import (
 
 // TestModelsHandler 测试 /v1/models 端点处理器
 func TestModelsHandler(t *testing.T) {
+	setupRenameTestEnv(t)
+
 	// 设置测试环境
 	gin.SetMode(gin.TestMode)
 
@@ -26,13 +28,16 @@ func TestModelsHandler(t *testing.T) {
 			t.Errorf("期望路径 /v1/models，收到 %s", r.URL.Path)
 		}
 
-		// 验证 Authorization 头
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			t.Error("缺少 Authorization 头")
+		// 验证 Claude 默认认证头
+		apiKeyHeader := r.Header.Get("x-api-key")
+		if apiKeyHeader == "" {
+			t.Error("缺少 x-api-key 头")
 		}
-		if authHeader != "Bearer test-api-key" {
-			t.Errorf("Authorization 头不正确，期望 'Bearer test-api-key'，收到 '%s'", authHeader)
+		if apiKeyHeader != "test-api-key" {
+			t.Errorf("x-api-key 头不正确，期望 'test-api-key'，收到 '%s'", apiKeyHeader)
+		}
+		if versionHeader := r.Header.Get("anthropic-version"); versionHeader != "2023-06-01" {
+			t.Errorf("anthropic-version 头不正确，期望 '2023-06-01'，收到 '%s'", versionHeader)
 		}
 
 		// 返回模拟的模型列表
@@ -125,6 +130,8 @@ func TestModelsHandler(t *testing.T) {
 
 // TestCustomModelsHandler 测试自定义 CLI 工具的 /v1/models 端点
 func TestCustomModelsHandler(t *testing.T) {
+	setupRenameTestEnv(t)
+
 	// 设置测试环境
 	gin.SetMode(gin.TestMode)
 
@@ -231,6 +238,8 @@ func TestCustomModelsHandler(t *testing.T) {
 
 // TestModelsHandler_NoProviders 测试没有可用 provider 的情况
 func TestModelsHandler_NoProviders(t *testing.T) {
+	setupRenameTestEnv(t)
+
 	gin.SetMode(gin.TestMode)
 
 	// 创建空的 ProviderService

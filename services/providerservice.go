@@ -190,6 +190,10 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 
 	// 解析 platform(alias 校验需要)。失败时跳过 alias 校验(比如 gemini/unknown kind)
 	aliasPlatform, aliasErr := resolvePlatform(kind)
+	deletedProviders := []deletedProvider{}
+	if aliasErr == nil {
+		deletedProviders = diffDeletedProviders(existingProviders, providers)
+	}
 
 	// 验证每个 provider 的配置，并清除旧字段
 	validationErrors := make([]string, 0)
@@ -234,7 +238,14 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+
+	if len(deletedProviders) == 0 {
+		return nil
+	}
+	return cleanupDeletedProvidersWithRollback(path, existingProviders, aliasPlatform, deletedProviders)
 }
 
 func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {

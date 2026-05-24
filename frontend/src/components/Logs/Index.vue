@@ -188,7 +188,7 @@
 import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { formatBeijingDateTime, parseStoredUTCTimestamp } from '../../utils/beijingTime'
+import { formatBeijingDateTime } from '../../utils/beijingTime'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import {
@@ -230,6 +230,7 @@ const filters = reactive<{ platform: LogPlatform | ''; provider: string; range: 
 })
 const page = ref(1)
 const PAGE_SIZE = 15
+const LOG_QUERY_LIMIT = 1000
 const providerOptions = ref<string[]>([])
 const statsSeries = computed<LogStatsSeries[]>(() => stats.value?.series ?? [])
 
@@ -258,7 +259,7 @@ const openCostDetailModal = async () => {
   costDetailModal.data = []
 
   try {
-    const stats = await fetchProviderDailyStats(filters.platform, filters.range)
+    const stats = await fetchProviderDailyStats(filters.platform, filters.range, filters.provider)
     // 按金额降序排序，过滤掉金额为 0 的
     costDetailModal.data = (stats ?? [])
       .filter(item => item.cost_total > 0)
@@ -292,10 +293,6 @@ const openTokenDetailModal = () => {
 // 关闭 Token 明细弹窗
 const closeTokenDetailModal = () => {
   tokenDetailModal.open = false
-}
-
-const parseLogDate = (value?: string) => {
-  return parseStoredUTCTimestamp(value)
 }
 
 const chartData = computed(() => {
@@ -401,16 +398,21 @@ const chartOptions: ChartOptions<'line'> = {
   },
 }
 const formatSeriesLabel = (value?: string) => {
-  if (!value) return ''
-  const parsed = parseLogDate(value)
-  if (parsed) {
-    return `${padHour(parsed.getHours())}:00`
-  }
-  const match = value.match(/(\d{2}):(\d{2})/)
-  if (match) {
-    return `${match[1]}:${match[2]}`
-  }
-  return value
+  const label = value?.trim()
+  if (!label) return ''
+
+  const hourMatch = label.match(/^\d{4}-\d{2}-\d{2} (\d{2}):\d{2}:\d{2}$/)
+  if (hourMatch) return `${hourMatch[1]}:00`
+
+  const dayMatch = label.match(/^\d{4}-(\d{2}-\d{2})$/)
+  if (dayMatch) return dayMatch[1]
+
+  if (/^\d{4}-\d{2}$/.test(label)) return label
+
+  const timeMatch = label.match(/(\d{2}):(\d{2})/)
+  if (timeMatch) return `${timeMatch[1]}:${timeMatch[2]}`
+
+  return label
 }
 
 const REFRESH_INTERVAL = 30
@@ -448,7 +450,7 @@ const loadLogs = async () => {
     const data = await fetchRequestLogs({
       platform: filters.platform,
       provider: filters.provider,
-      limit: 200,
+      limit: LOG_QUERY_LIMIT,
       range: filters.range === 'all' ? '' : filters.range,
     })
     logs.value = data ?? []
@@ -462,7 +464,7 @@ const loadLogs = async () => {
 
 const loadStats = async () => {
   try {
-    const data = await fetchLogStats(filters.platform, filters.range)
+    const data = await fetchLogStats(filters.platform, filters.range, filters.provider)
     stats.value = data ?? null
   } catch (error) {
     console.error('failed to load log stats', error)
@@ -470,7 +472,8 @@ const loadStats = async () => {
 }
 
 const loadDashboard = async () => {
-  await Promise.all([loadLogs(), loadStats(), loadProviderOptions()])
+  await loadProviderOptions()
+  await Promise.all([loadLogs(), loadStats()])
 }
 
 const pagedLogs = computed(() => {
@@ -510,8 +513,6 @@ const prevPage = () => {
 const backToHome = () => {
   router.push('/')
 }
-
-const padHour = (num: number) => num.toString().padStart(2, '0')
 
 const formatTime = (value?: string) => {
   return formatBeijingDateTime(value, locale.value === 'zh' ? 'zh' : 'en')
@@ -648,6 +649,9 @@ const loadProviderOptions = async () => {
     const list = await fetchLogProviders(filters.platform)
     providerOptions.value = (list ?? []).map(normalizeProviderName).filter(Boolean)
     providerOptions.value.sort((a, b) => a.localeCompare(b))
+    if (filters.provider && !providerOptions.value.includes(filters.provider)) {
+      filters.provider = ''
+    }
   } catch (error) {
     console.error('failed to load provider options', error)
   }
@@ -657,9 +661,6 @@ watch(
   () => filters.platform,
   async () => {
     await loadProviderOptions()
-    if (filters.provider && !providerOptions.value.includes(filters.provider)) {
-      filters.provider = ''
-    }
   },
 )
 
