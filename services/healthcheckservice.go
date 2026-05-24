@@ -117,9 +117,9 @@ func NewHealthCheckService(
 		appSettings:      appSettings,
 		failCounters:     make(map[string]*AvailabilityFailureCounter),
 		latestResults: map[string]map[int64]*HealthCheckResult{
-			"claude": {},
-			"codex":  {},
-			"gemini": {},
+			"claude":       {},
+			"codex":        {},
+			"gemini":       {},
 			"deepseekcode": {},
 		},
 		pollInterval: time.Duration(DefaultPollIntervalSeconds) * time.Second,
@@ -564,11 +564,7 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 			authTypeRaw := strings.TrimSpace(provider.ConnectivityAuthType)
 			authType := strings.ToLower(authTypeRaw)
 			if authType == "" {
-				if strings.ToLower(platform) == "claude" {
-					authType = "x-api-key"
-				} else {
-					authType = "bearer"
-				}
+				authType = defaultConnectivityAuthType(platform)
 			}
 			switch authType {
 			case "x-api-key":

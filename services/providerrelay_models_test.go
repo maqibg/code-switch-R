@@ -28,16 +28,13 @@ func TestModelsHandler(t *testing.T) {
 			t.Errorf("期望路径 /v1/models，收到 %s", r.URL.Path)
 		}
 
-		// 验证 Claude 默认认证头
-		apiKeyHeader := r.Header.Get("x-api-key")
-		if apiKeyHeader == "" {
-			t.Error("缺少 x-api-key 头")
+		// 验证 Claude Code 默认使用 Bearer 认证。
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "Bearer test-api-key" {
+			t.Errorf("Authorization 头不正确，期望 'Bearer test-api-key'，收到 '%s'", authHeader)
 		}
-		if apiKeyHeader != "test-api-key" {
-			t.Errorf("x-api-key 头不正确，期望 'test-api-key'，收到 '%s'", apiKeyHeader)
-		}
-		if versionHeader := r.Header.Get("anthropic-version"); versionHeader != "2023-06-01" {
-			t.Errorf("anthropic-version 头不正确，期望 '2023-06-01'，收到 '%s'", versionHeader)
+		if apiKeyHeader := r.Header.Get("x-api-key"); apiKeyHeader != "" {
+			t.Errorf("默认 Bearer 认证不应发送 x-api-key 头，收到 '%s'", apiKeyHeader)
 		}
 
 		// 返回模拟的模型列表
@@ -125,6 +122,25 @@ func TestModelsHandler(t *testing.T) {
 	// 验证响应包含 data 字段
 	if _, ok := response["data"]; !ok {
 		t.Error("响应缺少 'data' 字段")
+	}
+}
+
+func TestDefaultConnectivityAuthType(t *testing.T) {
+	cases := []struct {
+		platform string
+		want     string
+	}{
+		{platform: "claude", want: "bearer"},
+		{platform: "claude-code", want: "bearer"},
+		{platform: "codex", want: "bearer"},
+		{platform: "reasonix", want: "bearer"},
+		{platform: "deepseekcode", want: "x-api-key"},
+	}
+
+	for _, tc := range cases {
+		if got := defaultConnectivityAuthType(tc.platform); got != tc.want {
+			t.Fatalf("%s 默认认证方式期望 %s，实际 %s", tc.platform, tc.want, got)
+		}
 	}
 }
 

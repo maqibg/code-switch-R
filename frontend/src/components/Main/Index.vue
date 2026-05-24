@@ -2309,9 +2309,9 @@ const getDefaultEndpoint = (platform: string) => {
   return defaults[platform] || '/v1/chat/completions'
 }
 
-// 获取平台默认认证方式（默认 Bearer，与 v2.2.x 保持一致）
+// 获取平台默认认证方式
 const getDefaultAuthType = (platform: string) => {
-  if (platform === 'claude' || platform === 'claude-code' || platform === 'deepseekcode') {
+  if (platform === 'deepseekcode') {
     return 'x-api-key'
   }
   return 'bearer'

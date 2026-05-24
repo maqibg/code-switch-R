@@ -78,9 +78,9 @@ func NewConnectivityTestService(
 		settingsService:  settingsService,
 		appSettings:      appSettings,
 		results: map[string]map[int64]*ConnectivityResult{
-			"claude": {},
-			"codex":  {},
-			"gemini": {},
+			"claude":       {},
+			"codex":        {},
+			"gemini":       {},
 			"deepseekcode": {},
 		},
 		autoTestEnabled: false,
@@ -241,12 +241,7 @@ func (cts *ConnectivityTestService) getEffectiveAuthType(provider *Provider, pla
 	if authType != "" {
 		return authType
 	}
-	// 平台默认认证方式
-	lower := strings.ToLower(platform)
-	if lower == "claude" || lower == "deepseekcode" {
-		return "x-api-key"
-	}
-	return "bearer"
+	return defaultConnectivityAuthType(platform)
 }
 
 // buildTestRequest 根据端点构建测试请求体

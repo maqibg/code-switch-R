@@ -62,7 +62,7 @@ type Provider struct {
 	AvailabilityConfig *AvailabilityConfig `json:"availabilityConfig,omitempty"`
 
 	// 认证方式 - bearer / x-api-key / 自定义 Header 名
-	// 空值时使用平台默认（claude: x-api-key, codex: bearer）
+	// 空值时使用平台默认（claude/codex/reasonix: bearer, deepseekcode: x-api-key）
 	ConnectivityAuthType string `json:"connectivityAuthType,omitempty"`
 
 	// 上游协议类型 - anthropic / openai_chat / auto
@@ -89,6 +89,15 @@ type Provider struct {
 
 type providerEnvelope struct {
 	Providers []Provider `json:"providers"`
+}
+
+func defaultConnectivityAuthType(platform string) string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case "deepseekcode", "deepseek_code", "deepseek-code":
+		return "x-api-key"
+	default:
+		return "bearer"
+	}
 }
 
 type ProviderService struct {

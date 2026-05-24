@@ -811,12 +811,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	delete(headers, "x-api-key")
 	authType := strings.ToLower(strings.TrimSpace(provider.ConnectivityAuthType))
 	if authType == "" {
-		// 平台默认认证方式（与连通性测试保持一致）
-		if kind == "claude" || kind == "deepseekcode" {
-			authType = "x-api-key"
-		} else {
-			authType = "bearer"
-		}
+		authType = defaultConnectivityAuthType(kind)
 	}
 	switch authType {
 	case "x-api-key":
@@ -1652,7 +1647,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 				requestLog.Platform, requestLog.Model, requestLog.Provider, requestLog.HttpCode,
 				requestLog.InputTokens, requestLog.OutputTokens, requestLog.CacheCreateTokens,
 				requestLog.CacheReadTokens, requestLog.ReasoningTokens,
-					requestLog.Ephemeral5mTokens, requestLog.Ephemeral1hTokens, requestLog.ServiceTier,
+				requestLog.Ephemeral5mTokens, requestLog.Ephemeral1hTokens, requestLog.ServiceTier,
 			)
 		}()
 
@@ -2450,12 +2445,7 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
 	authType := strings.ToLower(strings.TrimSpace(selectedProvider.ConnectivityAuthType))
 	if authType == "" {
-		// 平台默认认证方式（与连通性测试保持一致）
-		if kind == "claude" || kind == "deepseekcode" {
-			authType = "x-api-key"
-		} else {
-			authType = "bearer"
-		}
+		authType = defaultConnectivityAuthType(kind)
 	}
 	switch authType {
 	case "x-api-key":
