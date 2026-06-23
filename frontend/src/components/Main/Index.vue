@@ -2143,16 +2143,16 @@ const switchToTabAndHighlight = (platform: string, providerName: string) => {
 
 // 处理供应商切换事件
 // @author sm
-const handleProviderSwitched = (event: { data: { platform: string; toProvider: string } }) => {
-  const { platform, toProvider } = event.data
+const handleProviderSwitched: Events.WailsEventCallback = (event) => {
+  const { platform, toProvider } = event.data as { platform: string; toProvider: string }
   console.log('[Event] provider:switched', platform, toProvider)
   switchToTabAndHighlight(platform, toProvider)
 }
 
 // 处理供应商拉黑事件
 // @author sm
-const handleProviderBlacklisted = (event: { data: { platform: string; providerName: string } }) => {
-  const { platform, providerName } = event.data
+const handleProviderBlacklisted: Events.WailsEventCallback = (event) => {
+  const { platform, providerName } = event.data as { platform: string; providerName: string }
   console.log('[Event] provider:blacklisted', platform, providerName)
   switchToTabAndHighlight(platform, providerName)
 }
@@ -2234,8 +2234,8 @@ onMounted(async () => {
   await loadLastUsedProviders()
 
   // 监听供应商切换和拉黑事件
-  unsubscribeSwitched = Events.On('provider:switched', handleProviderSwitched as Events.Callback)
-  unsubscribeBlacklisted = Events.On('provider:blacklisted', handleProviderBlacklisted as Events.Callback)
+  unsubscribeSwitched = Events.On('provider:switched', handleProviderSwitched)
+  unsubscribeBlacklisted = Events.On('provider:blacklisted', handleProviderBlacklisted)
 })
 
 onUnmounted(() => {
