@@ -5,3 +5,8 @@ frontend/dist
 bin
 CLAUDE.md
 .ace-tool/
+.helloagents/
+.spec-workflow/
+build/linux/appimage/build/*
+build/linux/appimage/code-switch-R
+build/linux/appimage/appicon.png

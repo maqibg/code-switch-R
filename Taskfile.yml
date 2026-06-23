@@ -20,6 +20,7 @@ tasks:
   package:
     summary: Packages a production build of the application
     cmds:
+      - if [ "{{OS}}" = "linux" ]; then bash "./scripts/patch-wails-linux-build-assets.sh"; fi
       - task: "{{OS}}:package"
 
   run:
