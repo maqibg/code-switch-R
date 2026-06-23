@@ -6,11 +6,13 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/daodao97/xgo/xlog"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/services/dock"
@@ -36,6 +38,22 @@ func defaultWindowsWindowTheme() application.WindowsWindow {
 	return application.WindowsWindow{
 		Theme: application.Dark,
 	}
+}
+
+func configureRuntimeLogging() *slog.Logger {
+	logger := xlog.StdoutText(
+		xlog.WithLevel(slog.LevelInfo),
+		xlog.WithReplaceAttr(func(groups []string, attr slog.Attr) slog.Attr {
+			switch attr.Key {
+			case "curl", "full_sql", "response", "payload", "body":
+				return slog.Attr{}
+			default:
+				return attr
+			}
+		}),
+	)
+	xlog.SetLogger(logger)
+	return logger
 }
 
 func (a *AppService) SetApp(app *application.App) {
@@ -84,6 +102,7 @@ func (a *AppService) OpenSecondWindow() {
 // and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
 // logs any error that might occur.
 func main() {
+	runtimeLogger := configureRuntimeLogging()
 	appservice := &AppService{}
 	var mainWindow application.Window
 	var focusMainWindow func()
@@ -200,6 +219,8 @@ func main() {
 	app := application.New(application.Options{
 		Name:        "code-switch-R",
 		Description: "code-switch-R desktop relay controller",
+		Logger:      runtimeLogger,
+		LogLevel:    slog.LevelInfo,
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.rogers-f.code-switch-r",
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
