@@ -9,9 +9,21 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function ExportCurrentProjectDirectory(path: string): $CancellablePromise<$models.ProjectTransferResult> {
+    return $Call.ByID(701797226, path).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function GetProjectTransferInfo(): $CancellablePromise<$models.ProjectTransferInfo> {
+    return $Call.ByID(1092213369).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 export function GetStatus(): $CancellablePromise<$models.ConfigImportStatus> {
     return $Call.ByID(2109164227).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType2($result);
     });
 }
 
@@ -20,7 +32,13 @@ export function GetStatus(): $CancellablePromise<$models.ConfigImportStatus> {
  */
 export function ImportAll(): $CancellablePromise<$models.ConfigImportResult> {
     return $Call.ByID(124174517).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType3($result);
+    });
+}
+
+export function ImportCurrentProjectDirectory(path: string): $CancellablePromise<$models.ProjectTransferResult> {
+    return $Call.ByID(4017468279, path).then(($result: any) => {
+        return $$createType0($result);
     });
 }
 
@@ -29,7 +47,13 @@ export function ImportAll(): $CancellablePromise<$models.ConfigImportResult> {
  */
 export function ImportFromPath(path: string): $CancellablePromise<$models.ConfigImportResult> {
     return $Call.ByID(2519238097, path).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType3($result);
+    });
+}
+
+export function ImportLegacyProjectDirectory(path: string): $CancellablePromise<$models.ProjectTransferResult> {
+    return $Call.ByID(1344830293, path).then(($result: any) => {
+        return $$createType0($result);
     });
 }
 
@@ -41,6 +65,10 @@ export function ImportFromPath(path: string): $CancellablePromise<$models.Config
  */
 export function ImportMCPServers(servers: $models.MCPServer[], strategy: string): $CancellablePromise<number> {
     return $Call.ByID(3450963826, servers, strategy);
+}
+
+export function ImportMCPServersForPlatform(servers: $models.MCPServer[], strategy: string, platform: string): $CancellablePromise<number> {
+    return $Call.ByID(1179559462, servers, strategy, platform);
 }
 
 /**
@@ -67,7 +95,13 @@ export function MarkFirstRunDone(): $CancellablePromise<void> {
  */
 export function ParseMCPJSON(jsonStr: string): $CancellablePromise<$models.MCPParseResult | null> {
     return $Call.ByID(489842720, jsonStr).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
+    });
+}
+
+export function ParseMCPJSONForPlatform(jsonStr: string, platform: string): $CancellablePromise<$models.MCPParseResult | null> {
+    return $Call.ByID(963746064, jsonStr, platform).then(($result: any) => {
+        return $$createType5($result);
     });
 }
 
@@ -80,7 +114,9 @@ export function Stop(): $CancellablePromise<void> {
 }
 
 // Private type creation functions
-const $$createType0 = $models.ConfigImportStatus.createFrom;
-const $$createType1 = $models.ConfigImportResult.createFrom;
-const $$createType2 = $models.MCPParseResult.createFrom;
-const $$createType3 = $Create.Nullable($$createType2);
+const $$createType0 = $models.ProjectTransferResult.createFrom;
+const $$createType1 = $models.ProjectTransferInfo.createFrom;
+const $$createType2 = $models.ConfigImportStatus.createFrom;
+const $$createType3 = $models.ConfigImportResult.createFrom;
+const $$createType4 = $models.MCPParseResult.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
