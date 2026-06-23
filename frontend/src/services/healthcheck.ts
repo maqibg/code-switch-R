@@ -52,7 +52,7 @@ const SERVICE_PATH = 'codeswitch/services.HealthCheckService'
 /**
  * 获取所有 Provider 的最新状态（按平台分组）
  */
-export async function getLatestResults(): Promise<Record<string, ProviderTimeline[]>> {
+export function getLatestResults(): Promise<Record<string, ProviderTimeline[]>> {
   return Call.ByName(`${SERVICE_PATH}.GetLatestResults`)
 }
 

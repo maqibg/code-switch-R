@@ -15,7 +15,7 @@ const serviceNames: Record<Platform, string> = {
   reasonix: 'codeswitch/services.ReasonixSettingsService',
 }
 
-const callByPlatform = async <T = unknown>(platform: Platform, method: string, payload?: any[]): Promise<T> => {
+const callByPlatform = <T = unknown>(platform: Platform, method: string, payload?: any[]): Promise<T> => {
   const service = serviceNames[platform]
   const args = payload ?? []
   return Call.ByName(`${service}.${method}`, ...args)
@@ -33,10 +33,8 @@ const normalizeProxyStatus = (raw: any): ClaudeProxyStatus => {
   }
 }
 
-export const fetchProxyStatus = async (platform: Platform): Promise<ClaudeProxyStatus> => {
-  const raw = await callByPlatform(platform, 'ProxyStatus')
-  return normalizeProxyStatus(raw)
-}
+export const fetchProxyStatus = (platform: Platform): Promise<ClaudeProxyStatus> =>
+  callByPlatform(platform, 'ProxyStatus').then(normalizeProxyStatus)
 
 export const enableProxy = async (platform: Platform): Promise<void> => {
   await callByPlatform(platform, 'EnableProxy')

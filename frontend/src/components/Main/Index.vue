@@ -1006,6 +1006,11 @@ import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headless
 import { Browser, Call, Events } from '@wailsio/runtime'
 import { type UsageHeatmapDay } from '../../data/usageHeatmap'
 import { useAdaptiveHeatmap } from '../../composables/useAdaptiveHeatmap'
+import {
+  createCancellableStartupTask,
+  useStartupTaskRunner,
+  type StartupTaskTracker,
+} from '../../composables/useStartupTaskRunner'
 import { automationCardGroups, createAutomationCards, type AutomationCard } from '../../data/cards'
 import lobeIcons from '../../icons/lobeIconMap'
 import BaseButton from '../common/BaseButton.vue'
@@ -1104,22 +1109,27 @@ const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
   others: null,
 })
 
-const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) => {
+const refreshDirectAppliedStatus = async (
+  tab: ProviderTab = activeTab.value,
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   if (tab === 'others') return
 
   try {
     let id: string | number | null = null
     if (tab === 'claude') {
-      id = await Call.ByName('codeswitch/services.ClaudeSettingsService.GetDirectAppliedProviderID')
+      id = await track(Call.ByName('codeswitch/services.ClaudeSettingsService.GetDirectAppliedProviderID'))
     } else if (tab === 'codex') {
-      id = await Call.ByName('codeswitch/services.CodexSettingsService.GetDirectAppliedProviderID')
+      id = await track(Call.ByName('codeswitch/services.CodexSettingsService.GetDirectAppliedProviderID'))
     } else if (tab === 'gemini') {
-      id = await Call.ByName('codeswitch/services.GeminiService.GetDirectAppliedProviderID')
+      id = await track(Call.ByName('codeswitch/services.GeminiService.GetDirectAppliedProviderID'))
     } else if (tab === 'deepseekcode') {
-      id = await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.GetDirectAppliedProviderID')
+      id = await track(Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.GetDirectAppliedProviderID'))
     } else if (tab === 'reasonix') {
-      id = await Call.ByName('codeswitch/services.ReasonixSettingsService.GetDirectAppliedProviderID')
+      id = await track(Call.ByName('codeswitch/services.ReasonixSettingsService.GetDirectAppliedProviderID'))
     }
+    if (!isCurrentStartupGeneration(generation)) return
     directAppliedIds[tab] = id
   } catch (error) {
     console.error(`Failed to get direct applied status for ${tab}`, error)
@@ -1189,6 +1199,14 @@ const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   reasonix: false,
   others: false,
 })
+const providerStatsActiveGeneration = reactive<Record<ProviderTab, number | undefined>>({
+  claude: undefined,
+  codex: undefined,
+  gemini: undefined,
+  deepseekcode: undefined,
+  reasonix: undefined,
+  others: undefined,
+})
 let providerStatsTimer: number | undefined
 const showHeatmap = ref(true)
 const showHomeTitle = ref(true)
@@ -1222,6 +1240,9 @@ const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, Blacklist
   others: {},
 })
 let blacklistTimer: number | undefined
+let blacklistPollingTimer: number | undefined
+let handleWindowFocus: (() => void) | undefined
+let handleProvidersUpdated: (() => void) | undefined
 
 // 连通性状态（已废弃，保留用于兼容）
 const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, ConnectivityResult>>>({
@@ -1427,23 +1448,33 @@ const hideUsageTooltip = () => {
   usageTooltip.visible = false
 }
 
-const loadAppSettings = async () => {
+const loadAppSettings = async (
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   try {
-    const data: AppSettings = await fetchAppSettings()
+    const data: AppSettings = await track(fetchAppSettings())
+    if (!isCurrentStartupGeneration(generation)) return
     showHeatmap.value = data?.show_heatmap ?? true
     showHomeTitle.value = data?.show_home_title ?? true
   } catch (error) {
     console.error('failed to load app settings', error)
-    showHeatmap.value = true
-    showHomeTitle.value = true
-    // 加载应用设置失败时提示用户
-    showToast(t('components.main.errors.loadAppSettingsFailed'), 'warning')
+    if (isCurrentStartupGeneration(generation)) {
+      showHeatmap.value = true
+      showHomeTitle.value = true
+      // 加载应用设置失败时提示用户
+      showToast(t('components.main.errors.loadAppSettingsFailed'), 'warning')
+    }
   }
 }
 
-const loadAppVersion = async () => {
+const loadAppVersion = async (
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   try {
-    const version = await fetchCurrentVersion()
+    const version = await track(fetchCurrentVersion())
+    if (!isCurrentStartupGeneration(generation)) return
     appVersion.value = version || ''
   } catch (error) {
     console.error('failed to load app version', error)
@@ -1451,7 +1482,9 @@ const loadAppVersion = async () => {
 }
 
 const handleAppSettingsUpdated = () => {
-  void loadAppSettings()
+  const generation = currentStartupGeneration()
+  void runStartupTask('app-settings:updated', generation, (track) =>
+    loadAppSettings(generation, track))
 }
 
 const normalizeProviderKey = (value: string) => value?.trim().toLowerCase() ?? ''
@@ -1500,6 +1533,18 @@ const tabs = [
 ] as const
 type ProviderTab = (typeof tabs)[number]['id']
 const providerTabIds = tabs.map((tab) => tab.id) as ProviderTab[]
+const selectedIndex = ref(0)
+const activeTab = computed<ProviderTab>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
+
+const startupGeneration = ref(0)
+const currentStartupGeneration = () => startupGeneration.value
+const nextStartupGeneration = () => {
+  startupGeneration.value += 1
+  return startupGeneration.value
+}
+const isCurrentStartupGeneration = (generation?: number) =>
+  generation === undefined || generation === startupGeneration.value
+const startupRunner = useStartupTaskRunner(currentStartupGeneration)
 
 const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: createAutomationCards(automationCardGroups.claude),
@@ -1510,6 +1555,7 @@ const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   others: [],
 })
 const draggingId = ref<number | null>(null)
+const activeCards = computed(() => cards[activeTab.value] ?? [])
 
 // Gemini Provider 到 AutomationCard 的转换
 const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard => ({
@@ -1647,29 +1693,39 @@ const replaceProviders = (tabId: ProviderTab, data: AutomationCard[]) => {
   cards[tabId].splice(0, cards[tabId].length, ...createAutomationCards(data))
 }
 
-const loadProvidersFromDisk = async () => {
-  for (const tab of providerTabIds) {
-    try {
-      if (tab === 'others') {
-        // 'others' Tab: 先加载自定义 CLI 工具列表，再加载每个工具的 providers
-        await loadCustomCliTools()
-      } else if (tab === 'gemini') {
-        // Gemini 使用独立的加载逻辑
-        const geminiProviders = await GetGeminiProviders()
-        geminiProvidersCache.value = geminiProviders
-        cards.gemini.splice(0, cards.gemini.length, ...geminiProviders.map(geminiToCard))
-        sortProvidersByLevel(cards.gemini)  // 初始排序：启用优先，Level 升序
-      } else {
-        const saved = await LoadProviders(tab)
-        if (Array.isArray(saved)) {
-          replaceProviders(tab, saved as AutomationCard[])
-          sortProvidersByLevel(cards[tab])  // 初始排序：启用优先，Level 升序
-        } else {
-          await persistProviders(tab)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load providers', error)
+const loadProvidersForTab = async (
+  tab: ProviderTab,
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
+  try {
+    if (tab === 'others') {
+      // 'others' Tab: 先加载自定义 CLI 工具列表，再加载当前工具的 providers
+      await loadCustomCliTools(generation, track)
+      return
+    }
+
+    if (tab === 'gemini') {
+      // Gemini 使用独立的加载逻辑
+      const geminiProviders = await track(GetGeminiProviders())
+      if (!isCurrentStartupGeneration(generation)) return
+      geminiProvidersCache.value = geminiProviders
+      cards.gemini.splice(0, cards.gemini.length, ...geminiProviders.map(geminiToCard))
+      sortProvidersByLevel(cards.gemini)  // 初始排序：启用优先，Level 升序
+      return
+    }
+
+    const saved = await track(LoadProviders(tab))
+    if (!isCurrentStartupGeneration(generation)) return
+    if (Array.isArray(saved)) {
+      replaceProviders(tab, saved as AutomationCard[])
+      sortProvidersByLevel(cards[tab])  // 初始排序：启用优先，Level 升序
+    } else {
+      await persistProviders(tab)
+    }
+  } catch (error) {
+    console.error('Failed to load providers', error)
+    if (isCurrentStartupGeneration(generation)) {
       // 加载供应商失败时提示用户
       showToast(t('components.main.errors.loadProvidersFailed', { tab }), 'error')
     }
@@ -1677,9 +1733,13 @@ const loadProvidersFromDisk = async () => {
 }
 
 // 加载自定义 CLI 工具列表
-const loadCustomCliTools = async () => {
+const loadCustomCliTools = async (
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   try {
-    const tools = await listCustomCliTools()
+    const tools = await track(listCustomCliTools())
+    if (!isCurrentStartupGeneration(generation)) return
     customCliTools.value = tools
 
     // 自动选择第一个工具（如果有）
@@ -1689,31 +1749,43 @@ const loadCustomCliTools = async () => {
 
     // 为每个工具加载代理状态
     for (const tool of tools) {
+      if (!isCurrentStartupGeneration(generation)) return
       try {
-        const status = await getCustomCliProxyStatus(tool.id)
+        const status = await track(getCustomCliProxyStatus(tool.id))
+        if (!isCurrentStartupGeneration(generation)) return
         customCliProxyStates[tool.id] = Boolean(status?.enabled)
       } catch (err) {
-        customCliProxyStates[tool.id] = false
+        if (isCurrentStartupGeneration(generation)) {
+          customCliProxyStates[tool.id] = false
+        }
       }
     }
 
     // 如果当前选中了工具，更新 'others' Tab 的代理状态并加载 providers
     if (selectedToolId.value) {
+      if (!isCurrentStartupGeneration(generation)) return
       proxyStates.others = customCliProxyStates[selectedToolId.value] ?? false
-      await loadCustomCliProviders(selectedToolId.value)
+      await loadCustomCliProviders(selectedToolId.value, generation, track)
     }
   } catch (error) {
     console.error('Failed to load custom CLI tools', error)
-    customCliTools.value = []
+    if (isCurrentStartupGeneration(generation)) {
+      customCliTools.value = []
+    }
   }
 }
 
 // 加载特定 CLI 工具的 providers
-const loadCustomCliProviders = async (toolId: string) => {
+const loadCustomCliProviders = async (
+  toolId: string,
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   if (!toolId) return
   try {
     const kind = getCustomProviderKind(toolId)
-    const saved = await LoadProviders(kind)
+    const saved = await track(LoadProviders(kind))
+    if (!isCurrentStartupGeneration(generation) || selectedToolId.value !== toolId) return
     if (Array.isArray(saved)) {
       cards.others.splice(0, cards.others.length, ...createAutomationCards(saved as AutomationCard[]))
       sortProvidersByLevel(cards.others)
@@ -1723,31 +1795,43 @@ const loadCustomCliProviders = async (toolId: string) => {
     }
   } catch (error) {
     console.error(`Failed to load providers for tool ${toolId}`, error)
-    cards.others.splice(0, cards.others.length)
+    if (isCurrentStartupGeneration(generation) && selectedToolId.value === toolId) {
+      cards.others.splice(0, cards.others.length)
+    }
   }
 }
 
-const refreshProxyState = async (tab: ProviderTab) => {
+const refreshProxyState = async (
+  tab: ProviderTab,
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   try {
     if (tab === 'others') {
       // 'others' Tab 的代理状态依赖于选中的 CLI 工具
       if (selectedToolId.value) {
-        const status = await getCustomCliProxyStatus(selectedToolId.value)
+        const status = await track(getCustomCliProxyStatus(selectedToolId.value))
+        if (!isCurrentStartupGeneration(generation)) return
         customCliProxyStates[selectedToolId.value] = Boolean(status?.enabled)
         proxyStates[tab] = Boolean(status?.enabled)
       } else {
+        if (!isCurrentStartupGeneration(generation)) return
         proxyStates[tab] = false
       }
     } else if (tab === 'gemini') {
-      const status = await fetchGeminiProxyStatus()
+      const status = await track(fetchGeminiProxyStatus())
+      if (!isCurrentStartupGeneration(generation)) return
       proxyStates[tab] = Boolean(status?.enabled)
     } else {
-      const status = await fetchProxyStatus(tab as 'claude' | 'codex' | 'deepseekcode' | 'reasonix')
+      const status = await track(fetchProxyStatus(tab as 'claude' | 'codex' | 'deepseekcode' | 'reasonix'))
+      if (!isCurrentStartupGeneration(generation)) return
       proxyStates[tab] = Boolean(status?.enabled)
     }
   } catch (error) {
     console.error(`Failed to fetch proxy status for ${tab}`, error)
-    proxyStates[tab] = false
+    if (isCurrentStartupGeneration(generation)) {
+      proxyStates[tab] = false
+    }
   }
 }
 
@@ -1790,42 +1874,66 @@ const onProxyToggle = async () => {
   }
 }
 
-const loadProviderStats = async (tab: ProviderTab) => {
+const isLatestProviderStatsTask = (tab: ProviderTab, generation?: number) =>
+  generation === undefined || providerStatsActiveGeneration[tab] === generation
+
+const finishProviderStatsLoading = (tab: ProviderTab, generation?: number) => {
+  if (!isLatestProviderStatsTask(tab, generation)) return
+  providerStatsLoaded[tab] = true
+  providerStatsLoading[tab] = false
+  providerStatsActiveGeneration[tab] = undefined
+}
+
+const loadProviderStats = async (
+  tab: ProviderTab,
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   // 'others' Tab 暂不加载统计数据（自定义 CLI 工具统计需要后续实现）
   if (tab === 'others') {
-    providerStatsLoaded[tab] = true
+    finishProviderStatsLoading(tab, generation)
     return
   }
 
+  if (!isCurrentStartupGeneration(generation)) return
+  providerStatsActiveGeneration[tab] = generation
   providerStatsLoading[tab] = true
   try {
     // Gemini 统计数据目前通过相同的日志接口，直接查询
-    const stats = await fetchProviderDailyStats(tab as 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix')
+    const stats = await track(fetchProviderDailyStats(tab as 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix'))
+    if (!isCurrentStartupGeneration(generation)) return
     const mapped: Record<string, ProviderDailyStat> = {}
     ;(stats ?? []).forEach((stat) => {
       mapped[normalizeProviderKey(stat.provider)] = stat
     })
     providerStatsMap[tab] = mapped
-    providerStatsLoaded[tab] = true
+    if (isLatestProviderStatsTask(tab, generation)) {
+      providerStatsLoaded[tab] = true
+    }
   } catch (error) {
     console.error(`Failed to load provider stats for ${tab}`, error)
-    if (!providerStatsLoaded[tab]) {
+    if (isLatestProviderStatsTask(tab, generation) && !providerStatsLoaded[tab]) {
       providerStatsLoaded[tab] = true
     }
   } finally {
-    providerStatsLoading[tab] = false
+    finishProviderStatsLoading(tab, generation)
   }
 }
 
 // 加载黑名单状态
-const loadBlacklistStatus = async (tab: ProviderTab) => {
+const loadBlacklistStatus = async (
+  tab: ProviderTab,
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   // 'others' Tab 暂不加载黑名单状态
   if (tab === 'others') {
     return
   }
 
   try {
-    const statuses = await getBlacklistStatus(tab)
+    const statuses = await track(getBlacklistStatus(tab))
+    if (!isCurrentStartupGeneration(generation)) return
     const map: Record<string, BlacklistStatus> = {}
     statuses.forEach(status => {
       map[status.providerName] = status
@@ -1895,9 +2003,13 @@ const loadConnectivityResults = async (tab: ProviderTab) => {
 }
 
 // 加载可用性监控结果（新）
-const loadAvailabilityResults = async () => {
+const loadAvailabilityResults = async (
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   try {
-    const allResults = await getLatestResults()
+    const allResults = await track(getLatestResults())
+    if (!isCurrentStartupGeneration(generation)) return
 
     // 转换为按平台和 ID 索引的格式
     for (const platform of Object.keys(allResults)) {
@@ -1906,7 +2018,9 @@ const loadAvailabilityResults = async () => {
       timelines.forEach((timeline) => {
         map[timeline.providerId] = timeline
       })
-      availabilityResultsMap[platform as ProviderTab] = map
+      if (isCurrentStartupGeneration(generation)) {
+        availabilityResultsMap[platform as ProviderTab] = map
+      }
     }
   } catch (err) {
     console.error('加载可用性监控结果失败:', err)
@@ -1968,21 +2082,108 @@ const getConnectivityTooltip = (providerId: number): string => {
   return statusText + latencyText + uptimeText
 }
 
+type StartupTaskFactory<T> = (track: StartupTaskTracker) => PromiseLike<T> | T
+
+const runStartupTask = <T>(
+  key: string,
+  generation: number,
+  task: StartupTaskFactory<T>,
+  callbacks: {
+    onTimeout?: () => void | Promise<void>
+    onError?: (error: unknown) => void | Promise<void>
+  } = {},
+) => startupRunner.run({
+  key,
+  generation,
+  task: () => createCancellableStartupTask(async (track) => task(track)),
+  onTimeout: callbacks.onTimeout,
+  onError: callbacks.onError,
+})
+
+const queueStartupTask = <T>(
+  key: string,
+  generation: number,
+  task: StartupTaskFactory<T>,
+  callbacks: {
+    onTimeout?: () => void | Promise<void>
+    onError?: (error: unknown) => void | Promise<void>
+  } = {},
+) => {
+  void runStartupTask(key, generation, task, callbacks)
+}
+
+const runProviderBasicsTask = (tab: ProviderTab, generation: number) =>
+  runStartupTask(`providers:${tab}`, generation, (track) => loadProvidersForTab(tab, generation, track))
+
+const queueProviderStatsTask = (tab: ProviderTab, generation: number) => {
+  if (tab === 'others') {
+    if (isCurrentStartupGeneration(generation)) {
+      finishProviderStatsLoading(tab)
+    }
+    return
+  }
+
+  queueStartupTask(
+    `provider-stats:${tab}`,
+    generation,
+    (track) => loadProviderStats(tab, generation, track),
+    {
+      onTimeout: () => {
+        finishProviderStatsLoading(tab, generation)
+      },
+      onError: () => {
+        finishProviderStatsLoading(tab, generation)
+      },
+    },
+  )
+}
+
+const queueTabSoftTasks = (tab: ProviderTab, generation: number) => {
+  queueStartupTask(`proxy-state:${tab}`, generation, (track) => refreshProxyState(tab, generation, track))
+  queueStartupTask(`direct-applied:${tab}`, generation, (track) => refreshDirectAppliedStatus(tab, generation, track))
+  queueStartupTask(`blacklist:${tab}`, generation, (track) => loadBlacklistStatus(tab, generation, track))
+  queueProviderStatsTask(tab, generation)
+}
+
+const queueBackgroundStartupTasks = (generation: number, currentTab: ProviderTab) => {
+  providerTabIds
+    .filter((tab) => tab !== currentTab)
+    .forEach((tab) => {
+      queueStartupTask(`providers:${tab}:background`, generation, (track) => loadProvidersForTab(tab, generation, track))
+      queueStartupTask(`proxy-state:${tab}:background`, generation, (track) => refreshProxyState(tab, generation, track))
+      queueStartupTask(`direct-applied:${tab}:background`, generation, (track) => refreshDirectAppliedStatus(tab, generation, track))
+      queueStartupTask(`blacklist:${tab}:background`, generation, (track) => loadBlacklistStatus(tab, generation, track))
+      queueProviderStatsTask(tab, generation)
+    })
+
+  queueStartupTask('app-settings:startup', generation, (track) => loadAppSettings(generation, track))
+  queueStartupTask('app-version:startup', generation, (track) => loadAppVersion(generation, track))
+  queueStartupTask('availability:startup', generation, (track) => loadAvailabilityResults(generation, track))
+  queueStartupTask('last-used-providers:startup', generation, (track) => loadLastUsedProviders(generation, track))
+}
+
+const queueActiveTabRefresh = (tab: ProviderTab, generation: number) => {
+  void runProviderBasicsTask(tab, generation).then(() => {
+    if (!isCurrentStartupGeneration(generation)) return
+    queueTabSoftTasks(tab, generation)
+  })
+}
+
 // 刷新所有数据
 const refreshing = ref(false)
 const refreshAllData = async () => {
   if (refreshing.value) return
+  const generation = nextStartupGeneration()
+  const tab = activeTab.value
   refreshing.value = true
   try {
     await Promise.all([
-      reloadHeatmap(),
-      loadProvidersFromDisk(),
-      ...providerTabIds.map(refreshProxyState),
-      ...providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)),
-      ...providerTabIds.map((tab) => loadProviderStats(tab)),
-      ...providerTabIds.map((tab) => loadBlacklistStatus(tab)), // 同步刷新黑名单状态
-      loadAvailabilityResults(), // 同步刷新可用性监控状态（改用新服务）
+      runStartupTask('heatmap:refresh', generation, () => reloadHeatmap()),
+      runProviderBasicsTask(tab, generation),
     ])
+    if (!isCurrentStartupGeneration(generation)) return
+    queueTabSoftTasks(tab, generation)
+    queueBackgroundStartupTasks(generation, tab)
   } catch (error) {
     console.error('Failed to refresh data', error)
   } finally {
@@ -2077,10 +2278,11 @@ const formatOfficialSite = (site: string) => {
 const startProviderStatsTimer = () => {
   stopProviderStatsTimer()
   providerStatsTimer = window.setInterval(() => {
+    const generation = currentStartupGeneration()
     providerTabIds.forEach((tab) => {
-      void loadProviderStats(tab)
+      queueProviderStatsTask(tab, generation)
     })
-    void loadAvailabilityResults() // 同步刷新可用性监控状态（改用新服务）
+    queueStartupTask('availability:timer', generation, (track) => loadAvailabilityResults(generation, track))
   }, 60_000)
 }
 
@@ -2093,9 +2295,13 @@ const stopProviderStatsTimer = () => {
 
 // 加载最后使用的供应商
 // @author sm
-const loadLastUsedProviders = async () => {
+const loadLastUsedProviders = async (
+  generation?: number,
+  track: StartupTaskTracker = async (task) => Promise.resolve(task),
+) => {
   try {
-    const result = await Call.ByName('codeswitch/services.ProviderRelayService.GetAllLastUsedProviders')
+    const result = await track(Call.ByName('codeswitch/services.ProviderRelayService.GetAllLastUsedProviders'))
+    if (!isCurrentStartupGeneration(generation)) return
     if (result) {
       Object.keys(result).forEach(platform => {
         if (result[platform]) {
@@ -2113,7 +2319,8 @@ const loadLastUsedProviders = async () => {
 const switchToTabAndHighlight = (platform: string, providerName: string) => {
   // 切换到对应的 Tab
   const tabIndex = tabs.findIndex(tab => tab.id === platform)
-  if (tabIndex >= 0 && selectedIndex.value !== tabIndex) {
+  const tabChanged = tabIndex >= 0 && selectedIndex.value !== tabIndex
+  if (tabChanged) {
     selectedIndex.value = tabIndex
   }
 
@@ -2137,8 +2344,11 @@ const switchToTabAndHighlight = (platform: string, providerName: string) => {
     highlightedProvider.value = null
   }, 3000)
 
-  // 刷新黑名单状态
-  void loadBlacklistStatus(platform as ProviderTab)
+  // 当前 tab 未变化时，仍需刷新本 tab 的状态；tab 变化由 activeTab watcher 统一接管。
+  if (tabIndex >= 0 && !tabChanged) {
+    const generation = currentStartupGeneration()
+    queueTabSoftTasks(platform as ProviderTab, generation)
+  }
 }
 
 // 处理供应商切换事件
@@ -2176,66 +2386,75 @@ const scrollToCard = (el: HTMLElement | null) => {
 let unsubscribeSwitched: (() => void) | undefined
 let unsubscribeBlacklisted: (() => void) | undefined
 
-onMounted(async () => {
-  void initHeatmap()
-  await loadProvidersFromDisk()
-  await Promise.all(providerTabIds.map(refreshProxyState))
-  await Promise.all(providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)))
-  await Promise.all(providerTabIds.map((tab) => loadProviderStats(tab)))
-  await loadAppSettings()
-  await loadAppVersion()
-  startProviderStatsTimer()
-
-  // 加载初始黑名单状态
-  await Promise.all(providerTabIds.map((tab) => loadBlacklistStatus(tab)))
-
-  // 加载初始可用性监控结果（改用新服务）
-  await loadAvailabilityResults()
-
-  // 每秒更新黑名单倒计时
-  blacklistTimer = window.setInterval(() => {
-    const tab = activeTab.value
-    Object.keys(blacklistStatusMap[tab]).forEach(providerName => {
-      const status = blacklistStatusMap[tab][providerName]
-      if (status && status.isBlacklisted && status.remainingSeconds > 0) {
-        status.remainingSeconds--
-        if (status.remainingSeconds <= 0) {
-          loadBlacklistStatus(tab)
+const startBlacklistTimersAndListeners = () => {
+  if (!blacklistTimer) {
+    // 每秒更新黑名单倒计时
+    blacklistTimer = window.setInterval(() => {
+      const tab = activeTab.value
+      Object.keys(blacklistStatusMap[tab]).forEach(providerName => {
+        const status = blacklistStatusMap[tab][providerName]
+        if (status && status.isBlacklisted && status.remainingSeconds > 0) {
+          status.remainingSeconds--
+          if (status.remainingSeconds <= 0) {
+            const generation = currentStartupGeneration()
+            queueStartupTask('blacklist:countdown-refresh', generation, (track) =>
+              loadBlacklistStatus(tab, generation, track))
+          }
         }
-      }
-    })
-  }, 1000)
-
-  // 窗口焦点事件：从最小化恢复时立即刷新黑名单状态
-  const handleWindowFocus = () => {
-    void loadBlacklistStatus(activeTab.value)
+      })
+    }, 1000)
   }
-  window.addEventListener('focus', handleWindowFocus)
 
-  // 定期轮询黑名单状态（每 10 秒）
-  const blacklistPollingTimer = window.setInterval(() => {
-    void loadBlacklistStatus(activeTab.value)
-  }, 10_000)
+  if (!handleWindowFocus) {
+    // 窗口焦点事件：从最小化恢复时立即刷新黑名单状态
+    handleWindowFocus = () => {
+      const generation = currentStartupGeneration()
+      queueStartupTask('blacklist:window-focus', generation, (track) =>
+        loadBlacklistStatus(activeTab.value, generation, track))
+    }
+    window.addEventListener('focus', handleWindowFocus)
+  }
 
-  // 存储定时器 ID 以便清理
-  ;(window as any).__blacklistPollingTimer = blacklistPollingTimer
-  ;(window as any).__handleWindowFocus = handleWindowFocus
+  if (!blacklistPollingTimer) {
+    // 定期轮询黑名单状态（每 10 秒）
+    blacklistPollingTimer = window.setInterval(() => {
+      const generation = currentStartupGeneration()
+      queueStartupTask('blacklist:polling', generation, (track) =>
+        loadBlacklistStatus(activeTab.value, generation, track))
+    }, 10_000)
+  }
+}
 
+const registerStartupListeners = () => {
+  startProviderStatsTimer()
+  startBlacklistTimersAndListeners()
   window.addEventListener('app-settings-updated', handleAppSettingsUpdated)
 
-  // 监听可用性页面的 Provider 更新事件
-  const handleProvidersUpdated = () => {
-    void loadProvidersFromDisk()
+  if (!handleProvidersUpdated) {
+    // 监听可用性页面的 Provider 更新事件
+    handleProvidersUpdated = () => {
+      const generation = nextStartupGeneration()
+      const tab = activeTab.value
+      queueActiveTabRefresh(tab, generation)
+      queueBackgroundStartupTasks(generation, tab)
+    }
+    window.addEventListener('providers-updated', handleProvidersUpdated)
   }
-  window.addEventListener('providers-updated', handleProvidersUpdated)
-  ;(window as any).__handleProvidersUpdated = handleProvidersUpdated
-
-  // 加载最后使用的供应商
-  await loadLastUsedProviders()
 
   // 监听供应商切换和拉黑事件
   unsubscribeSwitched = Events.On('provider:switched', handleProviderSwitched)
   unsubscribeBlacklisted = Events.On('provider:blacklisted', handleProviderBlacklisted)
+}
+
+onMounted(async () => {
+  const generation = nextStartupGeneration()
+  const tab = activeTab.value
+  void initHeatmap()
+  registerStartupListeners()
+  await runProviderBasicsTask(tab, generation)
+  if (!isCurrentStartupGeneration(generation)) return
+  queueTabSoftTasks(tab, generation)
+  queueBackgroundStartupTasks(generation, tab)
 })
 
 onUnmounted(() => {
@@ -2246,15 +2465,19 @@ onUnmounted(() => {
   // 清理黑名单相关定时器和事件监听
   if (blacklistTimer) {
     window.clearInterval(blacklistTimer)
+    blacklistTimer = undefined
   }
-  if ((window as any).__blacklistPollingTimer) {
-    window.clearInterval((window as any).__blacklistPollingTimer)
+  if (blacklistPollingTimer) {
+    window.clearInterval(blacklistPollingTimer)
+    blacklistPollingTimer = undefined
   }
-  if ((window as any).__handleWindowFocus) {
-    window.removeEventListener('focus', (window as any).__handleWindowFocus)
+  if (handleWindowFocus) {
+    window.removeEventListener('focus', handleWindowFocus)
+    handleWindowFocus = undefined
   }
-  if ((window as any).__handleProvidersUpdated) {
-    window.removeEventListener('providers-updated', (window as any).__handleProvidersUpdated)
+  if (handleProvidersUpdated) {
+    window.removeEventListener('providers-updated', handleProvidersUpdated)
+    handleProvidersUpdated = undefined
   }
 
   // 清理高亮计时器
@@ -2270,10 +2493,6 @@ onUnmounted(() => {
     unsubscribeBlacklisted()
   }
 })
-
-const selectedIndex = ref(0)
-const activeTab = computed<ProviderTab>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
-const activeCards = computed(() => cards[activeTab.value] ?? [])
 
 // 连通性测试模型选项（根据平台）
 const connectivityTestModelOptions = computed(() => {
@@ -2372,10 +2591,10 @@ const handleTestConnectivity = async () => {
   }
 }
 
-// 监听 tab 切换，立即刷新黑名单和可用性状态
+// 监听 tab 切换，当前 tab Provider 优先，状态随后补齐。
 watch(activeTab, (newTab) => {
-  void loadBlacklistStatus(newTab)
-  // 可用性结果是全局的，不需要按 tab 刷新
+  const generation = nextStartupGeneration()
+  queueActiveTabRefresh(newTab, generation)
 })
 const currentProxyLabel = computed(() => {
   const tab = activeTab.value
@@ -2895,7 +3114,9 @@ const handleDuplicate = async (card: AutomationCard) => {
     }
 
     // 刷新列表以显示新副本
-    await loadProvidersFromDisk()
+    const generation = nextStartupGeneration()
+    await runStartupTask(`providers:${tab}:duplicate-refresh`, generation, (track) =>
+      loadProvidersForTab(tab, generation, track))
   } catch (error) {
     console.error('[Duplicate] Failed to duplicate provider:', error)
   }
@@ -2947,13 +3168,8 @@ const vendorInitials = (name: string) => {
 }
 
 const onTabChange = (idx: number) => {
+  if (selectedIndex.value === idx) return
   selectedIndex.value = idx
-  const nextTab = tabs[idx]?.id
-  if (nextTab) {
-    void refreshProxyState(nextTab as ProviderTab)
-    void refreshDirectAppliedStatus(nextTab as ProviderTab)
-    void loadProviderStats(nextTab as ProviderTab)
-  }
 }
 
 // ========== 自定义 CLI 工具管理 ==========
@@ -2987,14 +3203,18 @@ const cliToolConfirmState = reactive({
 
 // 切换选中的 CLI 工具
 const onToolSelect = async () => {
+  const generation = nextStartupGeneration()
   if (selectedToolId.value) {
     // 更新当前 tab 的代理状态
     proxyStates.others = customCliProxyStates[selectedToolId.value] ?? false
     // 加载该工具的 providers 列表
-    await loadCustomCliProviders(selectedToolId.value)
+    await runStartupTask('custom-cli-providers:selected-tool', generation, (track) =>
+      loadCustomCliProviders(selectedToolId.value as string, generation, track))
+    queueTabSoftTasks('others', generation)
   } else {
     // 未选中任何工具，清空 providers 列表
     cards.others.splice(0, cards.others.length)
+    finishProviderStatsLoading('others')
   }
 }
 
@@ -3199,7 +3419,11 @@ const submitCliToolModal = async () => {
     }
 
     // 刷新工具列表
-    await loadCustomCliTools()
+    {
+      const generation = nextStartupGeneration()
+      await runStartupTask('custom-cli-tools:save-refresh', generation, (track) =>
+        loadCustomCliTools(generation, track))
+    }
     closeCliToolModal()
   } catch (error) {
     console.error('Failed to save CLI tool', error)
@@ -3231,7 +3455,11 @@ const confirmDeleteCliTool = async () => {
     }
 
     // 刷新工具列表
-    await loadCustomCliTools()
+    {
+      const generation = nextStartupGeneration()
+      await runStartupTask('custom-cli-tools:delete-refresh', generation, (track) =>
+        loadCustomCliTools(generation, track))
+    }
     closeCliToolConfirm()
   } catch (error) {
     console.error('Failed to delete CLI tool', error)

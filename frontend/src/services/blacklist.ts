@@ -30,9 +30,8 @@ const SETTINGS_SERVICE = 'codeswitch/services.SettingsService'
  * 获取指定平台的黑名单状态列表
  * @param platform 'claude' | 'codex'
  */
-export const getBlacklistStatus = async (platform: string): Promise<BlacklistStatus[]> => {
-  return Call.ByName(`${BLACKLIST_SERVICE}.GetBlacklistStatus`, platform)
-}
+export const getBlacklistStatus = (platform: string): Promise<BlacklistStatus[]> =>
+  Call.ByName(`${BLACKLIST_SERVICE}.GetBlacklistStatus`, platform)
 
 /**
  * 手动解除拉黑

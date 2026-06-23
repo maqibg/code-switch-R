@@ -20,10 +20,8 @@ const normalizeProxyStatus = (raw: any): GeminiProxyStatus => {
   }
 }
 
-export const fetchGeminiProxyStatus = async (): Promise<GeminiProxyStatus> => {
-  const raw = await Call.ByName(`${serviceName}.ProxyStatus`)
-  return normalizeProxyStatus(raw)
-}
+export const fetchGeminiProxyStatus = (): Promise<GeminiProxyStatus> =>
+  Call.ByName(`${serviceName}.ProxyStatus`).then(normalizeProxyStatus)
 
 export const enableGeminiProxy = async (): Promise<void> => {
   await Call.ByName(`${serviceName}.EnableProxy`)

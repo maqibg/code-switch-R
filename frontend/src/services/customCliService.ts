@@ -63,11 +63,9 @@ const normalizeTool = (raw: any): CustomCliTool => {
 
 // ========== 工具 CRUD ==========
 
-export const listCustomCliTools = async (): Promise<CustomCliTool[]> => {
-  const raw = await Call.ByName(`${serviceName}.ListTools`)
-  if (!Array.isArray(raw)) return []
-  return raw.map(normalizeTool)
-}
+export const listCustomCliTools = (): Promise<CustomCliTool[]> =>
+  Call.ByName(`${serviceName}.ListTools`).then((raw) =>
+    Array.isArray(raw) ? raw.map(normalizeTool) : [])
 
 export const getCustomCliTool = async (id: string): Promise<CustomCliTool | null> => {
   try {
@@ -93,10 +91,8 @@ export const deleteCustomCliTool = async (id: string): Promise<void> => {
 
 // ========== 代理管理 ==========
 
-export const getCustomCliProxyStatus = async (toolId: string): Promise<CustomCliProxyStatus> => {
-  const raw = await Call.ByName(`${serviceName}.ProxyStatus`, toolId)
-  return normalizeProxyStatus(raw)
-}
+export const getCustomCliProxyStatus = (toolId: string): Promise<CustomCliProxyStatus> =>
+  Call.ByName(`${serviceName}.ProxyStatus`, toolId).then(normalizeProxyStatus)
 
 export const enableCustomCliProxy = async (toolId: string): Promise<void> => {
   await Call.ByName(`${serviceName}.EnableProxy`, toolId)

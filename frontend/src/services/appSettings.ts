@@ -72,10 +72,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   global_proxy_port: 7890,
 }
 
-export const fetchAppSettings = async (): Promise<AppSettings> => {
-  const data = await Call.ByName('codeswitch/services.AppSettingsService.GetAppSettings')
-  return data ?? DEFAULT_SETTINGS
-}
+export const fetchAppSettings = (): Promise<AppSettings> =>
+  Call.ByName('codeswitch/services.AppSettingsService.GetAppSettings')
+    .then((data) => data ?? DEFAULT_SETTINGS)
 
 export const saveAppSettings = async (settings: AppSettings): Promise<AppSettings> => {
   return Call.ByName('codeswitch/services.AppSettingsService.SaveAppSettings', settings)
