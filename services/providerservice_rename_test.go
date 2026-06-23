@@ -18,15 +18,18 @@ func setupRenameTestEnv(t *testing.T) string {
 	t.Helper()
 
 	closeDefaultTestDB()
-	resetTestAppConfigDir(t)
 	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	resetTestAppConfigDir(t)
 	t.Cleanup(func() {
 		resetDefaultTestDB(t)
 		resetTestAppConfigDir(t)
 	})
-	t.Setenv("HOME", tmpHome)
 
-	configDir := filepath.Join(tmpHome, ".code-switch")
+	configDir, err := getAppConfigDir()
+	if err != nil {
+		t.Fatalf("获取测试配置目录失败: %v", err)
+	}
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("创建配置目录失败: %v", err)
 	}

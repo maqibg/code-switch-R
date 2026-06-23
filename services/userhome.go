@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -46,10 +47,20 @@ func getExecutableDir() (string, error) {
 	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
 		exePath = resolved
 	}
+	return executableDirFromPath(exePath)
+}
+
+func executableDirFromPath(exePath string) (string, error) {
 	exePath = filepath.Clean(exePath)
-	if filepath.Ext(exePath) != "" {
+
+	if info, statErr := os.Stat(exePath); statErr == nil {
+		if !info.IsDir() {
+			exePath = filepath.Dir(exePath)
+		}
+	} else if filepath.Ext(exePath) != "" {
 		exePath = filepath.Dir(exePath)
 	}
+
 	if exePath == "" || exePath == "." || !filepath.IsAbs(exePath) {
 		return "", fmt.Errorf("无效的程序目录: %s", exePath)
 	}
@@ -57,6 +68,14 @@ func getExecutableDir() (string, error) {
 }
 
 func getAppConfigDir() (string, error) {
+	if runtime.GOOS == "linux" {
+		home, err := getUserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, projectAppConfigDirName), nil
+	}
+
 	exeDir, err := getExecutableDir()
 	if err != nil {
 		return "", err
@@ -79,6 +98,11 @@ func mustGetAppConfigDir() string {
 	dir, err := getAppConfigDir()
 	if err == nil {
 		return dir
+	}
+	if runtime.GOOS == "linux" {
+		if home, homeErr := getUserHomeDir(); homeErr == nil {
+			return filepath.Join(home, projectAppConfigDirName)
+		}
 	}
 	return filepath.Join(".", projectAppConfigDirName)
 }
