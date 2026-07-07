@@ -22,8 +22,11 @@ func (prs *ProviderRelayService) forwardCodexResponsesWithContinue(
 	model string,
 ) (bool, error) {
 	config := defaultCodexContinueConfig()
+	traceID := nextCodexContinueTraceID()
+	logCodexContinue("INFO", traceID, "触发 reasoning 自动续写 | provider=%s | model=%s | endpoint=%s", provider.Name, model, endpoint)
 	initialBody, baseBody, err := prepareCodexInitialPayload(bodyBytes)
 	if err != nil {
+		logCodexContinue("ERROR", traceID, "解析 Codex 请求体失败 | error=%s", codexContinueErrorSummary(err))
 		return false, fmt.Errorf("解析 Codex 请求体失败: %w", err)
 	}
 
@@ -40,29 +43,39 @@ func (prs *ProviderRelayService) forwardCodexResponsesWithContinue(
 		requestLog.HttpCode = resp.StatusCode()
 	}
 	if err != nil {
+		if resp != nil {
+			logCodexContinue("WARN", traceID, "初始请求失败 | http=%d", resp.StatusCode())
+		} else {
+			logCodexContinue("WARN", traceID, "初始请求失败 | error=%s", codexContinueErrorSummary(err))
+		}
 		return false, err
 	}
 	if resp == nil {
+		logCodexContinue("WARN", traceID, "初始请求失败 | error=empty response")
 		return false, fmt.Errorf("empty response")
 	}
 
 	status := resp.StatusCode()
 	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		logCodexContinue("WARN", traceID, "初始请求非成功状态 | http=%d", status)
 		if upstreamBody := extractUpstreamError(resp); upstreamBody != "" {
 			return false, fmt.Errorf("upstream status %d: %s", status, upstreamBody)
 		}
 		return false, fmt.Errorf("upstream status %d", status)
 	}
 	if !isEventStream(resp) {
+		logCodexContinue("WARN", traceID, "上游未返回 SSE，自动续写不会继续 | http=%d", status)
 		_, copyErr := resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, "codex", requestLog))
 		return copyErr == nil, copyErr
 	}
+	logCodexContinue("INFO", traceID, "初始请求成功 | http=%d | event_stream=true", status)
 
 	prs.writeCodexFoldHeaders(c.Writer, resp)
 	state := &codexFoldState{baseResponse: map[string]any{}, requestLog: requestLog}
-	err = prs.foldCodexResponsesStream(c.Writer, provider, endpoint, query, clientHeaders, baseBody, resp, config, state)
+	err = prs.foldCodexResponsesStream(c.Writer, provider, endpoint, query, clientHeaders, baseBody, resp, config, state, traceID)
 	state.usage.applyToLog(requestLog)
 	if err != nil {
+		logCodexContinue("WARN", traceID, "自动续写客户端中断 | error=%s", codexContinueErrorSummary(err))
 		return false, fmt.Errorf("%w: %v", errClientAbort, err)
 	}
 	return true, nil

@@ -6,6 +6,33 @@ import (
 	"github.com/daodao97/xgo/xrequest"
 )
 
+type codexRoundLog struct {
+	state           *codexFoldState
+	traceID         string
+	roundNo         int
+	reasoningTokens int64
+	truncated       bool
+	hasEncrypted    bool
+	canContinue     bool
+}
+
+type codexContinuationRoundInput struct {
+	baseBody map[string]any
+	state    *codexFoldState
+	result   codexRoundResult
+	config   codexContinueConfig
+}
+
+type codexIncompleteOutput struct {
+	w       http.ResponseWriter
+	state   *codexFoldState
+	traceID string
+	reason  string
+	roundNo int
+	step    int64
+	err     error
+}
+
 func (prs *ProviderRelayService) foldCodexResponsesStream(
 	w http.ResponseWriter,
 	provider Provider,
@@ -16,41 +43,49 @@ func (prs *ProviderRelayService) foldCodexResponsesStream(
 	firstResponse *xrequest.Response,
 	config codexContinueConfig,
 	state *codexFoldState,
+	traceID string,
 ) error {
 	response := firstResponse
 	for roundNo, continuations := 1, 0; ; roundNo++ {
 		result, err := readCodexContinueRound(w, response, roundNo, state)
 		if err != nil {
-			writeCodexSSEEvent(w, syntheticCodexIncomplete(state, "upstream_error", roundNo, config.Step))
-			writeCodexSSEDone(w)
-			flushWriter(w)
+			completeCodexContinueWithIncomplete(codexIncompleteOutput{
+				w: w, state: state, traceID: traceID, reason: "upstream_error", roundNo: roundNo, step: config.Step, err: err,
+			})
 			return nil
 		}
 		state.usage.add(result.usage)
 		truncated := isCodexReasoningTruncated(result.reasoningTokens, config.Step)
 		hasEncrypted := lastReasoningHasEncrypted(result.roundReasoning)
 		canContinue := result.terminal != nil && truncated && hasEncrypted && continuations < config.MaxContinuations
-		state.rounds = append(state.rounds, map[string]any{
-			"round":                 roundNo,
-			"reasoning_tokens":      result.reasoningTokens,
-			"truncated":             truncated,
-			"has_encrypted_content": hasEncrypted,
-			"continued":             canContinue,
+		recordCodexContinueRound(codexRoundLog{
+			state:           state,
+			traceID:         traceID,
+			roundNo:         roundNo,
+			reasoningTokens: result.reasoningTokens,
+			truncated:       truncated,
+			hasEncrypted:    hasEncrypted,
+			canContinue:     canContinue,
 		})
 
 		if canContinue {
 			continuations++
-			state.replayTail = append(state.replayTail, cloneJSONValue(result.roundReasoning).([]any)...)
-			state.replayTail = append(state.replayTail, codexCommentaryMarker(config.Marker))
-			nextBody, err := buildCodexContinuationPayload(baseBody, state.replayTail)
+			nextBody, err := prepareCodexContinuationRound(codexContinuationRoundInput{
+				baseBody: baseBody,
+				state:    state,
+				result:   result,
+				config:   config,
+			})
 			if err != nil {
-				writeCodexSSEEvent(w, syntheticCodexIncomplete(state, "payload_error", roundNo, config.Step))
-				writeCodexSSEDone(w)
-				flushWriter(w)
+				completeCodexContinueWithIncomplete(codexIncompleteOutput{
+					w: w, state: state, traceID: traceID, reason: "payload_error", roundNo: roundNo, step: config.Step, err: err,
+				})
 				return nil
 			}
+			logCodexContinue("INFO", traceID, "发起续写请求 | next_round=%d | provider=%s | replay_items=%d", roundNo+1, provider.Name, len(state.replayTail))
 			response, err = prs.sendNativeCodexResponsesRequest(provider, endpoint, query, headers, nextBody)
 			if err != nil || response == nil || response.StatusCode() < 200 || response.StatusCode() >= 300 || !isEventStream(response) {
+				logCodexContinuationUpstreamFailure(traceID, roundNo, response, err)
 				writeCodexSSEEvent(w, syntheticCodexIncomplete(state, "upstream_error", roundNo, config.Step))
 				writeCodexSSEDone(w)
 				flushWriter(w)
@@ -60,18 +95,89 @@ func (prs *ProviderRelayService) foldCodexResponsesStream(
 		}
 
 		if result.terminal == nil {
-			writeCodexSSEEvent(w, syntheticCodexIncomplete(state, "upstream_eof", roundNo, config.Step))
-			writeCodexSSEDone(w)
-			flushWriter(w)
+			completeCodexContinueWithIncomplete(codexIncompleteOutput{
+				w: w, state: state, traceID: traceID, reason: "upstream_eof", roundNo: roundNo, step: config.Step,
+			})
 			return nil
 		}
 
 		flushCodexBufferedItems(w, state, result.bufferedItems)
-		writeCodexSSEEvent(w, reconstructCodexTerminal(state, result.terminal, stoppedReason(truncated, hasEncrypted, continuations, config), roundNo, config.Step))
+		reason := stoppedReason(truncated, hasEncrypted, continuations, config)
+		logCodexContinueFinished(traceID, roundNo, continuations, reason)
+		writeCodexSSEEvent(w, reconstructCodexTerminal(state, result.terminal, reason, roundNo, config.Step))
 		writeCodexSSEDone(w)
 		flushWriter(w)
 		return nil
 	}
+}
+
+func recordCodexContinueRound(entry codexRoundLog) {
+	logCodexContinue(
+		"INFO",
+		entry.traceID,
+		"round=%d | reasoning_tokens=%d | truncated=%t | encrypted=%t | continue=%t",
+		entry.roundNo,
+		entry.reasoningTokens,
+		entry.truncated,
+		entry.hasEncrypted,
+		entry.canContinue,
+	)
+	entry.state.rounds = append(entry.state.rounds, map[string]any{
+		"round":                 entry.roundNo,
+		"reasoning_tokens":      entry.reasoningTokens,
+		"truncated":             entry.truncated,
+		"has_encrypted_content": entry.hasEncrypted,
+		"continued":             entry.canContinue,
+	})
+}
+
+func prepareCodexContinuationRound(input codexContinuationRoundInput) ([]byte, error) {
+	input.state.replayTail = append(input.state.replayTail, cloneJSONValue(input.result.roundReasoning).([]any)...)
+	input.state.replayTail = append(input.state.replayTail, codexCommentaryMarker(input.config.Marker))
+	return buildCodexContinuationPayload(input.baseBody, input.state.replayTail)
+}
+
+func completeCodexContinueWithIncomplete(output codexIncompleteOutput) {
+	logCodexContinueIncomplete(output)
+	writeCodexSSEEvent(output.w, syntheticCodexIncomplete(output.state, output.reason, output.roundNo, output.step))
+	writeCodexSSEDone(output.w)
+	flushWriter(output.w)
+}
+
+func logCodexContinueIncomplete(output codexIncompleteOutput) {
+	level := "WARN"
+	if output.reason == "payload_error" {
+		level = "ERROR"
+	}
+	if output.err != nil {
+		logCodexContinue(level, output.traceID, "自动续写中止 | round=%d | reason=%s | error=%s", output.roundNo, output.reason, codexContinueErrorSummary(output.err))
+		return
+	}
+	logCodexContinue(level, output.traceID, "自动续写中止 | round=%d | reason=%s", output.roundNo, output.reason)
+}
+
+func logCodexContinuationUpstreamFailure(traceID string, roundNo int, response *xrequest.Response, err error) {
+	if response != nil {
+		logCodexContinue("WARN", traceID, "自动续写中止 | round=%d | reason=upstream_error | http=%d | event_stream=%t", roundNo, response.StatusCode(), isEventStream(response))
+		return
+	}
+	if err != nil {
+		logCodexContinue("WARN", traceID, "自动续写中止 | round=%d | reason=upstream_error | error=%s", roundNo, codexContinueErrorSummary(err))
+		return
+	}
+	logCodexContinue("WARN", traceID, "自动续写中止 | round=%d | reason=upstream_error | error=empty response", roundNo)
+}
+
+func logCodexContinueFinished(traceID string, rounds int, continuations int, reason string) {
+	level := "INFO"
+	displayReason := reason
+	if displayReason == "" {
+		displayReason = "completed"
+	}
+	if displayReason != "completed" {
+		level = "WARN"
+	}
+	logCodexContinue(level, traceID, "自动续写结束 | rounds=%d | continuations=%d | reason=%s", rounds, continuations, displayReason)
 }
 
 func reconstructCodexTerminal(state *codexFoldState, terminal map[string]any, reason string, roundNo int, step int64) map[string]any {

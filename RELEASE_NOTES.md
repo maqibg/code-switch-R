@@ -1,3 +1,13 @@
+# Code Switch v2.6.50
+
+## 更新亮点
+- **Codex reasoning 自动续写控制台日志**：自动续写触发后会在应用控制台输出带 `trace` 的结构化日志，展示触发供应商、模型、每轮 reasoning token、截断判断、续写动作和最终停止原因。
+
+## 修复
+- 收紧 Codex reasoning 自动续写诊断日志的输出边界，只记录状态码、轮次和布尔诊断信息，不输出请求体、响应体、headers、API Key 或 encrypted reasoning 内容。
+
+---
+
 # Code Switch v2.6.49
 
 ## 更新亮点

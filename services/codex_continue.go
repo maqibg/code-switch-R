@@ -3,7 +3,9 @@ package services
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync/atomic"
 )
 
 const (
@@ -11,7 +13,10 @@ const (
 	codexContinueDefaultMaxContinuations       = 8
 	codexContinueEncryptedInclude              = "reasoning.encrypted_content"
 	codexContinueMarker                        = "We need continue thinking. Do not summarize; continue from the previous reasoning state."
+	codexContinueMaxErrorSummary               = 180
 )
+
+var codexContinueTraceSeq atomic.Uint64
 
 type codexContinueConfig struct {
 	MaxContinuations int
@@ -25,6 +30,30 @@ func defaultCodexContinueConfig() codexContinueConfig {
 		Step:             codexContinueDefaultStep,
 		Marker:           codexContinueMarker,
 	}
+}
+
+func nextCodexContinueTraceID() string {
+	return fmt.Sprintf("ccx-%d", codexContinueTraceSeq.Add(1))
+}
+
+func logCodexContinue(level string, traceID string, format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	if traceID != "" {
+		fmt.Printf("[CodexContinue][%s] trace=%s | %s\n", level, traceID, message)
+		return
+	}
+	fmt.Printf("[CodexContinue][%s] %s\n", level, message)
+}
+
+func codexContinueErrorSummary(err error) string {
+	if err == nil {
+		return ""
+	}
+	summary := strings.Join(strings.Fields(err.Error()), " ")
+	if len(summary) <= codexContinueMaxErrorSummary {
+		return summary
+	}
+	return summary[:codexContinueMaxErrorSummary] + "..."
 }
 
 func shouldUseCodexContinue(provider Provider, endpoint string, bodyBytes []byte, isStream bool) bool {
