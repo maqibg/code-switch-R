@@ -71,6 +71,9 @@ type Provider struct {
 	// auto: 根据 APIEndpoint 自动检测（包含 /chat/completions 则为 openai_chat）
 	UpstreamProtocol string `json:"upstreamProtocol,omitempty"`
 
+	// Codex reasoning 自动续写 - 仅对 Codex 原生 Responses 流式请求生效
+	CodexReasoningContinueEnabled bool `json:"codexReasoningContinueEnabled,omitempty"`
+
 	// ========== 旧字段（已废弃，仅用于读取迁移） ==========
 	// 这些字段在保存时不再写入，但读取时会自动迁移到新字段
 

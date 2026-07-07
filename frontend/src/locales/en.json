@@ -425,7 +425,8 @@
           "connectivityCheck": "Connectivity Check (deprecated)",
           "connectivityTestModel": "Test Model",
           "connectivityTestEndpoint": "Test Endpoint",
-          "connectivityAuthType": "Auth Method"
+          "connectivityAuthType": "Auth Method",
+          "codexReasoningContinue": "Codex reasoning auto-continue"
         },
         "placeholders": {
           "name": "e.g. AICoding.sh",
@@ -457,7 +458,8 @@
           "connectivityCheck": "When enabled, connectivity to this provider will be tested periodically; enabling this may consume a small amount of tokens",
           "connectivityTestModel": "Select a model for connectivity testing, or leave empty to use platform default",
           "connectivityTestEndpoint": "Select or enter API endpoint path",
-          "connectivityAuthType": "Default is Bearer. Use X-API-Key for Anthropic-style APIs. Enter custom header name in the text field if needed."
+          "connectivityAuthType": "Default is Bearer. Use X-API-Key for Anthropic-style APIs. Enter custom header name in the text field if needed.",
+          "codexReasoningContinue": "Only applies to native Codex Responses streaming requests. When enabled, the proxy continues with the same provider after detecting reasoning truncation, which may increase token usage."
         },
         "actions": {
           "cancel": "Cancel",

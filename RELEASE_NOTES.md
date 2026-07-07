@@ -1,3 +1,14 @@
+# Code Switch v2.6.49
+
+## 更新亮点
+- **Codex reasoning 自动续写**：Codex 供应商新增可选开关，代理在检测到原生 Responses 流式 reasoning 截断时，会基于加密 reasoning 状态继续请求同一供应商，并把多轮 SSE 折叠为一次完整响应。
+
+## 修复
+- 避免将 Codex reasoning 续写应用到 `openai_chat` 上游协议，防止把 Responses 的加密 reasoning 状态错误回放到 Chat Completions provider。
+- 续写过程中遇到上游中断或 EOF 时返回明确的 `response.incomplete`，不静默伪装为成功完成。
+
+---
+
 # Code Switch v2.6.31
 
 ## 更新亮点

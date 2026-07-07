@@ -537,7 +537,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 							provider.Name, level, retryCount+1, maxRetryPerProvider, effectiveModel)
 
 						startTime := time.Now()
-						ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+						ok, err := prs.forwardProviderRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
 						duration := time.Since(startTime)
 
 						if ok {
@@ -664,7 +664,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				// 获取有效的端点（用户配置优先）
 				effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 				startTime := time.Now()
-				ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+				ok, err := prs.forwardProviderRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
 				duration := time.Since(startTime)
 
 				if ok {
@@ -755,6 +755,23 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			"total_attempts": totalAttempts,
 		})
 	}
+}
+
+func (prs *ProviderRelayService) forwardProviderRequest(
+	c *gin.Context,
+	kind string,
+	provider Provider,
+	endpoint string,
+	query map[string]string,
+	clientHeaders map[string]string,
+	bodyBytes []byte,
+	isStream bool,
+	model string,
+) (bool, error) {
+	if kind == "codex" && shouldUseCodexContinue(provider, endpoint, bodyBytes, isStream) {
+		return prs.forwardCodexResponsesWithContinue(c, provider, endpoint, query, clientHeaders, bodyBytes, model)
+	}
+	return prs.forwardRequest(c, kind, provider, endpoint, query, clientHeaders, bodyBytes, isStream, model)
 }
 
 func (prs *ProviderRelayService) forwardRequest(

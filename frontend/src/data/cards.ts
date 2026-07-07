@@ -43,6 +43,8 @@ export type AutomationCard = {
   connectivityAuthType?: string
   // 上游协议类型（anthropic / openai）
   upstreamProtocol?: string
+  // Codex reasoning 自动续写，仅对 Codex 原生 Responses 流式请求生效
+  codexReasoningContinueEnabled?: boolean
 }
 
 export const automationCardGroups: Record<'claude' | 'codex', AutomationCard[]> = {
