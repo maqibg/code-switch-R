@@ -580,6 +580,8 @@ const (
 	UpstreamProtocolAnthropic UpstreamProtocolType = "anthropic"
 	// UpstreamProtocolOpenAIChat OpenAI Chat Completions API
 	UpstreamProtocolOpenAIChat UpstreamProtocolType = "openai_chat"
+	// UpstreamProtocolOpenAIResponses OpenAI Responses API
+	UpstreamProtocolOpenAIResponses UpstreamProtocolType = "openai_responses"
 	// UpstreamProtocolAuto 自动检测
 	UpstreamProtocolAuto UpstreamProtocolType = "auto"
 )
@@ -591,6 +593,8 @@ func (p *Provider) GetUpstreamProtocol() UpstreamProtocolType {
 	switch protocol {
 	case "openai_chat", "openai-chat", "openai":
 		return UpstreamProtocolOpenAIChat
+	case "openai_responses", "openai-responses", "responses":
+		return UpstreamProtocolOpenAIResponses
 	case "auto":
 		return UpstreamProtocolAuto
 	default:
@@ -605,6 +609,9 @@ func DetectUpstreamProtocol(endpoint string) UpstreamProtocolType {
 	// 检测 OpenAI Chat Completions 端点
 	if strings.Contains(ep, "/chat/completions") {
 		return UpstreamProtocolOpenAIChat
+	}
+	if strings.Contains(ep, "/responses") {
+		return UpstreamProtocolOpenAIResponses
 	}
 	// 默认 Anthropic
 	return UpstreamProtocolAnthropic

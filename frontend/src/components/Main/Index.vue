@@ -560,13 +560,13 @@
                 </label>
 
                 <!-- 上游协议类型 -->
-                <div class="form-field">
+                <div v-if="showUpstreamProtocolField" class="form-field">
                   <span>{{ t('components.main.form.labels.upstreamProtocol') }}</span>
                   <Listbox v-model="modalState.form.upstreamProtocol" v-slot="{ open }">
                     <div class="level-select">
                       <ListboxButton class="level-select-button">
                         <span class="level-label">
-                          {{ upstreamProtocolOptions.find((item) => item.value === modalState.form.upstreamProtocol)?.label || modalState.form.upstreamProtocol }}
+                          {{ effectiveUpstreamProtocolOptions.find((item) => item.value === modalState.form.upstreamProtocol)?.label || modalState.form.upstreamProtocol }}
                         </span>
                         <svg viewBox="0 0 20 20" aria-hidden="true">
                           <path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
@@ -574,12 +574,13 @@
                       </ListboxButton>
                       <ListboxOptions v-if="open" class="level-select-options">
                         <ListboxOption
-                          v-for="option in upstreamProtocolOptions"
+                          v-for="option in effectiveUpstreamProtocolOptions"
                           :key="option.value"
                           :value="option.value"
+                          :disabled="option.disabled"
                           v-slot="{ active, selected }"
                         >
-                          <div :class="['level-option', { active, selected }]">
+                          <div :class="['level-option', { active, selected, disabled: option.disabled }]">
                             <span class="level-name">{{ option.label }}</span>
                             <span class="level-desc">{{ option.desc }}</span>
                           </div>
@@ -587,7 +588,7 @@
                       </ListboxOptions>
                     </div>
                   </Listbox>
-                  <span class="field-hint">{{ t('components.main.form.hints.upstreamProtocol') }}</span>
+                  <span class="field-hint">{{ upstreamProtocolHint }}</span>
                 </div>
 
                 <div v-if="modalState.tabId === 'codex'" class="form-field switch-field">
@@ -597,7 +598,7 @@
                       <input
                         type="checkbox"
                         v-model="modalState.form.codexReasoningContinueEnabled"
-                        :disabled="modalState.form.upstreamProtocol === 'openai_chat'"
+                        :disabled="isCodexChatProtocol"
                       />
                       <span></span>
                     </label>
@@ -616,7 +617,7 @@
                         type="checkbox"
                         v-model="modalState.form.codexReasoningContinueLogEnabled"
                         :disabled="
-                          modalState.form.upstreamProtocol === 'openai_chat' ||
+                          isCodexChatProtocol ||
                           !modalState.form.codexReasoningContinueEnabled
                         "
                       />
@@ -625,7 +626,7 @@
                     <span class="switch-text">
                       {{
                         modalState.form.codexReasoningContinueEnabled &&
-                        modalState.form.upstreamProtocol !== 'openai_chat' &&
+                        !isCodexChatProtocol &&
                         modalState.form.codexReasoningContinueLogEnabled
                           ? t('components.main.form.switch.on')
                           : t('components.main.form.switch.off')
@@ -2613,14 +2614,49 @@ const authTypeOptions = computed(() => [
 ])
 
 // 上游协议类型选项
-const upstreamProtocolOptions = computed(() => [
+const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'deepseekcode', 'others'])
+const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
+const isCodexChatProtocol = computed(() =>
+  modalState.tabId === 'codex' && modalState.form.upstreamProtocol === 'openai_chat'
+)
+type UpstreamProtocolOption = {
+  value: string
+  label: string
+  desc: string
+  disabled?: boolean
+}
+
+const upstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => [
   { value: 'auto', label: t('components.main.form.upstreamProtocol.auto'), desc: t('components.main.form.upstreamProtocol.autoDesc') },
   { value: 'anthropic', label: t('components.main.form.upstreamProtocol.anthropic'), desc: t('components.main.form.upstreamProtocol.anthropicDesc') },
   { value: 'openai_chat', label: t('components.main.form.upstreamProtocol.openaiChat'), desc: t('components.main.form.upstreamProtocol.openaiChatDesc') },
 ])
+const effectiveUpstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => {
+  if (modalState.tabId !== 'codex') return upstreamProtocolOptions.value
+  return [
+    {
+      value: 'auto',
+      label: t('components.main.form.upstreamProtocol.codexResponses'),
+      desc: t('components.main.form.upstreamProtocol.codexResponsesDesc'),
+    },
+    {
+      value: 'openai_chat',
+      label: t('components.main.form.upstreamProtocol.openaiChat'),
+      desc: t('components.main.form.upstreamProtocol.codexOpenAIChatDesc'),
+    },
+  ]
+})
+const upstreamProtocolHint = computed(() =>
+  modalState.tabId === 'codex'
+    ? t('components.main.form.hints.upstreamProtocolCodex')
+    : t('components.main.form.hints.upstreamProtocol')
+)
 
 const resolveEffectiveAuthType = () =>
   customAuthHeader.value.trim() || selectedAuthType.value || getDefaultAuthType(modalState.tabId)
+
+const resolveSubmittedUpstreamProtocol = () =>
+  showUpstreamProtocolField.value ? modalState.form.upstreamProtocol || 'auto' : 'auto'
 
 const editingCard = ref<AutomationCard | null>(null)
 const confirmState = reactive({ open: false, card: null as AutomationCard | null, tabId: tabs[0].id as ProviderTab })
@@ -2722,6 +2758,7 @@ const submitModal = async (): Promise<boolean> => {
     modalState.errors.apiUrl = t('components.main.form.errors.invalidUrl')
     return false
   }
+  const submittedUpstreamProtocol = resolveSubmittedUpstreamProtocol()
 
   if (editingCard.value) {
     // 若 name 发生变化,先走独立 RenameProvider RPC(后端事务改名 request_log/blacklist/health_check_history 并写 48h alias)。
@@ -2763,13 +2800,13 @@ const submitModal = async (): Promise<boolean> => {
       modelMapping: modalState.form.modelMapping || {},
       cliConfig: modalState.form.cliConfig || {},
       apiEndpoint: modalState.form.apiEndpoint || '',
-      upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
+      upstreamProtocol: submittedUpstreamProtocol,
       codexReasoningContinueEnabled:
-        modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
+        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueEnabled
           : false,
       codexReasoningContinueLogEnabled:
-        modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
+        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueLogEnabled
           : false,
       // 可用性监控配置（新）
@@ -2813,13 +2850,13 @@ const submitModal = async (): Promise<boolean> => {
       modelMapping: modalState.form.modelMapping || {},
       cliConfig: modalState.form.cliConfig || {},
       apiEndpoint: modalState.form.apiEndpoint || '',
-      upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
+      upstreamProtocol: submittedUpstreamProtocol,
       codexReasoningContinueEnabled:
-        modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
+        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueEnabled
           : false,
       codexReasoningContinueLogEnabled:
-        modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
+        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueLogEnabled
           : false,
       // 可用性监控配置（新）
@@ -3590,6 +3627,16 @@ const confirmDeleteCliTool = async () => {
   background: rgba(10, 132, 255, 0.12); /* fallback for old WebKit */
   background: color-mix(in srgb, var(--mac-accent) 12%, transparent);
   font-weight: 500;
+}
+
+.level-option.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.level-option.disabled:hover,
+.level-option.disabled.active {
+  background: transparent;
 }
 
 .level-option .level-name {

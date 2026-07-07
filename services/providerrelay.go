@@ -57,6 +57,7 @@ type ProviderRelayService struct {
 	lastUsedMu          sync.RWMutex                 // 保护 lastUsed 的锁
 	rrMu                sync.Mutex                   // 轮询状态锁
 	rrLastStart         map[string]string            // 轮询状态：key="platform:level" → value=上次起始 Provider Name
+	codexChatHistory    *CodexChatBridgeHistoryStore
 }
 
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
@@ -82,7 +83,8 @@ func NewProviderRelayService(providerService *ProviderService, geminiService *Ge
 			"codex":  nil,
 			"gemini": nil,
 		},
-		rrLastStart: make(map[string]string),
+		rrLastStart:      make(map[string]string),
+		codexChatHistory: NewCodexChatBridgeHistoryStore(128),
 	}
 }
 
@@ -340,6 +342,13 @@ func (prs *ProviderRelayService) Addr() string {
 func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/v1/messages", prs.proxyHandler("claude", "/v1/messages"))
 	router.POST("/responses", prs.proxyHandler("codex", "/responses"))
+	router.POST("/v1/responses", prs.proxyHandler("codex", "/v1/responses"))
+	router.POST("/v1/v1/responses", prs.proxyHandler("codex", "/v1/responses"))
+	router.POST("/codex/v1/responses", prs.proxyHandler("codex", "/v1/responses"))
+	router.POST("/responses/compact", prs.proxyHandler("codex", "/responses/compact"))
+	router.POST("/v1/responses/compact", prs.proxyHandler("codex", "/v1/responses/compact"))
+	router.POST("/v1/v1/responses/compact", prs.proxyHandler("codex", "/v1/responses/compact"))
+	router.POST("/codex/v1/responses/compact", prs.proxyHandler("codex", "/v1/responses/compact"))
 
 	// /v1/models 端点（OpenAI-compatible API）
 	// 支持 Claude 和 Codex 平台
@@ -768,9 +777,6 @@ func (prs *ProviderRelayService) forwardProviderRequest(
 	isStream bool,
 	model string,
 ) (bool, error) {
-	if kind == "codex" && shouldUseCodexContinue(provider, endpoint, bodyBytes, isStream) {
-		return prs.forwardCodexResponsesWithContinue(c, provider, endpoint, query, clientHeaders, bodyBytes, model)
-	}
 	return prs.forwardRequest(c, kind, provider, endpoint, query, clientHeaders, bodyBytes, isStream, model)
 }
 
@@ -785,43 +791,17 @@ func (prs *ProviderRelayService) forwardRequest(
 	isStream bool,
 	model string,
 ) (bool, error) {
-	targetURL := joinURL(provider.APIURL, endpoint)
-	headers := cloneMap(clientHeaders)
-
-	// ========== 协议转换检测 ==========
-	upstreamProtocol := provider.ResolveUpstreamProtocol(endpoint)
-	var sseConverter *OpenAIToAnthropicSSEConverter
-	var convertInfo ConvertInfo
-
-	// 如果上游是 OpenAI Chat，需要转换请求体
-	if upstreamProtocol == UpstreamProtocolOpenAIChat {
-		fmt.Printf("[协议转换] Provider %s 使用 OpenAI Chat 协议\n", provider.Name)
-
-		// 转换请求体
-		opts := DefaultConvertOptions()
-		convertedBody, info, err := ConvertAnthropicToOpenAI(bodyBytes, opts)
-		if err != nil {
-			// 客户端请求被拒绝（不支持的功能）
-			return false, err
-		}
-		bodyBytes = convertedBody
-		convertInfo = info
-
-		// 打印转换信息
-		if len(info.DroppedMetadataKeys) > 0 {
-			fmt.Printf("[协议转换] 丢弃 metadata keys: %v\n", info.DroppedMetadataKeys)
-		}
-		if len(info.DroppedFields) > 0 {
-			fmt.Printf("[协议转换] 丢弃顶层字段: %v\n", info.DroppedFields)
-		}
-		if info.MappedUser != "" {
-			fmt.Printf("[协议转换] metadata.user_id -> user: %s\n", info.MappedUser)
-		}
-
-		// 创建 SSE 转换器（用于响应处理）
-		sseConverter = NewOpenAIToAnthropicSSEConverter(model)
+	execution, err := prs.newRelayForwardExecution(kind, provider, endpoint, bodyBytes, isStream, model)
+	if err != nil {
+		return false, err
 	}
-	_ = convertInfo // 避免未使用警告
+	if execution.UseCodexContinue {
+		return prs.forwardCodexResponsesWithContinue(c, provider, endpoint, query, clientHeaders, bodyBytes, model)
+	}
+	headers := cloneMap(clientHeaders)
+	bodyBytes = execution.BodyBytes
+	targetURL := joinURL(provider.APIURL, execution.TargetEndpoint)
+	upstreamProtocol := execution.UpstreamProtocol
 
 	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
 	// 先清除客户端携带的 x-api-key（避免 DeepSeekCode 等 CLI 的占位 key 干扰）
@@ -922,7 +902,6 @@ func (prs *ProviderRelayService) forwardRequest(
 		SetRetry(1, 500*time.Millisecond).
 		SetTimeout(32 * time.Hour) // 32小时超时，适配超大型项目分析
 	proxyConfig := ProxyConfig{}
-	var err error
 	if prs.appSettings != nil {
 		proxyConfig, err = prs.appSettings.GetProviderProxyConfig(provider.ProxyEnabled)
 		if err != nil {
@@ -991,13 +970,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	// 状态码为 0 且无错误：当作成功处理
 	if status == 0 {
 		fmt.Printf("[WARN] Provider %s 返回状态码 0，但无错误，当作成功处理\n", provider.Name)
-		var copyErr error
-		if sseConverter != nil && isStream {
-			// 使用协议转换 Hook
-			_, copyErr = resp.ToHttpResponseWriter(c.Writer, protocolConvertHook(sseConverter, kind, requestLog))
-		} else {
-			_, copyErr = resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, kind, requestLog))
-		}
+		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, requestLog)
 		if copyErr != nil {
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
@@ -1005,13 +978,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	}
 
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
-		var copyErr error
-		if sseConverter != nil && isStream {
-			// 使用协议转换 Hook
-			_, copyErr = resp.ToHttpResponseWriter(c.Writer, protocolConvertHook(sseConverter, kind, requestLog))
-		} else {
-			_, copyErr = resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, kind, requestLog))
-		}
+		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, requestLog)
 		if copyErr != nil {
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
@@ -1353,12 +1320,14 @@ func maxIntInto(dst *int, candidate int) {
 
 // codex usage parser(OpenAI Responses API)
 func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
-	usage.InputTokens += int(gjson.Get(data, "response.usage.input_tokens").Int())
-	usage.OutputTokens += int(gjson.Get(data, "response.usage.output_tokens").Int())
-	usage.CacheReadTokens += int(gjson.Get(data, "response.usage.input_tokens_details.cached_tokens").Int())
-	usage.ReasoningTokens += int(gjson.Get(data, "response.usage.output_tokens_details.reasoning_tokens").Int())
+	for _, prefix := range []string{"response.usage", "usage"} {
+		usage.InputTokens += int(gjson.Get(data, prefix+".input_tokens").Int())
+		usage.OutputTokens += int(gjson.Get(data, prefix+".output_tokens").Int())
+		usage.CacheReadTokens += int(gjson.Get(data, prefix+".input_tokens_details.cached_tokens").Int())
+		usage.ReasoningTokens += int(gjson.Get(data, prefix+".output_tokens_details.reasoning_tokens").Int())
+	}
 	// service_tier 可能在 response.service_tier 或 response.usage.service_tier,两路径都尝试
-	for _, path := range []string{"response.service_tier", "response.usage.service_tier"} {
+	for _, path := range []string{"response.service_tier", "response.usage.service_tier", "service_tier", "usage.service_tier"} {
 		if rawTier := gjson.Get(data, path).String(); strings.TrimSpace(rawTier) != "" {
 			usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier, warnUnknownTier))
 			break

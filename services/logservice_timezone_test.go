@@ -51,8 +51,9 @@ func TestListRequestLogsByRangeAppliesUpperBoundBeforeLimit(t *testing.T) {
 		t.Fatalf("获取数据库失败: %v", err)
 	}
 
-	todayStart := startOfDay(nowInBeijing())
-	insertLogFixture(t, db, "InsideToday", todayStart.Add(time.Hour))
+	now := nowInBeijing()
+	todayStart := startOfDay(now)
+	insertLogFixture(t, db, "InsideToday", todayStart.Add(now.Sub(todayStart)/2))
 	insertLogFixture(t, db, "FutureOutsideToday", todayStart.Add(25*time.Hour))
 
 	logs, err := NewLogService(nil).ListRequestLogsByRange("", "", statsRangeToday, 1)
