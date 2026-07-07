@@ -427,7 +427,8 @@
           "connectivityTestModel": "测试模型",
           "connectivityTestEndpoint": "测试端点",
           "connectivityAuthType": "认证方式",
-          "codexReasoningContinue": "Codex reasoning 自动续写"
+          "codexReasoningContinue": "Codex reasoning 自动续写",
+          "codexReasoningContinueLog": "控制台日志"
         },
         "placeholders": {
           "name": "例如：AICoding.sh",
@@ -460,7 +461,8 @@
           "connectivityTestModel": "选择用于连通性测试的模型，留空则使用平台默认模型",
           "connectivityTestEndpoint": "选择或输入 API 端点路径",
           "connectivityAuthType": "默认使用 Bearer。Anthropic 官方 API 请选择 X-API-Key。如需自定义请在下方输入 Header 名称。",
-          "codexReasoningContinue": "仅对 Codex 原生 Responses 流式请求生效。启用后检测到 reasoning 截断时会继续请求同一供应商，可能增加 token 消耗。"
+          "codexReasoningContinue": "仅对 Codex 原生 Responses 流式请求生效。启用后检测到 reasoning 截断时会继续请求同一供应商，可能增加 token 消耗。",
+          "codexReasoningContinueLog": "开启后在控制台输出自动续写触发、轮次、截断判断和停止原因；不会输出请求体、响应体或 encrypted reasoning 内容。"
         },
         "actions": {
           "cancel": "取消",

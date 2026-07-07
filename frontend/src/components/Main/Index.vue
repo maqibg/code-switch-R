@@ -608,6 +608,33 @@
                   <span class="field-hint">{{ t('components.main.form.hints.codexReasoningContinue') }}</span>
                 </div>
 
+                <div v-if="modalState.tabId === 'codex'" class="form-field switch-field">
+                  <span>{{ t('components.main.form.labels.codexReasoningContinueLog') }}</span>
+                  <div class="switch-inline">
+                    <label class="mac-switch">
+                      <input
+                        type="checkbox"
+                        v-model="modalState.form.codexReasoningContinueLogEnabled"
+                        :disabled="
+                          modalState.form.upstreamProtocol === 'openai_chat' ||
+                          !modalState.form.codexReasoningContinueEnabled
+                        "
+                      />
+                      <span></span>
+                    </label>
+                    <span class="switch-text">
+                      {{
+                        modalState.form.codexReasoningContinueEnabled &&
+                        modalState.form.upstreamProtocol !== 'openai_chat' &&
+                        modalState.form.codexReasoningContinueLogEnabled
+                          ? t('components.main.form.switch.on')
+                          : t('components.main.form.switch.off')
+                      }}
+                    </span>
+                  </div>
+                  <span class="field-hint">{{ t('components.main.form.hints.codexReasoningContinueLog') }}</span>
+                </div>
+
                 <!-- 认证方式 -->
                 <div class="form-field">
                   <span>{{ t('components.main.form.labels.connectivityAuthType') }}</span>
@@ -1582,6 +1609,8 @@ const serializeProviders = (providers: AutomationCard[]) =>
     // 保留认证方式配置（已从废弃字段升级为活跃字段）
     connectivityAuthType: provider.connectivityAuthType || '',
     codexReasoningContinueEnabled: !!provider.codexReasoningContinueEnabled,
+    codexReasoningContinueLogEnabled:
+      provider.codexReasoningContinueLogEnabled ?? true,
   }))
 
 // 生成 custom CLI 工具的 provider kind（后端需要 "custom:{toolId}" 格式）
@@ -2482,6 +2511,7 @@ type VendorForm = {
   // 上游协议类型
   upstreamProtocol?: string
   codexReasoningContinueEnabled?: boolean
+  codexReasoningContinueLogEnabled?: boolean
 }
 
 const iconOptions = Object.keys(lobeIcons).sort((a, b) => a.localeCompare(b))
@@ -2510,6 +2540,7 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   apiEndpoint: '', // API 端点（可选）
   upstreamProtocol: 'auto', // 上游协议类型（anthropic/openai_chat/auto）
   codexReasoningContinueEnabled: false,
+  codexReasoningContinueLogEnabled: true,
   // 可用性监控配置（新）
   availabilityMonitorEnabled: false,
   connectivityAutoBlacklist: false,
@@ -2626,6 +2657,8 @@ const openEditModal = (card: AutomationCard) => {
     apiEndpoint: card.apiEndpoint || '',
     upstreamProtocol: card.upstreamProtocol || 'auto',
     codexReasoningContinueEnabled: !!card.codexReasoningContinueEnabled,
+    codexReasoningContinueLogEnabled:
+      card.codexReasoningContinueLogEnabled ?? true,
     // 可用性监控配置（新）- 兼容从旧字段迁移
     availabilityMonitorEnabled:
       card.availabilityMonitorEnabled ?? card.connectivityCheck ?? false,
@@ -2735,6 +2768,10 @@ const submitModal = async (): Promise<boolean> => {
         modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueEnabled
           : false,
+      codexReasoningContinueLogEnabled:
+        modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
+          ? !!modalState.form.codexReasoningContinueLogEnabled
+          : false,
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
       connectivityAutoBlacklist: !!modalState.form.connectivityAutoBlacklist,
@@ -2780,6 +2817,10 @@ const submitModal = async (): Promise<boolean> => {
       codexReasoningContinueEnabled:
         modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueEnabled
+          : false,
+      codexReasoningContinueLogEnabled:
+        modalState.tabId === 'codex' && modalState.form.upstreamProtocol !== 'openai_chat'
+          ? !!modalState.form.codexReasoningContinueLogEnabled
           : false,
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,

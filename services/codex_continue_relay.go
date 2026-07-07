@@ -22,7 +22,7 @@ func (prs *ProviderRelayService) forwardCodexResponsesWithContinue(
 	model string,
 ) (bool, error) {
 	config := defaultCodexContinueConfig()
-	traceID := nextCodexContinueTraceID()
+	traceID := nextCodexContinueTraceID(provider)
 	logCodexContinue("INFO", traceID, "触发 reasoning 自动续写 | provider=%s | model=%s | endpoint=%s", provider.Name, model, endpoint)
 	initialBody, baseBody, err := prepareCodexInitialPayload(bodyBytes)
 	if err != nil {

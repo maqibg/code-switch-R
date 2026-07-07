@@ -74,6 +74,9 @@ type Provider struct {
 	// Codex reasoning 自动续写 - 仅对 Codex 原生 Responses 流式请求生效
 	CodexReasoningContinueEnabled bool `json:"codexReasoningContinueEnabled,omitempty"`
 
+	// Codex reasoning 自动续写控制台日志 - nil 时保持兼容，默认输出日志
+	CodexReasoningContinueLogEnabled *bool `json:"codexReasoningContinueLogEnabled,omitempty"`
+
 	// ========== 旧字段（已废弃，仅用于读取迁移） ==========
 	// 这些字段在保存时不再写入，但读取时会自动迁移到新字段
 

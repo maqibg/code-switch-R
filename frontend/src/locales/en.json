@@ -426,7 +426,8 @@
           "connectivityTestModel": "Test Model",
           "connectivityTestEndpoint": "Test Endpoint",
           "connectivityAuthType": "Auth Method",
-          "codexReasoningContinue": "Codex reasoning auto-continue"
+          "codexReasoningContinue": "Codex reasoning auto-continue",
+          "codexReasoningContinueLog": "Console logs"
         },
         "placeholders": {
           "name": "e.g. AICoding.sh",
@@ -459,7 +460,8 @@
           "connectivityTestModel": "Select a model for connectivity testing, or leave empty to use platform default",
           "connectivityTestEndpoint": "Select or enter API endpoint path",
           "connectivityAuthType": "Default is Bearer. Use X-API-Key for Anthropic-style APIs. Enter custom header name in the text field if needed.",
-          "codexReasoningContinue": "Only applies to native Codex Responses streaming requests. When enabled, the proxy continues with the same provider after detecting reasoning truncation, which may increase token usage."
+          "codexReasoningContinue": "Only applies to native Codex Responses streaming requests. When enabled, the proxy continues with the same provider after detecting reasoning truncation, which may increase token usage.",
+          "codexReasoningContinueLog": "When enabled, the console shows auto-continue trigger, round, truncation, and stop-reason diagnostics without logging request bodies, response bodies, or encrypted reasoning content."
         },
         "actions": {
           "cancel": "Cancel",

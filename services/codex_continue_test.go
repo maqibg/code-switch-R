@@ -94,6 +94,20 @@ func TestShouldUseCodexContinueGate(t *testing.T) {
 	}
 }
 
+func TestCodexContinueLogEnabledDefaults(t *testing.T) {
+	if !codexContinueLogEnabled(Provider{}) {
+		t.Fatal("expected missing log setting to keep console logs enabled")
+	}
+	disabled := false
+	if codexContinueLogEnabled(Provider{CodexReasoningContinueLogEnabled: &disabled}) {
+		t.Fatal("expected explicit false to disable console logs")
+	}
+	enabled := true
+	if !codexContinueLogEnabled(Provider{CodexReasoningContinueLogEnabled: &enabled}) {
+		t.Fatal("expected explicit true to enable console logs")
+	}
+}
+
 func TestCodexSSEParserHandlesSplitChunksAndDone(t *testing.T) {
 	parser := &codexSSEParser{}
 	part1 := []byte("event: response.output_text.delta\ndata: {\"type\":\"response.output")

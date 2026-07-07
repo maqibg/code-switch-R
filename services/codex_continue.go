@@ -32,17 +32,26 @@ func defaultCodexContinueConfig() codexContinueConfig {
 	}
 }
 
-func nextCodexContinueTraceID() string {
+func nextCodexContinueTraceID(provider Provider) string {
+	if !codexContinueLogEnabled(provider) {
+		return ""
+	}
 	return fmt.Sprintf("ccx-%d", codexContinueTraceSeq.Add(1))
 }
 
+func codexContinueLogEnabled(provider Provider) bool {
+	if provider.CodexReasoningContinueLogEnabled == nil {
+		return true
+	}
+	return *provider.CodexReasoningContinueLogEnabled
+}
+
 func logCodexContinue(level string, traceID string, format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
-	if traceID != "" {
-		fmt.Printf("[CodexContinue][%s] trace=%s | %s\n", level, traceID, message)
+	if traceID == "" {
 		return
 	}
-	fmt.Printf("[CodexContinue][%s] %s\n", level, message)
+	message := fmt.Sprintf(format, args...)
+	fmt.Printf("[CodexContinue][%s] trace=%s | %s\n", level, traceID, message)
 }
 
 func codexContinueErrorSummary(err error) string {

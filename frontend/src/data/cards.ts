@@ -45,6 +45,8 @@ export type AutomationCard = {
   upstreamProtocol?: string
   // Codex reasoning 自动续写，仅对 Codex 原生 Responses 流式请求生效
   codexReasoningContinueEnabled?: boolean
+  // Codex reasoning 自动续写控制台日志
+  codexReasoningContinueLogEnabled?: boolean
 }
 
 export const automationCardGroups: Record<'claude' | 'codex', AutomationCard[]> = {
