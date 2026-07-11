@@ -1,3 +1,15 @@
+# Code Switch v2.6.51
+
+## 更新亮点
+- **统一协议层与 Codex Chat bridge**：重构协议规划与转发执行路径，Codex 供应商在选择 OpenAI Chat 上游时可走 Responses→Chat Completions bridge，支持文本、function tool call / tool result 回传闭环，以及 `previous_response_id` 历史续聊。
+- **流式 bridge 完成态对齐**：Chat SSE 转换在 usage 迟到时延迟发出 `response.completed`，并正确回填 output text、tool_calls 与历史消息，避免半截响应。
+
+## 修复
+- 明确 `function_call` / `function_call_output` 到 Chat messages 的转换边界；不支持的 input 类型继续显式失败，不静默降级。
+- 补齐 bridge 与协议转发相关单测，覆盖工具调用往返、历史存储和完成事件时序。
+
+---
+
 # Code Switch v2.6.50
 
 ## 更新亮点

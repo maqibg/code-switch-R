@@ -19,6 +19,7 @@ type CodexChatSSEConverter struct {
 	contentCompleted      bool
 	messageOutputIndex    int
 	messageOutputIndexSet bool
+	finishPending         bool
 	responseDone          bool
 	usage                 map[string]any
 	outputText            strings.Builder
@@ -82,15 +83,20 @@ func (c *CodexChatSSEConverter) convertChatDelta(body map[string]any) string {
 		})
 	}
 	c.writeToolCallDeltas(&out, firstChatDeltaToolCalls(body))
+	if finishReason == "" && c.finishPending && hasChatUsage(body) {
+		out.WriteString(c.finishResponse())
+		return out.String()
+	}
 	if finishReason != "" {
 		if c.contentStarted || len(c.toolOrder) == 0 {
 			c.writeDoneEvents(&out)
 		}
 		c.writeToolCallDoneEvents(&out)
-		writeCodexSSE(&out, "response.completed", map[string]any{
-			"type": "response.completed", "response": c.responseSnapshot("completed"),
-		})
-		c.responseDone = true
+		if hasChatUsage(body) {
+			out.WriteString(c.finishResponse())
+		} else {
+			c.finishPending = true
+		}
 	}
 	return out.String()
 }
@@ -107,6 +113,24 @@ func (c *CodexChatSSEConverter) OutputText() string {
 		return ""
 	}
 	return c.outputText.String()
+}
+
+func (c *CodexChatSSEConverter) AssistantChatMessage() map[string]any {
+	if c == nil {
+		return nil
+	}
+	message := map[string]any{"role": "assistant"}
+	if text := c.outputText.String(); text != "" {
+		message["content"] = text
+	} else if len(c.toolOrder) > 0 {
+		message["content"] = nil
+	} else {
+		message["content"] = ""
+	}
+	if toolCalls := c.chatToolCalls(); len(toolCalls) > 0 {
+		message["tool_calls"] = toolCalls
+	}
+	return message
 }
 
 func (c *CodexChatSSEConverter) applyChunkMetadata(body map[string]any) {
@@ -157,16 +181,16 @@ func (c *CodexChatSSEConverter) writeDoneEvents(out *strings.Builder) {
 	if c.contentCompleted {
 		return
 	}
+	text := c.outputText.String()
 	writeCodexSSE(out, "response.output_text.done", map[string]any{
-		"type": "response.output_text.done", "item_id": c.itemID, "output_index": c.messageOutputIndex, "content_index": 0, "text": "",
+		"type": "response.output_text.done", "item_id": c.itemID, "output_index": c.messageOutputIndex, "content_index": 0, "text": text,
 	})
 	writeCodexSSE(out, "response.content_part.done", map[string]any{
 		"type": "response.content_part.done", "item_id": c.itemID, "output_index": c.messageOutputIndex, "content_index": 0,
-		"part": map[string]any{"type": "output_text", "text": "", "annotations": []any{}},
+		"part": codexOutputTextContentBlock(text),
 	})
 	writeCodexSSE(out, "response.output_item.done", map[string]any{
-		"type": "response.output_item.done", "output_index": c.messageOutputIndex,
-		"item": map[string]any{"id": c.itemID, "type": "message", "status": "completed", "role": "assistant", "content": []any{}},
+		"type": "response.output_item.done", "output_index": c.messageOutputIndex, "item": c.messageOutputItem("completed"),
 	})
 	c.contentCompleted = true
 }
@@ -181,8 +205,14 @@ func (c *CodexChatSSEConverter) finishResponse() string {
 	}
 	c.writeToolCallDoneEvents(&out)
 	writeCodexSSE(&out, "response.completed", map[string]any{"type": "response.completed", "response": c.responseSnapshot("completed")})
+	c.finishPending = false
 	c.responseDone = true
 	return out.String()
+}
+
+func hasChatUsage(body map[string]any) bool {
+	usage, ok := body["usage"].(map[string]any)
+	return ok && len(usage) > 0
 }
 
 func (c *CodexChatSSEConverter) nextOutputIndex() int {
@@ -200,7 +230,44 @@ func (c *CodexChatSSEConverter) nextOutputIndex() int {
 }
 
 func (c *CodexChatSSEConverter) responseSnapshot(status string) map[string]any {
-	return map[string]any{"id": c.responseID, "object": "response", "created_at": c.createdAt, "status": status, "model": c.model, "output": []any{}, "usage": c.usage}
+	return map[string]any{
+		"id": c.responseID, "object": "response", "created_at": c.createdAt,
+		"status": status, "model": c.model, "output": c.snapshotOutputItems(), "usage": c.usage,
+	}
+}
+
+func (c *CodexChatSSEConverter) snapshotOutputItems() []any {
+	output := make([]any, 0, len(c.toolOrder)+1)
+	if c.contentStarted || c.contentCompleted {
+		status := "in_progress"
+		if c.contentCompleted {
+			status = "completed"
+		}
+		output = append(output, c.messageOutputItem(status))
+	}
+	for _, index := range c.toolOrder {
+		tool := c.toolCalls[index]
+		if tool == nil || !tool.started {
+			continue
+		}
+		status := "in_progress"
+		if tool.done {
+			status = "completed"
+		}
+		output = append(output, c.toolCallItem(tool, status))
+	}
+	return output
+}
+
+func (c *CodexChatSSEConverter) messageOutputItem(status string) map[string]any {
+	return map[string]any{
+		"id": c.itemID, "type": "message", "status": status, "role": "assistant",
+		"content": []any{codexOutputTextContentBlock(c.outputText.String())},
+	}
+}
+
+func codexOutputTextContentBlock(text string) map[string]any {
+	return map[string]any{"type": "output_text", "text": text, "annotations": []any{}}
 }
 
 func writeCodexSSE(out *strings.Builder, event string, payload map[string]any) {

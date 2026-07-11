@@ -124,13 +124,18 @@ func codexChatBridgeHook(converter *CodexChatSSEConverter, requestLog *ReqeustLo
 }
 
 func (prs *ProviderRelayService) writeCodexChatBridgeResponse(c *gin.Context, resp *xrequest.Response, requestLog *ReqeustLog, chatMessages []map[string]any) error {
-	converted, err := ConvertOpenAIChatToCodexResponse([]byte(resp.String()))
+	chatBody := []byte(resp.String())
+	assistantMessage := assistantChatMessageFromChatResponse(chatBody)
+	converted, err := ConvertOpenAIChatToCodexResponse(chatBody)
 	if err != nil {
 		return err
 	}
 	parseEventPayload(string(converted), CodexParseTokenUsageFromResponse, requestLog)
 	if responseID, outputText := codexResponseIDAndText(converted); responseID != "" {
-		prs.codexChatHistory.Store(responseID, appendAssistantChatMessage(chatMessages, outputText))
+		if len(assistantMessage) == 0 {
+			assistantMessage = map[string]any{"role": "assistant", "content": outputText}
+		}
+		prs.codexChatHistory.Store(responseID, appendAssistantChatMessageFromChat(chatMessages, assistantMessage))
 	}
 	copyResponseHeaders(c, resp)
 	c.Data(resp.StatusCode(), "application/json", converted)

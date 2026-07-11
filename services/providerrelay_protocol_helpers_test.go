@@ -29,6 +29,9 @@ func newCodexRouteTestRouterWithProvider(t *testing.T, handler http.HandlerFunc,
 	if overrides.UpstreamProtocol != "" {
 		provider.UpstreamProtocol = overrides.UpstreamProtocol
 	}
+	if overrides.APIEndpoint != "" {
+		provider.APIEndpoint = overrides.APIEndpoint
+	}
 	providerService := NewProviderService()
 	if err := providerService.SaveProviders("codex", []Provider{provider}); err != nil {
 		t.Fatalf("保存 Codex provider 配置失败: %v", err)
@@ -58,6 +61,9 @@ func newProviderRouteTestRouterWithProvider(t *testing.T, kind string, handler h
 	if overrides.UpstreamProtocol != "" {
 		provider.UpstreamProtocol = overrides.UpstreamProtocol
 	}
+	if overrides.APIEndpoint != "" {
+		provider.APIEndpoint = overrides.APIEndpoint
+	}
 	providerService := NewProviderService()
 	if err := providerService.SaveProviders(kind, []Provider{provider}); err != nil {
 		t.Fatalf("保存 %s provider 配置失败: %v", kind, err)
@@ -80,6 +86,78 @@ func writeCodexRouteTestResponse(w http.ResponseWriter) {
 		"id": "resp_test", "model": "gpt-5",
 		"usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
 	})
+}
+
+func writeChatToolCallRouteTestResponse(w http.ResponseWriter, id string, callID string) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":      id,
+		"created": int64(1780000000),
+		"model":   "gpt-5",
+		"choices": []map[string]any{{
+			"message": map[string]any{
+				"role":    "assistant",
+				"content": nil,
+				"tool_calls": []map[string]any{{
+					"id":   callID,
+					"type": "function",
+					"function": map[string]any{
+						"name":      "lookup",
+						"arguments": `{"q":"x"}`,
+					},
+				}},
+			},
+			"finish_reason": "tool_calls",
+		}},
+		"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+	})
+}
+
+func writeChatMessageRouteTestResponse(w http.ResponseWriter, id string, content string) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":      id,
+		"created": int64(1780000000),
+		"model":   "gpt-5",
+		"choices": []map[string]any{{
+			"message":       map[string]any{"role": "assistant", "content": content},
+			"finish_reason": "stop",
+		}},
+		"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+	})
+}
+
+func writeChatStreamRouteTestResponse(w http.ResponseWriter, id string, content string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`data: {"id":"` + id + `","created":1780000000,"model":"gpt-5","choices":[{"delta":{"role":"assistant","content":"` + content + `"}}]}` + "\n\n"))
+	_, _ = w.Write([]byte(`data: {"id":"` + id + `","created":1780000000,"model":"gpt-5","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}` + "\n\n"))
+	_, _ = w.Write([]byte("data: [DONE]\n\n"))
+}
+
+func assertToolRoundTripMessages(t *testing.T, requests []map[string]any) {
+	t.Helper()
+	if len(requests) != 2 {
+		t.Fatalf("上游请求数量期望 2，实际 %d", len(requests))
+	}
+	messages, _ := requests[1]["messages"].([]any)
+	if len(messages) != 3 {
+		t.Fatalf("第二轮 messages 数量期望 3，实际 %d", len(messages))
+	}
+	assistant, _ := messages[1].(map[string]any)
+	toolCalls, _ := assistant["tool_calls"].([]any)
+	if len(toolCalls) == 0 {
+		t.Fatalf("第二轮 assistant 缺少 tool_calls，实际 %#v", assistant)
+	}
+	toolCall, _ := toolCalls[0].(map[string]any)
+	toolMessage, _ := messages[2].(map[string]any)
+	if assistant["role"] != "assistant" || toolCall["id"] != "call_1" {
+		t.Fatalf("第二轮应包含上一轮 assistant tool_calls，实际 %#v", assistant)
+	}
+	if toolMessage["role"] != "tool" || toolMessage["tool_call_id"] != "call_1" {
+		t.Fatalf("第二轮应包含 tool result message，实际 %#v", toolMessage)
+	}
+	if toolMessage["content"] != "tool result" {
+		t.Fatalf("tool result content 期望 tool result，实际 %#v", toolMessage["content"])
+	}
 }
 
 func jsonPathString(t *testing.T, body []byte, path string) string {

@@ -80,6 +80,32 @@ func chatMessageTextContent(message map[string]any) (string, error) {
 	return "", NewClientRequestRejectedError("OpenAI Chat 响应 content 必须是 string")
 }
 
+func assistantChatMessageFromChatResponse(bodyBytes []byte) map[string]any {
+	var body map[string]any
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		return nil
+	}
+	return assistantChatMessageFromChatMessage(firstChatChoiceMessage(body["choices"]))
+}
+
+func assistantChatMessageFromChatMessage(message map[string]any) map[string]any {
+	if message == nil {
+		return nil
+	}
+	assistant := map[string]any{"role": "assistant"}
+	if content, ok := textFromAny(message["content"]); ok {
+		assistant["content"] = content
+	} else if _, ok := message["tool_calls"].([]any); ok {
+		assistant["content"] = nil
+	} else {
+		assistant["content"] = ""
+	}
+	if toolCalls, ok := message["tool_calls"].([]any); ok && len(toolCalls) > 0 {
+		assistant["tool_calls"] = cloneJSONValueForBridge(toolCalls)
+	}
+	return assistant
+}
+
 func chatUsageToResponsesUsage(value any) map[string]any {
 	usage, _ := value.(map[string]any)
 	inputTokens := int64FromAny(usage["prompt_tokens"])

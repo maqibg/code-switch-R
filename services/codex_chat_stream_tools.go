@@ -114,3 +114,25 @@ func (c *CodexChatSSEConverter) toolCallItem(tool *codexStreamToolCall, status s
 		"arguments": tool.arguments.String(),
 	}
 }
+
+func (c *CodexChatSSEConverter) chatToolCalls() []any {
+	if c == nil || len(c.toolOrder) == 0 {
+		return nil
+	}
+	items := make([]any, 0, len(c.toolOrder))
+	for _, index := range c.toolOrder {
+		tool := c.toolCalls[index]
+		if tool == nil || !tool.started {
+			continue
+		}
+		items = append(items, map[string]any{
+			"id":   tool.callID,
+			"type": "function",
+			"function": map[string]any{
+				"name":      tool.name,
+				"arguments": tool.arguments.String(),
+			},
+		})
+	}
+	return items
+}

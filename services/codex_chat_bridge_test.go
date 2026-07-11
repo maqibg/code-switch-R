@@ -74,6 +74,40 @@ func TestConvertCodexResponsesToOpenAIChatRejectsUnsupportedFeatures(t *testing.
 	}
 }
 
+func TestConvertCodexResponsesFunctionCallOutputToOpenAIChat(t *testing.T) {
+	history := []map[string]any{
+		{"role": "user", "content": "lookup"},
+		{
+			"role":    "assistant",
+			"content": nil,
+			"tool_calls": []any{map[string]any{
+				"id":   "call_1",
+				"type": "function",
+				"function": map[string]any{
+					"name":      "lookup",
+					"arguments": `{"q":"x"}`,
+				},
+			}},
+		},
+	}
+	converted, _, err := ConvertCodexResponsesToOpenAIChatWithHistory(
+		[]byte(`{"model":"gpt-5","previous_response_id":"chatcmpl_tool","input":[{"type":"function_call_output","call_id":"call_1","output":"result"}]}`),
+		history,
+	)
+	if err != nil {
+		t.Fatalf("转换 function_call_output 失败: %v", err)
+	}
+	if got := gjson.GetBytes(converted, "messages.2.role").String(); got != "tool" {
+		t.Fatalf("function_call_output 应转换为 tool message，实际 role=%s", got)
+	}
+	if got := gjson.GetBytes(converted, "messages.2.tool_call_id").String(); got != "call_1" {
+		t.Fatalf("tool_call_id 期望 call_1，实际 %s", got)
+	}
+	if got := gjson.GetBytes(converted, "messages.2.content").String(); got != "result" {
+		t.Fatalf("tool message content 期望 result，实际 %s", got)
+	}
+}
+
 func TestConvertCodexResponsesToOpenAIChatStream(t *testing.T) {
 	converted, err := ConvertCodexResponsesToOpenAIChat([]byte(`{"model":"gpt-5","stream":true,"input":"hello"}`))
 	if err != nil {
@@ -239,8 +273,11 @@ func TestCodexParseTokenUsageFromResponseReadsRootUsage(t *testing.T) {
 }
 
 func TestRewriteCodexResponsesEndpointToChat(t *testing.T) {
-	if got := rewriteCodexResponsesEndpointToChat("/v1/responses/compact?foo=bar"); got != "/chat/completions?foo=bar" {
-		t.Fatalf("rewrite 期望 /chat/completions?foo=bar，实际 %s", got)
+	if got := rewriteCodexResponsesEndpointToChat("/v1/responses/compact?foo=bar"); got != "/v1/chat/completions?foo=bar" {
+		t.Fatalf("rewrite 期望 /v1/chat/completions?foo=bar，实际 %s", got)
+	}
+	if got := rewriteCodexResponsesEndpointToChat("/proxy/chat/completions?foo=bar"); got != "/proxy/chat/completions?foo=bar" {
+		t.Fatalf("rewrite 应保留 Chat endpoint，实际 %s", got)
 	}
 }
 
@@ -260,6 +297,14 @@ func TestCodexChatSSEConverter(t *testing.T) {
 	if !strings.Contains(out, "event: response.completed") {
 		t.Fatalf("转换结果缺少 response.completed: %s", out)
 	}
+	done := sseEventPayload(t, out, "response.output_text.done")
+	if got := gjson.GetBytes(done, "text").String(); got != "hello" {
+		t.Fatalf("output_text.done text 期望 hello，实际 %s", got)
+	}
+	completed := sseEventPayload(t, out, "response.completed")
+	if got := gjson.GetBytes(completed, "response.output.0.content.0.text").String(); got != "hello" {
+		t.Fatalf("completed snapshot 文本期望 hello，实际 %s", got)
+	}
 
 	var usage ReqeustLog
 	parseEventPayload(out, CodexParseTokenUsageFromResponse, &usage)
@@ -268,11 +313,38 @@ func TestCodexChatSSEConverter(t *testing.T) {
 	}
 }
 
+func TestCodexChatSSEConverterUsageOnlyFinalChunk(t *testing.T) {
+	converter := NewCodexChatSSEConverter("gpt-5")
+	chunks := []string{
+		`data: {"id":"chatcmpl_usage","created":1780000000,"model":"gpt-5","choices":[{"delta":{"role":"assistant","content":"he"}}]}`,
+		`data: {"id":"chatcmpl_usage","created":1780000000,"model":"gpt-5","choices":[{"delta":{"content":"llo"}}]}`,
+		`data: {"id":"chatcmpl_usage","created":1780000000,"model":"gpt-5","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: {"id":"chatcmpl_usage","created":1780000000,"model":"gpt-5","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`,
+	}
+	out := ""
+	for _, chunk := range chunks {
+		out += converter.ProcessLine(chunk)
+	}
+	completed := sseEventPayload(t, out, "response.completed")
+	if got := gjson.GetBytes(completed, "response.output.0.content.0.text").String(); got != "hello" {
+		t.Fatalf("completed snapshot 文本期望 hello，实际 %s", got)
+	}
+	if got := gjson.GetBytes(completed, "response.usage.input_tokens").Int(); got != 2 {
+		t.Fatalf("completed usage input_tokens 期望 2，实际 %d", got)
+	}
+	var usage ReqeustLog
+	parseEventPayload(out, CodexParseTokenUsageFromResponse, &usage)
+	if usage.InputTokens != 2 || usage.OutputTokens != 1 {
+		t.Fatalf("usage-only final chunk 期望 input=2 output=1，实际 input=%d output=%d", usage.InputTokens, usage.OutputTokens)
+	}
+}
+
 func TestCodexChatSSEConverterToolCalls(t *testing.T) {
 	converter := NewCodexChatSSEConverter("gpt-5")
 	chunks := []string{
 		`data: {"id":"chatcmpl_2","created":1780000000,"model":"gpt-5","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"get_weather"}}]}}]}`,
 		`data: {"id":"chatcmpl_2","created":1780000000,"model":"gpt-5","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"Tokyo\"}"}}]},"finish_reason":"tool_calls"}]}`,
+		`data: [DONE]`,
 	}
 	out := ""
 	for _, chunk := range chunks {
@@ -292,4 +364,28 @@ func TestCodexChatSSEConverterToolCalls(t *testing.T) {
 			t.Fatalf("tool_calls SSE 缺少 %s: %s", item, out)
 		}
 	}
+	completed := sseEventPayload(t, out, "response.completed")
+	if got := gjson.GetBytes(completed, "response.output.0.type").String(); got != "function_call" {
+		t.Fatalf("completed snapshot 应包含 function_call，实际 %s", got)
+	}
+	if got := gjson.GetBytes(completed, "response.output.0.name").String(); got != "get_weather" {
+		t.Fatalf("completed snapshot function_call name 期望 get_weather，实际 %s", got)
+	}
+}
+
+func sseEventPayload(t *testing.T, output string, event string) []byte {
+	t.Helper()
+	blocks := strings.Split(output, "\n\n")
+	for _, block := range blocks {
+		if !strings.Contains(block, "event: "+event) {
+			continue
+		}
+		for _, line := range strings.Split(block, "\n") {
+			if strings.HasPrefix(line, "data: ") {
+				return []byte(strings.TrimPrefix(line, "data: "))
+			}
+		}
+	}
+	t.Fatalf("SSE 输出缺少事件 %s: %s", event, output)
+	return nil
 }

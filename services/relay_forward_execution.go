@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	relayprotocol "codeswitch/services/protocol"
@@ -9,6 +10,8 @@ import (
 	"github.com/daodao97/xgo/xrequest"
 	"github.com/gin-gonic/gin"
 )
+
+const defaultOpenAIChatEndpoint = "/v1/chat/completions"
 
 type relayForwardExecution struct {
 	Kind                  string
@@ -105,11 +108,58 @@ func logAnthropicChatConvertInfo(info ConvertInfo) {
 
 func rewriteOpenAIChatEndpoint(endpoint string) string {
 	trimmed := strings.TrimSpace(endpoint)
-	query := ""
-	if idx := strings.Index(trimmed, "?"); idx >= 0 {
-		query = trimmed[idx:]
+	path, query := splitEndpointQuery(trimmed)
+	if strings.Contains(strings.ToLower(path), "/chat/completions") {
+		return endpointWithQuery(path, query)
 	}
-	return "/chat/completions" + query
+	if isClientProtocolEndpoint(path) {
+		return defaultOpenAIChatEndpoint + query
+	}
+	return endpointWithQuery(path, query)
+}
+
+func splitEndpointQuery(endpoint string) (string, string) {
+	if endpoint == "" {
+		return defaultOpenAIChatEndpoint, ""
+	}
+	if parsed, err := url.Parse(endpoint); err == nil && parsed.Path != "" {
+		query := ""
+		if parsed.RawQuery != "" {
+			query = "?" + parsed.RawQuery
+		}
+		return ensureEndpointPath(parsed.Path), query
+	}
+	if idx := strings.Index(endpoint, "?"); idx >= 0 {
+		return ensureEndpointPath(endpoint[:idx]), endpoint[idx:]
+	}
+	return ensureEndpointPath(endpoint), ""
+}
+
+func ensureEndpointPath(endpoint string) string {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		return defaultOpenAIChatEndpoint
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return trimmed
+	}
+	return "/" + trimmed
+}
+
+func endpointWithQuery(path string, query string) string {
+	return ensureEndpointPath(path) + query
+}
+
+func isClientProtocolEndpoint(endpoint string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(endpoint))
+	switch normalized {
+	case "/responses", "/v1/responses", "/v1/v1/responses", "/codex/v1/responses",
+		"/responses/compact", "/v1/responses/compact", "/v1/v1/responses/compact",
+		"/codex/v1/responses/compact", "/v1/messages":
+		return true
+	default:
+		return false
+	}
 }
 
 func (prs *ProviderRelayService) copyRelayExecutionResponse(
@@ -122,7 +172,7 @@ func (prs *ProviderRelayService) copyRelayExecutionResponse(
 		converter := NewCodexChatSSEConverter(execution.Model)
 		_, err := resp.ToHttpResponseWriter(c.Writer, codexChatBridgeHook(converter, requestLog))
 		if err == nil {
-			prs.codexChatHistory.Store(converter.ResponseID(), appendAssistantChatMessage(execution.CodexChatMessages, converter.OutputText()))
+			prs.codexChatHistory.Store(converter.ResponseID(), appendAssistantChatMessageFromChat(execution.CodexChatMessages, converter.AssistantChatMessage()))
 		}
 		return err
 	}

@@ -53,8 +53,15 @@ func (s *CodexChatBridgeHistoryStore) Store(responseID string, messages []map[st
 }
 
 func appendAssistantChatMessage(messages []map[string]any, content string) []map[string]any {
+	return appendAssistantChatMessageFromChat(messages, map[string]any{"role": "assistant", "content": content})
+}
+
+func appendAssistantChatMessageFromChat(messages []map[string]any, assistant map[string]any) []map[string]any {
+	if len(assistant) == 0 {
+		return cloneChatMessages(messages)
+	}
 	result := cloneChatMessages(messages)
-	return append(result, map[string]any{"role": "assistant", "content": content})
+	return append(result, cloneChatMessages([]map[string]any{assistant})[0])
 }
 
 func codexPreviousResponseID(body map[string]any) string {

@@ -450,7 +450,7 @@
           "level": "数字越小优先级越高，Level 1 会被优先尝试，失败后依次尝试 Level 2、Level 3 等",
           "apiEndpoint": "覆盖平台默认端点。留空使用默认（claude: /v1/messages, codex: /responses）。GLM 模型请使用 /v1/chat/completions",
           "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 openai_chat 时自动转换请求和响应格式",
-          "upstreamProtocolCodex": "Codex 默认使用 Responses 原生协议。选择 OpenAI Chat 时会启用 Responses 到 Chat bridge，支持文本、function tools 和 previous_response_id 历史；reasoning 自动续写仅支持原生 Responses。",
+          "upstreamProtocolCodex": "Codex 默认使用 Responses 原生协议。选择 OpenAI Chat 时会启用 Responses 到 Chat bridge，支持文本、function tool call 与工具结果回传闭环、previous_response_id 历史；reasoning 自动续写仅支持原生 Responses。",
           "providerProxy": "开启后，此供应商的真实请求、可用性检测和连通性测试都会使用通用设置中的代理配置",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
           "connectivityAutoBlacklist": "健康检查失败时自动拉黑该供应商",
@@ -491,7 +491,7 @@
           "codexResponsesDesc": "按 Codex Responses API 原样转发，支持原生流式 reasoning 续写",
           "openaiChat": "OpenAI Chat",
           "openaiChatDesc": "使用 OpenAI Chat Completions API，自动转换格式",
-          "codexOpenAIChatDesc": "启用 Codex Responses 到 Chat Completions 的 bridge，支持文本、function tools 和 previous_response_id 历史",
+          "codexOpenAIChatDesc": "启用 Codex Responses 到 Chat Completions 的 bridge，支持文本、function tool call 与工具结果回传闭环、previous_response_id 历史",
           "codexOpenAIChatUnsupported": "Codex 的 OpenAI Chat Completions bridge 不启用 reasoning 自动续写"
         },
         "confirmDeleteTitle": "删除供应商",

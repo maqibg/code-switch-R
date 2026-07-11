@@ -45,6 +45,22 @@ func codexInputArrayToChatMessages(items []any) ([]map[string]any, error) {
 		if itemType == "reasoning" {
 			continue
 		}
+		if itemType == "function_call" {
+			message, err := codexFunctionCallToChatMessage(obj, index)
+			if err != nil {
+				return nil, err
+			}
+			messages = append(messages, message)
+			continue
+		}
+		if itemType == "function_call_output" {
+			message, err := codexFunctionCallOutputToChatMessage(obj, index)
+			if err != nil {
+				return nil, err
+			}
+			messages = append(messages, message)
+			continue
+		}
 		if itemType != "" && itemType != "message" {
 			return nil, NewClientRequestRejectedError(fmt.Sprintf("Codex Responses input[%d].type=%q 暂不支持", index, itemType))
 		}
@@ -62,6 +78,44 @@ func codexInputArrayToChatMessages(items []any) ([]map[string]any, error) {
 		messages = append(messages, map[string]any{"role": role, "content": content})
 	}
 	return messages, nil
+}
+
+func codexFunctionCallToChatMessage(obj map[string]any, index int) (map[string]any, error) {
+	callID := stringFromMap(obj, "call_id")
+	if callID == "" {
+		callID = stringFromMap(obj, "id")
+	}
+	if strings.TrimSpace(callID) == "" {
+		return nil, NewClientRequestRejectedError(fmt.Sprintf("input[%d].call_id 不能为空", index))
+	}
+	name := stringFromMap(obj, "name")
+	if strings.TrimSpace(name) == "" {
+		return nil, NewClientRequestRejectedError(fmt.Sprintf("input[%d].name 不能为空", index))
+	}
+	return map[string]any{
+		"role":    "assistant",
+		"content": nil,
+		"tool_calls": []any{map[string]any{
+			"id":   callID,
+			"type": "function",
+			"function": map[string]any{
+				"name":      name,
+				"arguments": stringFromMap(obj, "arguments"),
+			},
+		}},
+	}, nil
+}
+
+func codexFunctionCallOutputToChatMessage(obj map[string]any, index int) (map[string]any, error) {
+	callID := strings.TrimSpace(stringFromMap(obj, "call_id"))
+	if callID == "" {
+		return nil, NewClientRequestRejectedError(fmt.Sprintf("input[%d].call_id 不能为空", index))
+	}
+	output, ok := textFromAny(obj["output"])
+	if !ok {
+		return nil, NewClientRequestRejectedError(fmt.Sprintf("input[%d].output 必须是 string", index))
+	}
+	return map[string]any{"role": "tool", "tool_call_id": callID, "content": output}, nil
 }
 
 func codexTextContent(content any) (string, error) {
