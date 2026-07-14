@@ -122,7 +122,7 @@ func queryAggregateSnapshot(db *sql.DB, start *time.Time, end time.Time, platfor
 			COALESCE(SUM(output_cost), 0),
 			COALESCE(SUM(cache_create_cost), 0),
 			COALESCE(SUM(cache_read_cost), 0),
-			COALESCE(SUM(CASE WHEN http_code >= 200 AND http_code < 300 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN duration_sec ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN 1 ELSE 0 END), 0)
 		FROM request_log
@@ -221,10 +221,13 @@ func queryTrendStats(db *sql.DB, window statsWindow) (LogStats, error) {
 
 func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, error) {
 	result := map[string]LogStats{
-		"claude": {RangeKey: window.key, Series: []LogStatsSeries{}},
-		"codex":  {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"claude":       {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"codex":        {RangeKey: window.key, Series: []LogStatsSeries{}},
 		"gemini":       {RangeKey: window.key, Series: []LogStatsSeries{}},
 		"deepseekcode": {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"reasonix":     {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"pi":           {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"custom":       {RangeKey: window.key, Series: []LogStatsSeries{}},
 	}
 	query := `
 		SELECT
@@ -288,8 +291,8 @@ func queryProviderRanks(db *sql.DB, window statsWindow, limit int) ([]ProviderDa
 		SELECT
 			COALESCE(NULLIF(TRIM(provider), ''), '(unknown)') AS provider_name,
 			COUNT(*) AS total_requests,
-			COALESCE(SUM(CASE WHEN http_code >= 200 AND http_code < 300 THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN http_code < 200 OR http_code >= 300 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ` + requestLogFailureSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(input_tokens), 0),
 			COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(reasoning_tokens), 0),
@@ -342,8 +345,8 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 		SELECT
 			COALESCE(NULLIF(TRIM(model), ''), '(unknown)') AS model_name,
 			COUNT(*) AS total_requests,
-			COALESCE(SUM(CASE WHEN http_code >= 200 AND http_code < 300 THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN http_code < 200 OR http_code >= 300 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ` + requestLogFailureSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(input_tokens), 0),
 			COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(reasoning_tokens), 0),

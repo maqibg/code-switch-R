@@ -41,12 +41,76 @@ export type AutomationCard = {
   connectivityTestEndpoint?: string
   /** @deprecated 已迁移到可用性配置中的认证方式 */
   connectivityAuthType?: string
-  // 上游协议类型（anthropic / openai）
+  authScheme?: string
+  authHeader?: string
+  headers?: Record<string, string>
+  userAgentPreset?: string
+  customUserAgent?: string
+  modelsEndpoint?: string
+  piModels?: PiModelDefinition[]
+  piModelOverrides?: Record<string, PiModelOverride>
+  metadataUserId?: string
+  // 上游协议类型（anthropic / openai_chat / openai_responses / auto）
   upstreamProtocol?: string
   // Codex reasoning 自动续写，仅对 Codex 原生 Responses 流式请求生效
   codexReasoningContinueEnabled?: boolean
   // Codex reasoning 自动续写控制台日志
   codexReasoningContinueLogEnabled?: boolean
+}
+
+export type PiThinkingLevelMap = Partial<Record<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max', string | null>>
+
+export type PiModelCostTier = {
+  inputTokensAbove: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+export type PiModelCost = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  tiers?: PiModelCostTier[]
+}
+
+export type PiModelOverrideCost = Partial<PiModelCost>
+
+export type PiModelDefinition = {
+  id: string
+  name?: string
+  api?: string
+  baseUrl?: string
+  reasoning?: boolean
+  thinkingLevelMap?: PiThinkingLevelMap
+  input?: Array<'text' | 'image'>
+  contextWindow?: number
+  maxTokens?: number
+  cost?: PiModelCost
+  headers?: Record<string, string>
+  compat?: Record<string, unknown>
+}
+
+export type PiModelOverride = {
+  name?: string
+  reasoning?: boolean
+  thinkingLevelMap?: PiThinkingLevelMap
+  input?: Array<'text' | 'image'>
+  contextWindow?: number
+  maxTokens?: number
+  cost?: PiModelOverrideCost
+  headers?: Record<string, string>
+  compat?: Record<string, unknown>
+}
+
+export type PiConfigDiagnostic = {
+  path: string
+  message: string
+  severity: string
+  modelId?: string
+  field?: string
 }
 
 export const automationCardGroups: Record<'claude' | 'codex', AutomationCard[]> = {

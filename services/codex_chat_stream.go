@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ type CodexChatSSEConverter struct {
 	outputText            strings.Builder
 	toolCalls             map[int]*codexStreamToolCall
 	toolOrder             []int
+	err                   error
 }
 
 func NewCodexChatSSEConverter(model string) *CodexChatSSEConverter {
@@ -48,6 +50,9 @@ func (c *CodexChatSSEConverter) ProcessPayload(payload string) string {
 }
 
 func (c *CodexChatSSEConverter) ProcessLine(line string) string {
+	if c.err != nil {
+		return ""
+	}
 	line = strings.TrimSpace(line)
 	if line == "" || !strings.HasPrefix(line, "data:") {
 		return ""
@@ -69,8 +74,9 @@ func (c *CodexChatSSEConverter) ProcessLine(line string) string {
 
 func (c *CodexChatSSEConverter) convertChatDelta(body map[string]any) string {
 	delta := gjsonGetString(body, "choices.0.delta.content")
-	if delta == "" {
-		delta = gjsonGetString(body, "choices.0.delta.reasoning_content")
+	if reasoning := gjsonGetString(body, "choices.0.delta.reasoning_content"); reasoning != "" {
+		c.err = fmt.Errorf("上游 Chat 流返回 reasoning_content，无法转换为语义等价的 Responses reasoning 输出")
+		return ""
 	}
 	finishReason := gjsonGetString(body, "choices.0.finish_reason")
 	var out strings.Builder
@@ -99,6 +105,13 @@ func (c *CodexChatSSEConverter) convertChatDelta(body map[string]any) string {
 		}
 	}
 	return out.String()
+}
+
+func (c *CodexChatSSEConverter) Err() error {
+	if c == nil {
+		return fmt.Errorf("Responses SSE 转换器未初始化")
+	}
+	return c.err
 }
 
 func (c *CodexChatSSEConverter) ResponseID() string {

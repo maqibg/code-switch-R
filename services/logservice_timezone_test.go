@@ -153,6 +153,64 @@ func TestProviderStatsByProviderAndRangeFiltersProvider(t *testing.T) {
 	}
 }
 
+func TestPublicStatsExcludeErroredTwoHundredResponses(t *testing.T) {
+	setupRenameTestEnv(t)
+	db, err := xdb.DB("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := formatCreatedAtBoundary(nowInBeijing().Add(-time.Minute))
+	if _, err := db.Exec(`INSERT INTO request_log (platform, provider, model, http_code, error_type, created_at) VALUES
+		('pi', 'ProviderA', 'model-a', 200, '', ?),
+		('pi', 'ProviderA', 'model-a', 200, 'client_abort', ?)`, createdAt, createdAt); err != nil {
+		t.Fatal(err)
+	}
+	service := NewLogService(nil)
+	overview, err := service.DashboardOverviewByRange("pi", statsRangeToday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers, err := service.ProviderStatsByRange("pi", statsRangeToday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	models, err := service.ModelStatsByRange("pi", statsRangeToday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.CurrentRequests != 2 || overview.CurrentSuccessRate != 0.5 {
+		t.Fatalf("Overview 成功率口径错误: %#v", overview)
+	}
+	if len(providers) != 1 || providers[0].SuccessfulRequests != 1 || providers[0].FailedRequests != 1 {
+		t.Fatalf("Provider 成功率口径错误: %#v", providers)
+	}
+	if len(models) != 1 || models[0].SuccessfulRequests != 1 || models[0].FailedRequests != 1 {
+		t.Fatalf("Model 成功率口径错误: %#v", models)
+	}
+}
+
+func TestProviderStatsBySourceAndRangeIsolatesCustomTools(t *testing.T) {
+	setupRenameTestEnv(t)
+	db, err := xdb.DB("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := formatCreatedAtBoundary(nowInBeijing().Add(-time.Minute))
+	if _, err := db.Exec(`INSERT INTO request_log (platform, source_id, provider, model, http_code, created_at) VALUES
+		('custom', 'tool-a', 'Shared', 'model-a', 200, ?),
+		('custom', 'tool-b', 'Shared', 'model-a', 200, ?),
+		('custom:tool-a', '', 'Shared', 'model-a', 200, ?)`, createdAt, createdAt, createdAt); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := NewLogService(nil).ProviderStatsBySourceAndRange("custom", "tool-a", statsRangeToday)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats) != 1 || stats[0].TotalRequests != 2 {
+		t.Fatalf("custom source_id 隔离错误: %#v", stats)
+	}
+}
+
 func insertLogFixture(t *testing.T, db interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }, provider string, createdAt time.Time) {

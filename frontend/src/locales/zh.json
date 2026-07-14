@@ -105,7 +105,9 @@
       "codex": "Codex",
       "gemini": "Gemini",
       "deepseekcode": "DeepSeekCode",
-      "reasonix": "Reasonix"
+      "reasonix": "Reasonix",
+      "pi": "Pi",
+      "custom": "自定义 CLI"
     },
     "cards": {
       "requests": "今日请求",
@@ -284,6 +286,9 @@
         "tooltip": "声明该供应商支持的模型。支持精确匹配（claude-sonnet-4）和通配符（claude-*）",
         "placeholder": "输入模型名称，如 claude-*",
         "add": "添加",
+        "fetch": "抓取并添加",
+        "fetching": "抓取中...",
+        "fetchSuccess": "已添加 {count} 个模型",
         "remove": "删除模型",
         "examples": {
           "title": "示例：",
@@ -291,6 +296,95 @@
           "prefix": "前缀匹配所有 Claude 模型",
           "vendor": "匹配带供应商前缀的模型"
         }
+      },
+      "headers": {
+        "label": "附加请求 Header",
+        "add": "添加 Header",
+        "remove": "删除 Header",
+        "keyPlaceholder": "Header 名称",
+        "valuePlaceholder": "Header 值"
+      },
+      "requestTemplate": {
+        "label": "请求头模板",
+        "select": "选择内置或已保存模板",
+        "apply": "应用",
+        "delete": "删除",
+        "cancel": "取消",
+        "deleteConfirmTitle": "删除请求头模板",
+        "deleteConfirmMessage": "确定删除模板“{name}”吗？此操作会立即写入本地配置。",
+        "save": "保存为模板",
+        "namePlaceholder": "模板名称",
+        "applied": "模板已应用到当前供应商",
+        "saved": "模板已保存",
+        "deleted": "模板已删除",
+        "metadataUserId": "Anthropic metadata.user_id",
+        "metadataPlaceholder": "用户 ID，或上游要求的 JSON 字符串",
+        "metadataHint": "仅在最终上游协议为 Anthropic Messages 时注入；不要复制他人的设备、账号或会话标识。",
+        "errors": {
+          "metadataTooLong": "metadataUserId 不能超过 16 KiB",
+          "metadataProtocol": "metadataUserId 只能用于 Anthropic Messages 上游",
+          "metadataJson": "以 { 开头的 metadataUserId 必须是合法 JSON",
+          "headerName": "Header 名称无效：{key}",
+          "headerDuplicate": "Header {key} 与 {otherKey} 仅大小写不同，不能同时配置",
+          "headerManaged": "Header {key} 由代理统一管理，不能作为附加 Header",
+          "headerValue": "Header {key} 的值不能包含换行符"
+        }
+      },
+      "piModel": {
+        "title": "Pi 完整模型定义",
+        "description": "配置 models[] 的完整模型元数据；上方模型 ID 同时作为网关路由白名单。",
+        "add": "添加模型",
+        "remove": "删除模型",
+        "unnamed": "未命名模型",
+        "empty": "尚未配置模型。可手动添加或从供应商 API 抓取。",
+        "id": "模型 ID",
+        "name": "显示名称",
+        "api": "Pi API 协议",
+        "baseUrl": "单模型 baseUrl",
+        "inheritProtocol": "跟随供应商上游协议",
+        "contextWindow": "上下文窗口",
+        "maxTokens": "最大输出 Token",
+        "reasoning": "推理能力",
+        "auto": "自动推断",
+        "yes": "支持",
+        "no": "不支持",
+        "input": "输入类型",
+        "thinkingLevelMap": "thinkingLevelMap",
+        "cost": "每百万 Token 成本",
+        "addTier": "添加价格档位",
+        "removeTier": "删除价格档位",
+        "headers": "单模型请求头",
+        "compat": "协议 compat",
+        "modelOverrides": "modelOverrides 高级配置",
+        "overrideHint": "覆盖项必须指向上方已配置模型；保存时会按 Pi 的局部覆盖规则合并进 code-switch-r 的完整 models[] 定义。",
+        "errors": {
+          "idRequired": "模型 ID 不能为空",
+          "idFormat": "模型 ID 不能包含通配符 *",
+          "duplicate": "同一供应商内模型 ID 不能重复",
+          "contextPositive": "contextWindow 必须大于 0",
+          "maxPositive": "maxTokens 必须大于 0",
+          "maxContext": "maxTokens 不应大于 contextWindow",
+          "apiGateway": "当前 code-switch-R Pi 网关只支持 openai-completions、openai-responses 和 anthropic-messages",
+          "baseUrlGateway": "单模型 baseUrl 会绕过网关且无法保留正确认证与模型 ID，请留空",
+          "headerName": "{path} 中的 Header 名称无效：{key}",
+          "headerDuplicate": "{path} 中的 Header {key} 与 {otherKey} 仅大小写不同",
+          "headerValue": "{path} 中的 Header {key} 不能包含换行符",
+          "overrideId": "{path} 的模型 ID 不能为空且不能包含 *",
+          "overrideObject": "{path} 必须是 JSON 对象",
+          "overrideMissing": "{path} 没有对应的已配置模型",
+          "overrideUnknown": "{path}.{field} 不是 Pi 0.80.6 支持的 modelOverrides 字段",
+          "overrideInvalid": "{path} 的值类型不正确"
+        }
+      },
+      "piPreview": {
+        "title": "完整 models.json 预览",
+        "hint": "字段按 baseUrl、apiKey、api、headers、authHeader、compat、models 排列；覆盖配置会先合并进 models。蓝色为当前供应商，红色为不规范字段。",
+        "loading": "正在校验",
+        "failed": "预览失败",
+        "valid": "配置有效",
+        "issueCount": "{count} 个问题",
+        "warningCount": "{count} 个警告",
+        "fixBeforeSave": "请先修复 Pi 模型配置中的红色问题"
       },
       "modelMapping": {
         "label": "模型映射",
@@ -336,7 +430,9 @@
         "hostClaude": "托管 Claude Code",
         "hostCodex": "托管 Codex",
         "hostGemini": "托管 Gemini CLI",
+        "hostDeepSeekCode": "托管 DeepSeekCode",
         "hostReasonix": "托管 Reasonix",
+        "hostPi": "托管 Pi",
         "hostOthers": "托管自定义 CLI",
         "tooltip": "通过本地转发托管 API 访问，统一管理密钥与配额。",
         "statusOn": "已托管",
@@ -427,6 +523,8 @@
           "connectivityTestModel": "测试模型",
           "connectivityTestEndpoint": "测试端点",
           "connectivityAuthType": "认证方式",
+          "modelsEndpoint": "模型列表端点",
+          "userAgentPreset": "User-Agent 预设",
           "codexReasoningContinue": "Codex reasoning 自动续写",
           "codexReasoningContinueLog": "控制台日志"
         },
@@ -443,6 +541,8 @@
           "customModel": "或输入自定义模型",
           "customEndpoint": "或输入自定义端点",
           "customAuthHeader": "自定义 Header 名称（如 Authorization、X-Custom-Key）",
+          "modelsEndpoint": "留空自动尝试 /v1/models 和 /models",
+          "customUserAgent": "输入完整 User-Agent",
           "searchIcon": "搜索图标..."
         },
         "noIconResults": "未找到匹配的图标",
@@ -482,6 +582,13 @@
           "on": "已启用",
           "off": "未启用"
         },
+        "auth": {
+          "none": "无认证"
+        },
+        "userAgent": {
+          "inherit": "继承客户端",
+          "custom": "自定义"
+        },
         "upstreamProtocol": {
           "auto": "自动检测",
           "autoDesc": "根据 API 端点自动判断协议类型",
@@ -491,13 +598,16 @@
           "codexResponsesDesc": "按 Codex Responses API 原样转发，支持原生流式 reasoning 续写",
           "openaiChat": "OpenAI Chat",
           "openaiChatDesc": "使用 OpenAI Chat Completions API，自动转换格式",
+          "openaiResponses": "OpenAI Responses",
+          "openaiResponsesDesc": "使用 OpenAI Responses API",
           "codexOpenAIChatDesc": "启用 Codex Responses 到 Chat Completions 的 bridge，支持文本、function tool call 与工具结果回传闭环、previous_response_id 历史",
           "codexOpenAIChatUnsupported": "Codex 的 OpenAI Chat Completions bridge 不启用 reasoning 自动续写"
         },
         "confirmDeleteTitle": "删除供应商",
         "confirmDeleteMessage": "确认删除 {name} 吗？操作不可撤销",
         "errors": {
-          "invalidUrl": "请输入合法的 API 地址"
+          "invalidUrl": "请输入合法的 API 地址",
+          "piProviderName": "Pi Provider 名称不能包含 /"
         },
         "saveFailed": "保存供应商配置失败"
       },
@@ -732,8 +842,10 @@
         "storage": "占用存储",
         "requestLogs": "请求日志条数",
         "healthHistory": "可用性历史条数",
+        "relayAttempts": "上游尝试条数",
         "requestLogsHint": "累计保存的 request_log 记录数量。",
         "healthHistoryHint": "累计保存的 health_check_history 记录数量。",
+        "relayAttemptsHint": "累计保存的 relay_attempt 上游调用记录数量。",
         "actions": "手动清理",
         "loading": "读取中...",
         "loadFailed": "读取失败",
@@ -741,9 +853,9 @@
         "clearButton": "清理全部记录",
         "clearing": "清理中...",
         "clearHintTitle": "只清理记录，不动配置",
-        "clearHint": "会清理 request_log 和 health_check_history，并回收数据库空间；不会删除供应商、MCP 或设置。",
-        "clearConfirm": "确认清理全部记录吗？这会删除请求日志和可用性历史，且不可恢复。",
-        "clearSuccess": "已清理请求日志 {requests} 条，可用性历史 {health} 条",
+        "clearHint": "会清理 request_log、relay_attempt 和 health_check_history，并回收数据库空间；不会删除供应商、MCP 或设置。",
+        "clearConfirm": "确认清理全部记录吗？这会删除请求日志、上游尝试和可用性历史，且不可恢复。",
+        "clearSuccess": "已清理请求日志 {requests} 条，上游尝试 {attempts} 条，可用性历史 {health} 条",
         "clearFailed": "清理失败：{error}",
         "warning": "附加提示"
       },

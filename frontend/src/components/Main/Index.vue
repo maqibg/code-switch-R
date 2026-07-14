@@ -435,7 +435,7 @@
             </label>
             <!-- 直连应用按钮 -->
             <button
-              v-if="activeTab !== 'others'"
+              v-if="activeTab !== 'others' && activeTab !== 'pi'"
               class="ghost-icon direct-apply-btn"
               :class="{ 'is-active': isDirectApplied(card) && !activeProxyState }"
               :disabled="activeProxyState"
@@ -672,6 +672,63 @@
                   <span class="field-hint">{{ t('components.main.form.hints.connectivityAuthType') }}</span>
                 </div>
 
+                <label class="form-field">
+                  <span>{{ t('components.main.form.labels.modelsEndpoint') }}</span>
+                  <BaseInput
+                    v-model="modalState.form.modelsEndpoint"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.modelsEndpoint')"
+                  />
+                </label>
+
+                <div class="form-field">
+                  <span>{{ t('components.main.form.labels.userAgentPreset') }}</span>
+                  <Listbox v-model="modalState.form.userAgentPreset" v-slot="{ open }">
+                    <div class="level-select">
+                      <ListboxButton class="level-select-button">
+                        <span class="level-label">
+                          {{ userAgentOptions.find((item) => item.value === modalState.form.userAgentPreset)?.label || modalState.form.userAgentPreset }}
+                        </span>
+                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                          <path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                        </svg>
+                      </ListboxButton>
+                      <ListboxOptions v-if="open" class="level-select-options">
+                        <ListboxOption
+                          v-for="option in userAgentOptions"
+                          :key="option.value"
+                          :value="option.value"
+                          v-slot="{ active, selected }"
+                        >
+                          <div :class="['level-option', { active, selected }]">
+                            <span class="level-name">{{ option.label }}</span>
+                          </div>
+                        </ListboxOption>
+                      </ListboxOptions>
+                    </div>
+                  </Listbox>
+                  <BaseInput
+                    v-if="modalState.form.userAgentPreset === 'custom'"
+                    v-model="modalState.form.customUserAgent"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.customUserAgent')"
+                    class="mt-2"
+                  />
+                </div>
+
+                <div class="form-field">
+                  <RequestHeaderTemplateEditor
+                    v-if="modalState.tabId === 'pi'"
+                    :headers="modalState.form.headers"
+                    :metadata-user-id="modalState.form.metadataUserId"
+                    :metadata-allowed="piMetadataAllowed"
+                    @update:headers="modalState.form.headers = $event"
+                    @update:metadata-user-id="modalState.form.metadataUserId = $event"
+                    @validity="piHeadersValid = $event"
+                  />
+                  <HeaderEditor v-else v-model="modalState.form.headers" />
+                </div>
+
                 <div class="form-field">
                   <span>{{ t('components.main.form.labels.icon') }}</span>
                   <Listbox v-model="modalState.form.icon" v-slot="{ open }" class="w-full">
@@ -746,15 +803,42 @@
                   <span class="field-hint">{{ t('components.main.form.hints.level') }}</span>
                 </div>
 
-                <div class="form-field">
-                  <ModelWhitelistEditor v-model="modalState.form.supportedModels" />
+                <div v-if="modalState.tabId === 'pi'" class="form-field">
+                  <PiModelConfigEditor
+                    :model-value="modalState.form.piModels"
+                    :model-overrides="modalState.form.piModelOverrides"
+                    :supported-models="modalState.form.supportedModels"
+                    :provider="modelDiscoveryProvider"
+                    @update:model-value="modalState.form.piModels = $event"
+                    @update:model-overrides="modalState.form.piModelOverrides = $event"
+                    @update:supported-models="modalState.form.supportedModels = $event"
+                    @validity="piModelsValid = $event"
+                  />
+                </div>
+
+                <div v-else class="form-field">
+                  <ModelWhitelistEditor
+                    v-model="modalState.form.supportedModels"
+                    :platform="modalState.tabId === 'others' && selectedToolId ? getCustomProviderKind(selectedToolId) : modalState.tabId"
+                    :provider="modelDiscoveryProvider"
+                  />
                 </div>
 
                 <div class="form-field">
                   <ModelMappingEditor v-model="modalState.form.modelMapping" />
                 </div>
 
-                <div class="form-field">
+                <div v-if="modalState.tabId === 'pi'" class="form-field">
+                  <PiModelsJsonPreview
+                    :json="piPreviewJson"
+                    :current-model-ids="piPreviewCurrentModelIds"
+                    :diagnostics="piPreviewDiagnostics"
+                    :loading="piPreviewLoading"
+                    :error="piPreviewError"
+                  />
+                </div>
+
+                <div v-if="modalState.tabId !== 'pi'" class="form-field">
                   <CLIConfigEditor
                     :platform="activeTab as CLIPlatform"
                     v-model="modalState.form.cliConfig"
@@ -852,12 +936,12 @@
                   <BaseButton variant="outline" type="button" @click="closeModal">
                     {{ t('components.main.form.actions.cancel') }}
                   </BaseButton>
-                  <BaseButton type="submit">
+                  <BaseButton type="submit" :disabled="modalState.tabId === 'pi' && !piFormValid">
                     {{ t('components.main.form.actions.save') }}
                   </BaseButton>
                   <!-- 保存并应用：仅在编辑模式、非代理模式、非 others 平台时显示 -->
                   <BaseButton
-                    v-if="modalState.editingId && modalState.tabId !== 'others' && !activeProxyState"
+                    v-if="modalState.editingId && modalState.tabId !== 'others' && modalState.tabId !== 'pi' && !activeProxyState"
                     type="button"
                     variant="primary"
                     @click="submitAndApplyModal"
@@ -1052,16 +1136,28 @@ import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headless
 import { Browser, Call, Events } from '@wailsio/runtime'
 import { type UsageHeatmapDay } from '../../data/usageHeatmap'
 import { useAdaptiveHeatmap } from '../../composables/useAdaptiveHeatmap'
-import { automationCardGroups, createAutomationCards, type AutomationCard } from '../../data/cards'
+import {
+  automationCardGroups,
+  createAutomationCards,
+  type AutomationCard,
+  type PiConfigDiagnostic,
+  type PiModelDefinition,
+  type PiModelOverride,
+} from '../../data/cards'
 import lobeIcons from '../../icons/lobeIconMap'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
 import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
+import HeaderEditor from '../common/HeaderEditor.vue'
+import PiModelConfigEditor from '../common/PiModelConfigEditor.vue'
+import PiModelsJsonPreview from '../common/PiModelsJsonPreview.vue'
+import RequestHeaderTemplateEditor from '../common/RequestHeaderTemplateEditor.vue'
 import CLIConfigEditor from '../common/CLIConfigEditor.vue'
 import CustomCliConfigEditor from '../common/CustomCliConfigEditor.vue'
 import { LoadProviders, SaveProviders, DuplicateProvider, RenameProvider } from '../../../bindings/codeswitch/services/providerservice'
+import { PreviewModelsJSON } from '../../../bindings/codeswitch/services/pisettingsservice'
 import { GetProviders as GetGeminiProviders, UpdateProvider as UpdateGeminiProvider, AddProvider as AddGeminiProvider, DeleteProvider as DeleteGeminiProvider, ReorderProviders as ReorderGeminiProviders } from '../../../bindings/codeswitch/services/geminiservice'
 import { fetchProxyStatus, enableProxy, disableProxy } from '../../services/claudeSettings'
 import { fetchGeminiProxyStatus, enableGeminiProxy, disableGeminiProxy } from '../../services/geminiSettings'
@@ -1129,6 +1225,7 @@ const proxyStates = reactive<Record<ProviderTab, boolean>>({
   gemini: false,
   deepseekcode: false,
   reasonix: false,
+  pi: false,
   others: false,
 })
 const proxyBusy = reactive<Record<ProviderTab, boolean>>({
@@ -1137,6 +1234,7 @@ const proxyBusy = reactive<Record<ProviderTab, boolean>>({
   gemini: false,
   deepseekcode: false,
   reasonix: false,
+  pi: false,
   others: false,
 })
 
@@ -1147,11 +1245,12 @@ const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
   gemini: null,
   deepseekcode: null,
   reasonix: null,
+  pi: null,
   others: null,
 })
 
 const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) => {
-  if (tab === 'others') return
+  if (tab === 'others' || tab === 'pi') return
 
   try {
     let id: string | number | null = null
@@ -1183,13 +1282,17 @@ const handleDirectApply = async (card: AutomationCard) => {
     } else if (tab === 'gemini') {
       // Gemini 使用字符串 ID，需要从 cache 中找到原始 provider
       const index = cards.gemini.findIndex(c => c.id === card.id)
-      if (index === -1 || !geminiProvidersCache.value[index]) return
+      if (index === -1 || !geminiProvidersCache.value[index]) {
+        throw new Error('Gemini provider cache entry not found')
+      }
       const realId = geminiProvidersCache.value[index].id
       await Call.ByName('codeswitch/services.GeminiService.ApplySingleProvider', realId)
     } else if (tab === 'deepseekcode') {
       await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.ApplySingleProvider', card.id)
     } else if (tab === 'reasonix') {
       await Call.ByName('codeswitch/services.ReasonixSettingsService.ApplySingleProvider', card.id)
+    } else {
+      throw new Error(`Direct apply is not supported for ${tab}`)
     }
     await refreshDirectAppliedStatus(tab)
     showToast(t('components.main.directApply.success', { name: card.name }), 'success')
@@ -1217,6 +1320,7 @@ const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDai
   gemini: {},
   deepseekcode: {},
   reasonix: {},
+  pi: {},
   others: {},
 })
 const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
@@ -1225,6 +1329,7 @@ const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
   gemini: false,
   deepseekcode: false,
   reasonix: false,
+  pi: false,
   others: false,
 })
 const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
@@ -1233,6 +1338,7 @@ const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   gemini: false,
   deepseekcode: false,
   reasonix: false,
+  pi: false,
   others: false,
 })
 let providerStatsTimer: number | undefined
@@ -1265,6 +1371,7 @@ const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, Blacklist
   gemini: {},
   deepseekcode: {},
   reasonix: {},
+  pi: {},
   others: {},
 })
 let blacklistTimer: number | undefined
@@ -1276,6 +1383,7 @@ const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, Conne
   gemini: {},
   deepseekcode: {},
   reasonix: {},
+  pi: {},
   others: {},
 })
 
@@ -1286,6 +1394,7 @@ const availabilityResultsMap = reactive<Record<ProviderTab, Record<number, Provi
   gemini: {},
   deepseekcode: {},
   reasonix: {},
+  pi: {},
   others: {},
 })
 
@@ -1300,6 +1409,9 @@ const lastUsedProviders = reactive<Record<string, LastUsedProvider | null>>({
   claude: null,
   codex: null,
   gemini: null,
+  deepseekcode: null,
+  reasonix: null,
+  pi: null,
   others: null,
 })
 // 高亮闪烁的供应商名称
@@ -1542,6 +1654,7 @@ const tabs = [
   { id: 'gemini', label: 'Gemini' },
   { id: 'deepseekcode', label: 'DeepSeekCode' },
   { id: 'reasonix', label: 'Reasonix' },
+  { id: 'pi', label: 'Pi' },
   { id: 'others', label: '其他' },
 ] as const
 type ProviderTab = (typeof tabs)[number]['id']
@@ -1553,6 +1666,7 @@ const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   gemini: [],
   deepseekcode: [],
   reasonix: [],
+  pi: [],
   others: [],
 })
 const draggingId = ref<number | null>(null)
@@ -1790,6 +1904,9 @@ const refreshProxyState = async (tab: ProviderTab) => {
     } else if (tab === 'gemini') {
       const status = await fetchGeminiProxyStatus()
       proxyStates[tab] = Boolean(status?.enabled)
+    } else if (tab === 'pi') {
+      const status = await Call.ByName('codeswitch/services.PiSettingsService.ProxyStatus')
+      proxyStates[tab] = Boolean(status?.enabled)
     } else {
       const status = await fetchProxyStatus(tab as 'claude' | 'codex' | 'deepseekcode' | 'reasonix')
       proxyStates[tab] = Boolean(status?.enabled)
@@ -1824,6 +1941,12 @@ const onProxyToggle = async () => {
       } else {
         await disableGeminiProxy()
       }
+    } else if (tab === 'pi') {
+      if (nextState) {
+        await Call.ByName('codeswitch/services.PiSettingsService.EnableProxy')
+      } else {
+        await Call.ByName('codeswitch/services.PiSettingsService.DisableProxy')
+      }
     } else {
       if (nextState) {
         await enableProxy(tab as 'claude' | 'codex' | 'deepseekcode' | 'reasonix')
@@ -1840,16 +1963,19 @@ const onProxyToggle = async () => {
 }
 
 const loadProviderStats = async (tab: ProviderTab) => {
-  // 'others' Tab 暂不加载统计数据（自定义 CLI 工具统计需要后续实现）
-  if (tab === 'others') {
-    providerStatsLoaded[tab] = true
-    return
-  }
-
   providerStatsLoading[tab] = true
   try {
-    // Gemini 统计数据目前通过相同的日志接口，直接查询
-    const stats = await fetchProviderDailyStats(tab as 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix')
+    if (tab === 'others' && !selectedToolId.value) {
+      providerStatsMap[tab] = {}
+      providerStatsLoaded[tab] = true
+      return
+    }
+    const stats = await fetchProviderDailyStats(
+      tab === 'others' ? 'custom' : tab,
+      'today',
+      '',
+      tab === 'others' ? selectedToolId.value || '' : '',
+    )
     const mapped: Record<string, ProviderDailyStat> = {}
     ;(stats ?? []).forEach((stat) => {
       mapped[normalizeProviderKey(stat.provider)] = stat
@@ -2332,6 +2458,7 @@ const connectivityTestModelOptions = computed(() => {
     gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
     deepseekcode: ['deepseek-chat', 'deepseek-reasoner'],
     reasonix: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    pi: ['gpt-5', 'claude-sonnet-4-5'],
   }
   return options[modalState.tabId] || options.claude
 })
@@ -2354,6 +2481,7 @@ const getDefaultEndpoint = (platform: string) => {
     codex: '/responses',
     deepseekcode: '/v1/messages',
     reasonix: '/chat/completions',
+    pi: '/v1/chat/completions',
   }
   return defaults[platform] || '/v1/chat/completions'
 }
@@ -2436,6 +2564,10 @@ const currentProxyLabel = computed(() => {
     return t('components.main.relayToggle.hostGemini')
   } else if (tab === 'reasonix') {
     return t('components.main.relayToggle.hostReasonix')
+  } else if (tab === 'deepseekcode') {
+    return t('components.main.relayToggle.hostDeepSeekCode')
+  } else if (tab === 'pi') {
+    return t('components.main.relayToggle.hostPi')
   } else if (tab === 'others') {
     // 显示选中的工具名称
     const tool = customCliTools.value.find(t => t.id === selectedToolId.value)
@@ -2509,6 +2641,15 @@ type VendorForm = {
   connectivityTestEndpoint?: string
   /** @deprecated */
   connectivityAuthType?: string
+  authScheme?: string
+  authHeader?: string
+  headers?: Record<string, string>
+  userAgentPreset?: string
+  customUserAgent?: string
+  modelsEndpoint?: string
+  piModels?: PiModelDefinition[]
+  piModelOverrides?: Record<string, PiModelOverride>
+  metadataUserId?: string
   // 上游协议类型
   upstreamProtocol?: string
   codexReasoningContinueEnabled?: boolean
@@ -2555,6 +2696,15 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   connectivityTestModel: '',
   connectivityTestEndpoint: '',
   connectivityAuthType: '',
+  authScheme: '',
+  authHeader: '',
+  headers: {},
+  userAgentPreset: 'inherit',
+  customUserAgent: '',
+  modelsEndpoint: '',
+  piModels: [],
+  piModelOverrides: {},
+  metadataUserId: '',
 })
 
 // Level 描述文本映射（1-10）
@@ -2604,6 +2754,15 @@ const modalState = reactive({
     apiUrl: '',
   },
 })
+const piModelsValid = ref(true)
+const piHeadersValid = ref(true)
+const piPreviewJson = ref('')
+const piPreviewCurrentModelIds = ref<string[]>([])
+const piPreviewDiagnostics = ref<PiConfigDiagnostic[]>([])
+const piPreviewLoading = ref(false)
+const piPreviewError = ref('')
+let piPreviewTimer: number | undefined
+let piPreviewRequest = 0
 
 // 认证方式相关状态
 const selectedAuthType = ref<string>('bearer')
@@ -2611,10 +2770,21 @@ const customAuthHeader = ref<string>('')
 const authTypeOptions = computed(() => [
   { value: 'bearer', label: 'Bearer' },
   { value: 'x-api-key', label: 'X-API-Key' },
+  { value: 'none', label: t('components.main.form.auth.none') },
+])
+const userAgentOptions = computed(() => [
+  { value: 'inherit', label: t('components.main.form.userAgent.inherit') },
+  { value: 'code-switch-r', label: 'code-switch-R' },
+  { value: 'pi-openai-sdk', label: 'Pi / OpenAI SDK' },
+  { value: 'pi-anthropic-sdk', label: 'Pi / Anthropic SDK' },
+  { value: 'claude-code', label: 'Claude Code' },
+  { value: 'codex-cli', label: 'Codex CLI' },
+  { value: 'gemini-cli', label: 'Gemini CLI' },
+  { value: 'custom', label: t('components.main.form.userAgent.custom') },
 ])
 
 // 上游协议类型选项
-const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'deepseekcode', 'others'])
+const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'deepseekcode', 'reasonix', 'pi', 'others'])
 const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
 const isCodexChatProtocol = computed(() =>
   modalState.tabId === 'codex' && modalState.form.upstreamProtocol === 'openai_chat'
@@ -2630,12 +2800,18 @@ const upstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => [
   { value: 'auto', label: t('components.main.form.upstreamProtocol.auto'), desc: t('components.main.form.upstreamProtocol.autoDesc') },
   { value: 'anthropic', label: t('components.main.form.upstreamProtocol.anthropic'), desc: t('components.main.form.upstreamProtocol.anthropicDesc') },
   { value: 'openai_chat', label: t('components.main.form.upstreamProtocol.openaiChat'), desc: t('components.main.form.upstreamProtocol.openaiChatDesc') },
+  { value: 'openai_responses', label: t('components.main.form.upstreamProtocol.openaiResponses'), desc: t('components.main.form.upstreamProtocol.openaiResponsesDesc') },
 ])
 const effectiveUpstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => {
   if (modalState.tabId !== 'codex') return upstreamProtocolOptions.value
   return [
     {
       value: 'auto',
+      label: t('components.main.form.upstreamProtocol.codexResponses'),
+      desc: t('components.main.form.upstreamProtocol.codexResponsesDesc'),
+    },
+    {
+      value: 'openai_responses',
       label: t('components.main.form.upstreamProtocol.codexResponses'),
       desc: t('components.main.form.upstreamProtocol.codexResponsesDesc'),
     },
@@ -2655,11 +2831,126 @@ const upstreamProtocolHint = computed(() =>
 const resolveEffectiveAuthType = () =>
   customAuthHeader.value.trim() || selectedAuthType.value || getDefaultAuthType(modalState.tabId)
 
+const resolveAuthScheme = () => customAuthHeader.value.trim() ? 'custom' : selectedAuthType.value
+
+const modelDiscoveryProvider = computed(() => ({
+  apiUrl: modalState.form.apiUrl,
+  apiKey: modalState.form.apiKey,
+  apiEndpoint: modalState.form.apiEndpoint,
+  upstreamProtocol: modalState.form.upstreamProtocol,
+  authScheme: resolveAuthScheme(),
+  authHeader: customAuthHeader.value.trim(),
+  headers: modalState.form.headers,
+  userAgentPreset: modalState.form.userAgentPreset,
+  customUserAgent: modalState.form.customUserAgent,
+  modelsEndpoint: modalState.form.modelsEndpoint,
+  proxyEnabled: !!modalState.form.proxyEnabled,
+}))
+
+const piMetadataAllowed = computed(() => {
+  const protocol = modalState.form.upstreamProtocol || 'auto'
+  if (protocol === 'anthropic') return true
+  if (protocol !== 'auto') return false
+  const endpoint = (modalState.form.apiEndpoint || '/v1/chat/completions').toLowerCase()
+  return !endpoint.includes('/chat/completions') && !endpoint.includes('/responses')
+})
+
+const piFormValid = computed(() =>
+  piModelsValid.value &&
+  piHeadersValid.value &&
+  !piPreviewLoading.value &&
+  !piPreviewError.value &&
+  !piPreviewDiagnostics.value.some((diagnostic) => diagnostic.severity === 'error'),
+)
+
 const resolveSubmittedUpstreamProtocol = () =>
   showUpstreamProtocolField.value ? modalState.form.upstreamProtocol || 'auto' : 'auto'
 
 const editingCard = ref<AutomationCard | null>(null)
 const confirmState = reactive({ open: false, card: null as AutomationCard | null, tabId: tabs[0].id as ProviderTab })
+
+const buildPiPreviewProvider = (): AutomationCard => ({
+  ...(editingCard.value || {} as AutomationCard),
+  id: modalState.editingId ?? -1,
+  name: modalState.form.name,
+  apiUrl: modalState.form.apiUrl,
+  apiKey: modalState.form.apiKey,
+  officialSite: modalState.form.officialSite,
+  icon: modalState.form.icon,
+  tint: editingCard.value?.tint || 'rgba(15, 23, 42, 0.12)',
+  accent: editingCard.value?.accent || '#0a84ff',
+  enabled: modalState.form.enabled,
+  proxyEnabled: !!modalState.form.proxyEnabled,
+  supportedModels: { ...(modalState.form.supportedModels || {}) },
+  modelMapping: { ...(modalState.form.modelMapping || {}) },
+  level: normalizeLevel(modalState.form.level),
+  apiEndpoint: modalState.form.apiEndpoint || '',
+  upstreamProtocol: resolveSubmittedUpstreamProtocol(),
+  connectivityAuthType: resolveEffectiveAuthType(),
+  authScheme: resolveAuthScheme(),
+  authHeader: customAuthHeader.value.trim(),
+  headers: { ...(modalState.form.headers || {}) },
+  userAgentPreset: modalState.form.userAgentPreset || 'inherit',
+  customUserAgent: modalState.form.customUserAgent || '',
+  modelsEndpoint: modalState.form.modelsEndpoint || '',
+  piModels: JSON.parse(JSON.stringify(modalState.form.piModels || [])),
+  piModelOverrides: JSON.parse(JSON.stringify(modalState.form.piModelOverrides || {})),
+  metadataUserId: modalState.form.metadataUserId || '',
+})
+
+const buildPiPreviewProviders = () => {
+  const draft = buildPiPreviewProvider()
+  if (modalState.editingId === null) return serializeProviders([...cards.pi, draft])
+  return serializeProviders(cards.pi.map((provider) => provider.id === modalState.editingId ? draft : provider))
+}
+
+const refreshPiPreview = async () => {
+  if (!modalState.open || modalState.tabId !== 'pi') return
+  const request = ++piPreviewRequest
+  piPreviewLoading.value = true
+  piPreviewError.value = ''
+  try {
+    const result = await PreviewModelsJSON({
+      providers: buildPiPreviewProviders(),
+      currentProviderId: modalState.editingId ?? -1,
+    })
+    if (request !== piPreviewRequest) return
+    piPreviewJson.value = result.json || ''
+    piPreviewCurrentModelIds.value = result.currentModelIds || []
+    piPreviewDiagnostics.value = result.diagnostics || []
+  } catch (error) {
+    if (request !== piPreviewRequest) return
+    piPreviewError.value = extractErrorMessage(error)
+    piPreviewCurrentModelIds.value = []
+    piPreviewDiagnostics.value = []
+  } finally {
+    if (request === piPreviewRequest) piPreviewLoading.value = false
+  }
+}
+
+watch(
+  () => modalState.open && modalState.tabId === 'pi'
+    ? JSON.stringify({ form: modalState.form, providers: cards.pi, authHeader: customAuthHeader.value })
+    : '',
+  (snapshot) => {
+    if (piPreviewTimer) window.clearTimeout(piPreviewTimer)
+    if (!snapshot) {
+      piPreviewRequest++
+      piPreviewLoading.value = false
+      piPreviewError.value = ''
+      piPreviewJson.value = ''
+      piPreviewCurrentModelIds.value = []
+      piPreviewDiagnostics.value = []
+      return
+    }
+    piPreviewTimer = window.setTimeout(refreshPiPreview, 200)
+  },
+  { flush: 'post' },
+)
+
+onUnmounted(() => {
+  if (piPreviewTimer) window.clearTimeout(piPreviewTimer)
+})
 
 const openCreateModal = () => {
   modalState.tabId = activeTab.value
@@ -2669,6 +2960,8 @@ const openCreateModal = () => {
   // 初始化认证方式为平台默认
   selectedAuthType.value = getDefaultAuthType(activeTab.value)
   customAuthHeader.value = ''
+  piModelsValid.value = true
+  piHeadersValid.value = true
   connectivityTestResult.value = null
   modalState.errors.apiUrl = ''
   modalState.open = true
@@ -2713,22 +3006,36 @@ const openEditModal = (card: AutomationCard) => {
     connectivityTestModel: '',
     connectivityTestEndpoint: '',
     connectivityAuthType: card.connectivityAuthType || '',
+    authScheme: card.authScheme || '',
+    authHeader: card.authHeader || '',
+    headers: { ...(card.headers || {}) },
+    userAgentPreset: card.userAgentPreset || 'inherit',
+    customUserAgent: card.customUserAgent || '',
+    modelsEndpoint: card.modelsEndpoint || '',
+    piModels: JSON.parse(JSON.stringify(card.piModels || [])),
+    piModelOverrides: JSON.parse(JSON.stringify(card.piModelOverrides || {})),
+    metadataUserId: card.metadataUserId || '',
   })
   // 初始化认证方式状态
-  const storedAuth = (card.connectivityAuthType || '').trim()
+  const storedAuth = (card.authScheme || card.connectivityAuthType || '').trim()
   const lower = storedAuth.toLowerCase()
   if (!storedAuth) {
     selectedAuthType.value = getDefaultAuthType(activeTab.value)
     customAuthHeader.value = ''
-  } else if (lower === 'bearer' || lower === 'x-api-key') {
+  } else if (lower === 'bearer' || lower === 'x-api-key' || lower === 'none') {
     selectedAuthType.value = lower
     customAuthHeader.value = ''
+  } else if (lower === 'custom') {
+    selectedAuthType.value = getDefaultAuthType(activeTab.value)
+    customAuthHeader.value = (card.authHeader || '').trim()
   } else {
     // 自定义 Header 名
     selectedAuthType.value = getDefaultAuthType(activeTab.value)
     customAuthHeader.value = storedAuth
   }
   connectivityTestResult.value = null
+  piModelsValid.value = true
+  piHeadersValid.value = true
   modalState.errors.apiUrl = ''
   modalState.open = true
 }
@@ -2750,6 +3057,10 @@ const submitModal = async (): Promise<boolean> => {
   const apiKey = modalState.form.apiKey.trim()
   const officialSite = modalState.form.officialSite.trim()
   const icon = (modalState.form.icon || defaultIconKey).toString().trim().toLowerCase() || defaultIconKey
+  if (modalState.tabId === 'pi' && !piFormValid.value) {
+    showToast(t('components.provider.piPreview.fixBeforeSave'), 'error')
+    return false
+  }
   modalState.errors.apiUrl = ''
   try {
     const parsed = new URL(apiUrl)
@@ -2759,6 +3070,10 @@ const submitModal = async (): Promise<boolean> => {
     return false
   }
   const submittedUpstreamProtocol = resolveSubmittedUpstreamProtocol()
+  if (modalState.tabId === 'pi' && name.includes('/')) {
+    showToast(t('components.main.form.errors.piProviderName'), 'error')
+    return false
+  }
 
   if (editingCard.value) {
     // 若 name 发生变化,先走独立 RenameProvider RPC(后端事务改名 request_log/blacklist/health_check_history 并写 48h alias)。
@@ -2824,6 +3139,15 @@ const submitModal = async (): Promise<boolean> => {
       connectivityTestModel: '',
       connectivityTestEndpoint: '',
       connectivityAuthType: resolveEffectiveAuthType(),
+      authScheme: resolveAuthScheme(),
+      authHeader: customAuthHeader.value.trim(),
+      headers: { ...(modalState.form.headers || {}) },
+      userAgentPreset: modalState.form.userAgentPreset || 'inherit',
+      customUserAgent: modalState.form.customUserAgent || '',
+      modelsEndpoint: modalState.form.modelsEndpoint || '',
+      piModels: JSON.parse(JSON.stringify(modalState.form.piModels || [])),
+      piModelOverrides: JSON.parse(JSON.stringify(modalState.form.piModelOverrides || {})),
+      metadataUserId: modalState.form.metadataUserId?.trim() || '',
     })
     if (prevLevel !== nextLevel) {
       sortProvidersByLevel(list)
@@ -2874,6 +3198,15 @@ const submitModal = async (): Promise<boolean> => {
       connectivityTestModel: '',
       connectivityTestEndpoint: '',
       connectivityAuthType: resolveEffectiveAuthType(),
+      authScheme: resolveAuthScheme(),
+      authHeader: customAuthHeader.value.trim(),
+      headers: { ...(modalState.form.headers || {}) },
+      userAgentPreset: modalState.form.userAgentPreset || 'inherit',
+      customUserAgent: modalState.form.customUserAgent || '',
+      modelsEndpoint: modalState.form.modelsEndpoint || '',
+      piModels: JSON.parse(JSON.stringify(modalState.form.piModels || [])),
+      piModelOverrides: JSON.parse(JSON.stringify(modalState.form.piModelOverrides || {})),
+      metadataUserId: modalState.form.metadataUserId?.trim() || '',
     }
     list.push(newCard)
     sortProvidersByLevel(list)
@@ -2934,9 +3267,15 @@ const submitAndApplyModal = async () => {
       if (index !== -1 && geminiProvidersCache.value[index]) {
         const realId = geminiProvidersCache.value[index].id
         await Call.ByName('codeswitch/services.GeminiService.ApplySingleProvider', realId)
+      } else {
+        throw new Error('Gemini provider cache entry not found')
       }
+    } else if (tabId === 'deepseekcode') {
+      await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.ApplySingleProvider', editingId)
     } else if (tabId === 'reasonix') {
       await Call.ByName('codeswitch/services.ReasonixSettingsService.ApplySingleProvider', editingId)
+    } else {
+      throw new Error(`Direct apply is not supported for ${tabId}`)
     }
     await refreshDirectAppliedStatus(tabId)
     showToast(t('components.main.directApply.success', { name: editingCard.name }), 'success')
@@ -3100,9 +3439,12 @@ const onToolSelect = async () => {
     proxyStates.others = customCliProxyStates[selectedToolId.value] ?? false
     // 加载该工具的 providers 列表
     await loadCustomCliProviders(selectedToolId.value)
+    await loadProviderStats('others')
   } else {
     // 未选中任何工具，清空 providers 列表
     cards.others.splice(0, cards.others.length)
+    providerStatsMap.others = {}
+    providerStatsLoaded.others = true
   }
 }
 

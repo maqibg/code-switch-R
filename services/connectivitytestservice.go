@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -82,6 +81,8 @@ func NewConnectivityTestService(
 			"codex":        {},
 			"gemini":       {},
 			"deepseekcode": {},
+			"reasonix":     {},
+			"pi":           {},
 		},
 		autoTestEnabled: false,
 	}
@@ -102,13 +103,13 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	reqBody, contentField := cts.buildTestRequest(platform, &provider)
 	if reqBody == nil {
 		result.Status = StatusMissing
-		result.Message = "未配置测试模型，请在供应商设置中配置 ConnectivityTestModel"
+		result.Message = "未配置测试模型，请在供应商设置中配置可用性测试模型"
 		return result
 	}
 
 	// 根据用户配置的端点拼接目标 URL
 	targetURL := cts.buildTargetURL(&provider, platform)
-	authType := cts.getEffectiveAuthType(&provider, platform)
+	authType, _ := provider.effectiveAuthScheme(platform)
 
 	// 调试日志：打印最终请求信息
 	fmt.Printf("[DEBUG] 连通性测试请求:\n")
@@ -136,23 +137,14 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Content-Type", "application/json")
-		if provider.APIKey != "" {
-			authTypeLower := strings.ToLower(authType)
-			switch authTypeLower {
-			case "x-api-key":
-				req.Header.Set("x-api-key", provider.APIKey)
-				req.Header.Set("anthropic-version", "2023-06-01")
-			case "bearer":
-				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-			default:
-				headerName := strings.TrimSpace(authType)
-				if headerName == "" || strings.EqualFold(headerName, "custom") {
-					headerName = "Authorization"
-				}
-				req.Header.Set(headerName, provider.APIKey)
-			}
+		headers, err := buildUpstreamHeaders(provider, platform, nil, resolveProviderUpstreamProtocol(platform, provider, cts.getEffectiveEndpoint(&provider, platform)))
+		if err != nil {
+			return nil, err
 		}
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+		req.Header.Set("Content-Type", "application/json")
 		return req, nil
 	}
 
@@ -220,33 +212,21 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 // getEffectiveEndpoint 获取有效端点（含平台默认值）
 func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, platform string) string {
 	endpoint := strings.TrimSpace(provider.ConnectivityTestEndpoint)
+	if endpoint == "" && provider.AvailabilityConfig != nil {
+		endpoint = strings.TrimSpace(provider.AvailabilityConfig.TestEndpoint)
+	}
 	if endpoint != "" {
-		return endpoint
+		return resolveProviderTestEndpoint(platform, *provider, endpoint)
 	}
-	// 平台默认端点
-	switch strings.ToLower(platform) {
-	case "claude":
-		return "/v1/messages"
-	case "codex":
-		return "/responses"
-	default:
-		return "/v1/chat/completions"
-	}
-}
-
-// getEffectiveAuthType 获取有效认证方式（含平台默认值）
-// 返回值保留原始大小写，用于自定义 Header 名
-func (cts *ConnectivityTestService) getEffectiveAuthType(provider *Provider, platform string) string {
-	authType := strings.TrimSpace(provider.ConnectivityAuthType)
-	if authType != "" {
-		return authType
-	}
-	return defaultConnectivityAuthType(platform)
+	return resolveProviderTestEndpoint(platform, *provider, "")
 }
 
 // buildTestRequest 根据端点构建测试请求体
 func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *Provider) ([]byte, string) {
 	model := strings.TrimSpace(provider.ConnectivityTestModel)
+	if model == "" && provider.AvailabilityConfig != nil {
+		model = strings.TrimSpace(provider.AvailabilityConfig.TestModel)
+	}
 	if model == "" {
 		// 仅 Claude 平台提供默认模型，其他平台需用户自行配置
 		if strings.ToLower(platform) == "claude" {
@@ -256,46 +236,9 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		}
 	}
 
-	// 获取有效端点（含平台默认值）
-	endpoint := strings.ToLower(cts.getEffectiveEndpoint(provider, platform))
-	prompt := buildSimpleMathPrompt()
-
-	// Anthropic 格式: /v1/messages
-	if strings.Contains(endpoint, "/messages") {
-		reqBody := map[string]interface{}{
-			"model":      model,
-			"max_tokens": 1,
-			"messages": []map[string]string{
-				{"role": "user", "content": prompt},
-			},
-		}
-		data, _ := json.Marshal(reqBody)
-		return data, "content"
-	}
-
-	// Codex 格式: /responses
-	if strings.Contains(endpoint, "/responses") {
-		reqBody := map[string]interface{}{
-			"model":      model,
-			"max_tokens": 1,
-			"messages": []map[string]string{
-				{"role": "user", "content": prompt},
-			},
-		}
-		data, _ := json.Marshal(reqBody)
-		return data, "choices"
-	}
-
-	// 默认 OpenAI 格式: /v1/chat/completions
-	reqBody := map[string]interface{}{
-		"model":      model,
-		"max_tokens": 1,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-	}
-	data, _ := json.Marshal(reqBody)
-	return data, "choices"
+	endpoint := cts.getEffectiveEndpoint(provider, platform)
+	protocol := resolveProviderUpstreamProtocol(platform, *provider, endpoint)
+	return buildProviderTestRequest(protocol, model, buildSimpleMathPrompt())
 }
 
 func buildSimpleMathPrompt() string {
@@ -632,8 +575,7 @@ func (cts *ConnectivityTestService) stopAutoTest() {
 func (cts *ConnectivityTestService) runAllPlatformTests() {
 	// 仅轮询 ProviderService 支持的平台，避免无意义的错误日志
 	// Gemini 使用独立的 GeminiService，暂未接入
-	platforms := []string{"claude", "codex", "deepseekcode", "reasonix"}
-	for _, platform := range platforms {
+	for _, platform := range providerPlatformIDs() {
 		cts.TestAll(platform)
 	}
 }
@@ -672,7 +614,6 @@ func (cts *ConnectivityTestService) probeProviderLatency(
 	}
 
 	targetURL := cts.buildTargetURL(&provider, platform)
-	authType := cts.getEffectiveAuthType(&provider, platform)
 	proxyConfig := ProxyConfig{}
 	var err error
 	if provider.ProxyEnabled {
@@ -692,24 +633,19 @@ func (cts *ConnectivityTestService) probeProviderLatency(
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Accept", "application/json, text/plain, */*")
-		req.Header.Set("User-Agent", "code-switch-R")
-		if provider.APIKey != "" {
-			authTypeLower := strings.ToLower(authType)
-			switch authTypeLower {
-			case "x-api-key":
-				req.Header.Set("x-api-key", provider.APIKey)
-				req.Header.Set("anthropic-version", "2023-06-01")
-			case "bearer":
-				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-			default:
-				headerName := strings.TrimSpace(authType)
-				if headerName == "" || strings.EqualFold(headerName, "custom") {
-					headerName = "Authorization"
-				}
-				req.Header.Set(headerName, provider.APIKey)
-			}
+		headers, err := buildUpstreamHeaders(
+			provider,
+			platform,
+			map[string]string{"User-Agent": "code-switch-R"},
+			resolveProviderUpstreamProtocol(platform, provider, cts.getEffectiveEndpoint(&provider, platform)),
+		)
+		if err != nil {
+			return nil, err
 		}
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+		req.Header.Set("Accept", "application/json, text/plain, */*")
 		return req, nil
 	}
 

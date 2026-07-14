@@ -14,6 +14,25 @@ import (
 // aliasTTL 定义 rename 后旧名保留时长,必须 > in-flight 请求上限(32h)并留 buffer。
 const aliasTTL = 48 * time.Hour
 
+type providerDataScope struct {
+	identityPlatform  string
+	telemetryPlatform string
+	sourceID          string
+}
+
+func resolveProviderDataScope(kind string) (providerDataScope, error) {
+	platform, err := resolvePlatform(kind)
+	if err != nil {
+		return providerDataScope{}, err
+	}
+	scope := providerDataScope{identityPlatform: platform, telemetryPlatform: platform}
+	if strings.HasPrefix(platform, "custom:") {
+		scope.telemetryPlatform = "custom"
+		scope.sourceID = strings.TrimPrefix(platform, "custom:")
+	}
+	return scope, nil
+}
+
 // RenameProvider 改名 provider:事务更新 DB 中按 name 存储的历史数据,
 // 写入 48h alias 兜底 in-flight 请求,最后原子替换配置文件。
 //
@@ -31,9 +50,15 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 		return fmt.Errorf("新名字不能为空")
 	}
 
-	platform, err := resolvePlatform(kind)
+	scope, err := resolveProviderDataScope(kind)
 	if err != nil {
 		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(kind), "pi") && strings.Contains(newName, "/") {
+		return fmt.Errorf("Pi Provider 名称不能包含 '/'")
+	}
+	if err := ensureRequestLogTable(); err != nil {
+		return fmt.Errorf("初始化请求统计表失败: %w", err)
 	}
 
 	// 清理过期 alias(MVP:不起后台 job,借 rename 顺手 GC)
@@ -74,7 +99,7 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 	}
 
 	// 校验 alias 表内是否被占用 + 该 provider_id 48h 内是否已 rename
-	if err := checkAliasConstraints(platform, id, newName); err != nil {
+	if err := checkAliasConstraints(scope.identityPlatform, id, newName); err != nil {
 		return err
 	}
 
@@ -83,6 +108,7 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 	if err != nil {
 		return fmt.Errorf("序列化原配置失败: %w", err)
 	}
+	originalProviders := append([]Provider(nil), providers...)
 
 	// 更新内存中的 provider.Name,序列化新配置
 	target.Name = newName
@@ -118,12 +144,26 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 	if err != nil {
 		return rollbackFile(fmt.Errorf("开启事务失败: %w", err))
 	}
-	if err := doRenameTx(tx, platform, id, oldName, newName); err != nil {
+	if err := doRenameTx(tx, scope, id, oldName, newName); err != nil {
 		_ = tx.Rollback()
 		return rollbackFile(fmt.Errorf("更新历史数据失败: %w", err))
 	}
+	piSynced := false
+	if strings.EqualFold(strings.TrimSpace(kind), "pi") && ps.piGatewaySync != nil {
+		if err := ps.piGatewaySync(providers); err != nil {
+			_ = tx.Rollback()
+			return rollbackFile(fmt.Errorf("同步 Pi models.json 失败: %w", err))
+		}
+		piSynced = true
+	}
 	if err := tx.Commit(); err != nil {
-		return rollbackFile(fmt.Errorf("提交事务失败: %w", err))
+		primary := fmt.Errorf("提交事务失败: %w", err)
+		if piSynced {
+			if syncErr := ps.piGatewaySync(originalProviders); syncErr != nil {
+				primary = fmt.Errorf("%w; Pi gateway 回滚失败: %v", primary, syncErr)
+			}
+		}
+		return rollbackFile(primary)
 	}
 
 	return nil
@@ -131,24 +171,24 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 
 // doRenameTx 在 tx 内完成 DB 侧所有改动:
 // request_log.provider / provider_blacklist.provider_name / health_check_history + 写 alias。
-func doRenameTx(tx *sql.Tx, platform string, providerID int64, oldName, newName string) error {
-	if _, err := tx.Exec(
-		`UPDATE request_log SET provider = ? WHERE platform = ? AND provider = ?`,
-		newName, platform, oldName,
-	); err != nil {
+func doRenameTx(tx *sql.Tx, scope providerDataScope, providerID int64, oldName, newName string) error {
+	if err := updateRequestLogProviderNameTx(tx, scope, oldName, newName); err != nil {
 		return fmt.Errorf("更新 request_log 失败: %w", err)
+	}
+	if err := updateRelayAttemptProviderNameTx(tx, scope, oldName, newName); err != nil {
+		return fmt.Errorf("更新 relay_attempt 失败: %w", err)
 	}
 
 	if _, err := tx.Exec(
 		`UPDATE provider_blacklist SET provider_name = ? WHERE platform = ? AND provider_name = ?`,
-		newName, platform, oldName,
+		newName, scope.identityPlatform, oldName,
 	); err != nil {
 		return fmt.Errorf("更新 provider_blacklist 失败: %w", err)
 	}
 
 	if _, err := tx.Exec(
 		`UPDATE health_check_history SET provider_name = ? WHERE platform = ? AND provider_id = ?`,
-		newName, platform, providerID,
+		newName, scope.identityPlatform, providerID,
 	); err != nil {
 		return fmt.Errorf("更新 health_check_history 失败: %w", err)
 	}
@@ -157,12 +197,38 @@ func doRenameTx(tx *sql.Tx, platform string, providerID int64, oldName, newName 
 	if _, err := tx.Exec(
 		`INSERT INTO provider_alias (platform, provider_id, alias_name, canonical_name, expires_at)
 		 VALUES (?, ?, ?, ?, ?)`,
-		platform, providerID, oldName, newName, expiresAt,
+		scope.identityPlatform, providerID, oldName, newName, expiresAt,
 	); err != nil {
 		return fmt.Errorf("写入 alias 失败: %w", err)
 	}
 
 	return nil
+}
+
+func updateRequestLogProviderNameTx(tx *sql.Tx, scope providerDataScope, oldName, newName string) error {
+	if scope.sourceID == "" {
+		_, err := tx.Exec(`UPDATE request_log SET provider = ? WHERE platform = ? AND provider = ?`, newName, scope.identityPlatform, oldName)
+		return err
+	}
+	_, err := tx.Exec(
+		`UPDATE request_log SET provider = ?
+		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
+		newName, oldName, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
+	)
+	return err
+}
+
+func updateRelayAttemptProviderNameTx(tx *sql.Tx, scope providerDataScope, oldName, newName string) error {
+	if scope.sourceID == "" {
+		_, err := tx.Exec(`UPDATE relay_attempt SET provider = ? WHERE platform = ? AND provider = ?`, newName, scope.identityPlatform, oldName)
+		return err
+	}
+	_, err := tx.Exec(
+		`UPDATE relay_attempt SET provider = ?
+		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
+		newName, oldName, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
+	)
+	return err
 }
 
 // checkAliasConstraints 校验 alias 表层面的约束:
@@ -270,18 +336,24 @@ func ResolveProviderAlias(platform, name string) string {
 
 // resolvePlatform 把 kind 归一到 DB 使用的 platform 值(与 request_log/blacklist 一致)。
 func resolvePlatform(kind string) (string, error) {
-	switch strings.ToLower(kind) {
+	trimmed := strings.TrimSpace(kind)
+	normalized := strings.ToLower(trimmed)
+	switch normalized {
 	case "claude", "claude-code", "claude_code":
 		return "claude", nil
 	case "codex":
 		return "codex", nil
+	case "gemini":
+		return "gemini", nil
 	case "deepseekcode", "deepseek_code", "deepseek-code":
 		return "deepseekcode", nil
 	case "reasonix":
 		return "reasonix", nil
+	case "pi":
+		return "pi", nil
 	default:
-		if strings.HasPrefix(kind, "custom:") {
-			return kind, nil
+		if strings.HasPrefix(normalized, "custom:") && len(normalized) > len("custom:") {
+			return "custom:" + strings.TrimSpace(trimmed[len("custom:"):]), nil
 		}
 		return "", fmt.Errorf("不支持的 provider kind: %s", kind)
 	}

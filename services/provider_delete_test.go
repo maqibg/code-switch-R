@@ -33,6 +33,9 @@ func TestSaveProviders_DeleteCleansProviderData(t *testing.T) {
 	seedRequestLog(t, "claude", "DeleteMe", 2)
 	seedRequestLog(t, "claude", "OldDeleteMe", 1)
 	seedRequestLog(t, "claude", "KeepMe", 1)
+	seedRelayAttempt(t, "claude", "", "DeleteMe", 2)
+	seedRelayAttempt(t, "claude", "", "OldDeleteMe", 1)
+	seedRelayAttempt(t, "claude", "", "KeepMe", 1)
 	seedBlacklist(t, "claude", "DeleteMe")
 	seedBlacklist(t, "claude", "OldDeleteMe")
 	seedBlacklist(t, "claude", "KeepMe")
@@ -64,6 +67,9 @@ func assertDeletedProviderDataRemoved(t *testing.T, platform string, providerID 
 	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE platform = ? AND provider IN (?, ?)`, platform, "DeleteMe", "OldDeleteMe"); n != 0 {
 		t.Fatalf("删除供应商的 request_log 应清空,实际 %d", n)
 	}
+	if n := countRows(t, `SELECT COUNT(*) FROM relay_attempt WHERE platform = ? AND provider IN (?, ?)`, platform, "DeleteMe", "OldDeleteMe"); n != 0 {
+		t.Fatalf("删除供应商的 relay_attempt 应清空,实际 %d", n)
+	}
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE platform = ? AND provider_name IN (?, ?)`, platform, "DeleteMe", "OldDeleteMe"); n != 0 {
 		t.Fatalf("删除供应商的 provider_blacklist 应清空,实际 %d", n)
 	}
@@ -79,6 +85,9 @@ func assertKeptProviderDataRemains(t *testing.T, platform string, providerID int
 	t.Helper()
 	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE platform = ? AND provider = ?`, platform, "KeepMe"); n != 1 {
 		t.Fatalf("未删除供应商的 request_log 应保留,实际 %d", n)
+	}
+	if n := countRows(t, `SELECT COUNT(*) FROM relay_attempt WHERE platform = ? AND provider = ?`, platform, "KeepMe"); n != 1 {
+		t.Fatalf("未删除供应商的 relay_attempt 应保留,实际 %d", n)
 	}
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE platform = ? AND provider_name = ?`, platform, "KeepMe"); n != 1 {
 		t.Fatalf("未删除供应商的 provider_blacklist 应保留,实际 %d", n)

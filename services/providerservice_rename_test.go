@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,6 +80,9 @@ func setupRenameTestEnv(t *testing.T) string {
 			t.Fatalf("建表失败: %v", err)
 		}
 	}
+	if err := ensureRequestLogTable(); err != nil {
+		t.Fatalf("初始化请求统计表失败: %v", err)
+	}
 
 	return tmpHome
 }
@@ -143,14 +147,47 @@ func resetDefaultTestDB(t *testing.T) {
 // saveProviderFixture 写入一组 provider 到 claude-code.json 作为初始状态。
 func saveProviderFixture(t *testing.T, ps *ProviderService, providers []Provider) {
 	t.Helper()
+	saveProviderFixtureForKind(t, "claude", providers)
+}
+
+func saveProviderFixtureForKind(t *testing.T, kind string, providers []Provider) {
+	t.Helper()
 	// 直接写文件绕过 SaveProviders 的 name 不可改校验
-	path, err := providerFilePath("claude")
+	path, err := providerFilePath(kind)
 	if err != nil {
 		t.Fatalf("获取路径失败: %v", err)
 	}
 	data, _ := serializeProviders(providers)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("写 fixture 失败: %v", err)
+	}
+}
+
+func seedRequestLogWithSource(t *testing.T, platform, sourceID, providerName string, count int) {
+	t.Helper()
+	db, _ := xdb.DB("default")
+	for i := 0; i < count; i++ {
+		_, err := db.Exec(
+			`INSERT INTO request_log (request_id, platform, source_id, model, provider, http_code) VALUES (?, ?, ?, ?, ?, 200)`,
+			fmt.Sprintf("request-%s-%s-%s-%d", platform, sourceID, providerName, i), platform, sourceID, "test-model", providerName,
+		)
+		if err != nil {
+			t.Fatalf("seed request_log source 失败: %v", err)
+		}
+	}
+}
+
+func seedRelayAttempt(t *testing.T, platform, sourceID, providerName string, count int) {
+	t.Helper()
+	db, _ := xdb.DB("default")
+	for i := 0; i < count; i++ {
+		_, err := db.Exec(
+			`INSERT INTO relay_attempt (request_id, attempt_index, platform, source_id, provider, model) VALUES (?, 1, ?, ?, ?, ?)`,
+			fmt.Sprintf("attempt-%s-%s-%s-%d", platform, sourceID, providerName, i), platform, sourceID, providerName, "test-model",
+		)
+		if err != nil {
+			t.Fatalf("seed relay_attempt 失败: %v", err)
+		}
 	}
 }
 
@@ -212,6 +249,7 @@ func TestRenameProvider_HappyPath(t *testing.T) {
 	})
 
 	seedRequestLog(t, "claude", "OldName", 5)
+	seedRelayAttempt(t, "claude", "", "OldName", 2)
 	seedBlacklist(t, "claude", "OldName")
 	seedHealthCheck(t, "claude", 1, "OldName")
 
@@ -234,6 +272,9 @@ func TestRenameProvider_HappyPath(t *testing.T) {
 	}
 	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE provider = ?`, "OldName"); n != 0 {
 		t.Errorf("request_log 不应还有 OldName,实际 %d", n)
+	}
+	if n := countRows(t, `SELECT COUNT(*) FROM relay_attempt WHERE provider = ? AND platform = ?`, "NewName", "claude"); n != 2 {
+		t.Errorf("relay_attempt 应 2 条 NewName,实际 %d", n)
 	}
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE provider_name = ?`, "NewName"); n != 1 {
 		t.Errorf("provider_blacklist 应改名,实际 NewName 条数 %d", n)

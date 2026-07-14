@@ -25,16 +25,18 @@ var beijingLocation = func() *time.Location {
 }()
 
 const (
-	timeLayout          = "2006-01-02 15:04:05"
-	statsRangeToday     = "today"
-	statsRange7Days     = "7d"
-	statsRange30Days    = "30d"
-	statsRangeMonth     = "month"
-	statsRangeAll       = "all"
-	seriesBucketHour    = "hour"
-	seriesBucketDay     = "day"
-	seriesBucketMonth   = "month"
-	appDatabaseFilename = "app.db"
+	timeLayout           = "2006-01-02 15:04:05"
+	statsRangeToday      = "today"
+	statsRange7Days      = "7d"
+	statsRange30Days     = "30d"
+	statsRangeMonth      = "month"
+	statsRangeAll        = "all"
+	seriesBucketHour     = "hour"
+	seriesBucketDay      = "day"
+	seriesBucketMonth    = "month"
+	appDatabaseFilename  = "app.db"
+	requestLogSuccessSQL = "COALESCE(http_code, 0) >= 200 AND COALESCE(http_code, 0) < 300 AND COALESCE(error_type, '') = ''"
+	requestLogFailureSQL = "NOT (" + requestLogSuccessSQL + ")"
 )
 
 type LogService struct {
@@ -57,7 +59,7 @@ func (acc *dashboardAccumulator) add(record xdb.Record, cost modelpricing.CostBr
 	reasoning := record.GetInt("reasoning_tokens")
 	acc.requests++
 	acc.totalTokens += int64(input + output + reasoning)
-	if httpCode := record.GetInt("http_code"); httpCode >= 200 && httpCode < 300 {
+	if requestLogRecordSucceeded(record) {
 		acc.successes++
 	}
 	if durationSec := record.GetFloat64("duration_sec"); durationSec > 0 {
@@ -144,6 +146,7 @@ func resolveStatsWindow(rangeKey string, now time.Time) statsWindow {
 type requestLogRecordFilter struct {
 	platform string
 	provider string
+	sourceID string
 	start    *time.Time
 }
 
@@ -166,7 +169,15 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 	if filter.start != nil {
 		options = append(options, xdb.WhereGte("created_at", formatCreatedAtBoundary(*filter.start)))
 	}
-	if filter.platform != "" {
+	if filter.sourceID != "" {
+		options = append(options, xdb.WhereGroup(
+			xdb.WhereGroup(
+				xdb.WhereEq("platform", filter.platform),
+				xdb.WhereEq("source_id", filter.sourceID),
+			),
+			xdb.WhereOrEq("platform", "custom:"+filter.sourceID),
+		))
+	} else if filter.platform != "" {
 		options = append(options, xdb.WhereEq("platform", filter.platform))
 	}
 	if filter.provider != "" {
@@ -180,6 +191,11 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 		return nil, err
 	}
 	return records, nil
+}
+
+func requestLogRecordSucceeded(record xdb.Record) bool {
+	httpCode := record.GetInt("http_code")
+	return httpCode >= 200 && httpCode < 300 && strings.TrimSpace(record.GetString("error_type")) == ""
 }
 
 func buildUsageSnapshot(record xdb.Record) modelpricing.UsageSnapshot {
@@ -416,16 +432,14 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 	}
 
 	// 如果未注入 ProviderService（如测试环境），回退到不过滤
-	if ls.providerService == nil {
+	// Gemini 使用独立存储，custom 还需要 source_id 才能定位具体工具；这两类直接使用日志中的名称。
+	if ls.providerService == nil || platform == "" || platform == "gemini" || platform == "custom" {
 		return logProviders, nil
 	}
 
 	// 从配置文件中获取当前存在的供应商名称集合
 	configuredSet := make(map[string]bool)
-	kinds := []string{"claude", "codex", "deepseekcode", "reasonix"}
-	if platform != "" && platform != "gemini" {
-		kinds = []string{platform}
-	}
+	kinds := []string{platform}
 	for _, kind := range kinds {
 		providers, _ := ls.providerService.LoadProviders(kind)
 		for _, p := range providers {
@@ -459,6 +473,7 @@ func (ls *LogService) DashboardOverviewByRange(platform string, rangeKey string)
 		queryStart,
 		"model",
 		"http_code",
+		"error_type",
 		"input_tokens",
 		"output_tokens",
 		"reasoning_tokens",
@@ -676,24 +691,30 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 }
 
 func (ls *LogService) ProviderStatsByRange(platform string, rangeKey string) ([]ProviderDailyStat, error) {
-	return ls.providerStatsByRange(platform, "", rangeKey)
+	return ls.providerStatsByRange(platform, "", "", rangeKey)
 }
 
 func (ls *LogService) ProviderStatsByProviderAndRange(platform string, provider string, rangeKey string) ([]ProviderDailyStat, error) {
-	return ls.providerStatsByRange(platform, provider, rangeKey)
+	return ls.providerStatsByRange(platform, provider, "", rangeKey)
 }
 
-func (ls *LogService) providerStatsByRange(platform string, provider string, rangeKey string) ([]ProviderDailyStat, error) {
+func (ls *LogService) ProviderStatsBySourceAndRange(platform string, sourceID string, rangeKey string) ([]ProviderDailyStat, error) {
+	return ls.providerStatsByRange(platform, "", strings.TrimSpace(sourceID), rangeKey)
+}
+
+func (ls *LogService) providerStatsByRange(platform string, provider string, sourceID string, rangeKey string) ([]ProviderDailyStat, error) {
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
 	records, err := selectRequestLogRecordsByFilter(
 		requestLogRecordFilter{
 			platform: platform,
 			provider: provider,
+			sourceID: sourceID,
 			start:    window.currentStart,
 		},
 		"provider",
 		"model",
 		"http_code",
+		"error_type",
 		"input_tokens",
 		"output_tokens",
 		"reasoning_tokens",
@@ -717,12 +738,10 @@ func (ls *LogService) providerStatsByRange(platform string, provider string, ran
 			stat = &ProviderDailyStat{Provider: provider}
 			statMap[provider] = stat
 		}
-		httpCode := record.GetInt("http_code")
 		usage := buildUsageSnapshot(record)
 		cost := ls.calculateCost(record.GetString("model"), usage)
 		stat.TotalRequests++
-		// 只有 HTTP 200-299 才算成功，其他（包括 0）都算失败
-		if httpCode >= 200 && httpCode < 300 {
+		if requestLogRecordSucceeded(record) {
 			stat.SuccessfulRequests++
 		} else {
 			stat.FailedRequests++
@@ -761,6 +780,7 @@ func (ls *LogService) ModelStatsByRange(platform string, rangeKey string) ([]Mod
 		window.currentStart,
 		"model",
 		"http_code",
+		"error_type",
 		"input_tokens",
 		"output_tokens",
 		"reasoning_tokens",
@@ -787,7 +807,6 @@ func (ls *LogService) ModelStatsByRange(platform string, rangeKey string) ([]Mod
 			statsMap[modelName] = stat
 		}
 
-		httpCode := record.GetInt("http_code")
 		input := record.GetInt("input_tokens")
 		output := record.GetInt("output_tokens")
 		reasoning := record.GetInt("reasoning_tokens")
@@ -796,7 +815,7 @@ func (ls *LogService) ModelStatsByRange(platform string, rangeKey string) ([]Mod
 		cost := ls.calculateCost(record.GetString("model"), buildUsageSnapshot(record))
 
 		stat.TotalRequests++
-		if httpCode >= 200 && httpCode < 300 {
+		if requestLogRecordSucceeded(record) {
 			stat.SuccessfulRequests++
 		} else {
 			stat.FailedRequests++
@@ -839,6 +858,10 @@ func (ls *LogService) GetRecordStorageInfo() (RecordStorageInfo, error) {
 	if err != nil {
 		return info, err
 	}
+	relayAttemptCount, err := countTableRows(db, "relay_attempt")
+	if err != nil {
+		return info, err
+	}
 	healthCount, err := countTableRows(db, "health_check_history")
 	if err != nil {
 		return info, err
@@ -855,6 +878,7 @@ func (ls *LogService) GetRecordStorageInfo() (RecordStorageInfo, error) {
 	info.SHMBytes = fileSize(dbPath + "-shm")
 	info.TotalBytes = info.DBBytes + info.WALBytes + info.SHMBytes
 	info.RequestLogCount = requestCount
+	info.RelayAttemptCount = relayAttemptCount
 	info.HealthCheckCount = healthCount
 	return info, nil
 }
@@ -866,13 +890,26 @@ func (ls *LogService) ClearStoredRecords() (RecordCleanupResult, error) {
 		return result, fmt.Errorf("获取数据库连接失败: %w", err)
 	}
 
-	deletedRequestLogs, err := deleteAllRows(db, "request_log")
+	tx, err := db.Begin()
+	if err != nil {
+		return result, fmt.Errorf("开启记录清理事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	deletedRequestLogs, err := deleteAllRows(tx, "request_log")
 	if err != nil {
 		return result, err
 	}
-	deletedHealthChecks, err := deleteAllRows(db, "health_check_history")
+	deletedRelayAttempts, err := deleteAllRows(tx, "relay_attempt")
 	if err != nil {
 		return result, err
+	}
+	deletedHealthChecks, err := deleteAllRows(tx, "health_check_history")
+	if err != nil {
+		return result, err
+	}
+	if err := tx.Commit(); err != nil {
+		return result, fmt.Errorf("提交记录清理事务失败: %w", err)
 	}
 
 	if _, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
@@ -891,6 +928,7 @@ func (ls *LogService) ClearStoredRecords() (RecordCleanupResult, error) {
 		return result, err
 	}
 	result.DeletedRequestLogs = deletedRequestLogs
+	result.DeletedRelayAttempts = deletedRelayAttempts
 	result.DeletedHealthChecks = deletedHealthChecks
 	result.Storage = info
 	return result, nil
@@ -933,7 +971,11 @@ func countTableRows(db *sql.DB, tableName string) (int64, error) {
 	return count, nil
 }
 
-func deleteAllRows(db *sql.DB, tableName string) (int64, error) {
+type sqlExecer interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
+func deleteAllRows(db sqlExecer, tableName string) (int64, error) {
 	query := fmt.Sprintf("DELETE FROM %s", tableName)
 	execResult, err := db.Exec(query)
 	if err != nil {
@@ -982,7 +1024,8 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 		return err
 	}
 	rows, err := db.Query(`
-		SELECT id, model, input_tokens, output_tokens, reasoning_tokens, cache_create_tokens, cache_read_tokens
+		SELECT id, model, input_tokens, output_tokens, reasoning_tokens, cache_create_tokens, cache_read_tokens,
+		       ephemeral_5m_tokens, ephemeral_1h_tokens, service_tier
 		FROM request_log
 		WHERE cost_calculated = 0
 		ORDER BY id DESC
@@ -1012,17 +1055,29 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 			reasoningTokens   int
 			cacheCreateTokens int
 			cacheReadTokens   int
+			ephemeral5mTokens int
+			ephemeral1hTokens int
+			serviceTier       string
 		)
-		if err := rows.Scan(&id, &model, &inputTokens, &outputTokens, &reasoningTokens, &cacheCreateTokens, &cacheReadTokens); err != nil {
+		if err := rows.Scan(&id, &model, &inputTokens, &outputTokens, &reasoningTokens, &cacheCreateTokens, &cacheReadTokens,
+			&ephemeral5mTokens, &ephemeral1hTokens, &serviceTier); err != nil {
 			return err
 		}
-		cost := ls.calculateCost(model, modelpricing.UsageSnapshot{
+		snapshot := modelpricing.UsageSnapshot{
 			InputTokens:       inputTokens,
 			OutputTokens:      outputTokens,
 			ReasoningTokens:   reasoningTokens,
 			CacheCreateTokens: cacheCreateTokens,
 			CacheReadTokens:   cacheReadTokens,
-		})
+			ServiceTier:       modelpricing.ServiceTier(strings.ToLower(strings.TrimSpace(serviceTier))),
+		}
+		if ephemeral5mTokens > 0 || ephemeral1hTokens > 0 {
+			snapshot.CacheCreation = &modelpricing.CacheCreationDetail{
+				Ephemeral5mTokens: ephemeral5mTokens,
+				Ephemeral1hTokens: ephemeral1hTokens,
+			}
+		}
+		cost := ls.calculateCost(model, snapshot)
 		if _, err := tx.Exec(`
 			UPDATE request_log
 			SET input_cost = ?, output_cost = ?, reasoning_cost = ?, cache_create_cost = ?, cache_read_cost = ?,
@@ -1298,19 +1353,21 @@ type LogStatsSeries struct {
 }
 
 type RecordStorageInfo struct {
-	TotalBytes       int64 `json:"total_bytes"`
-	DBBytes          int64 `json:"db_bytes"`
-	WALBytes         int64 `json:"wal_bytes"`
-	SHMBytes         int64 `json:"shm_bytes"`
-	RequestLogCount  int64 `json:"request_log_count"`
-	HealthCheckCount int64 `json:"health_check_count"`
+	TotalBytes        int64 `json:"total_bytes"`
+	DBBytes           int64 `json:"db_bytes"`
+	WALBytes          int64 `json:"wal_bytes"`
+	SHMBytes          int64 `json:"shm_bytes"`
+	RequestLogCount   int64 `json:"request_log_count"`
+	RelayAttemptCount int64 `json:"relay_attempt_count"`
+	HealthCheckCount  int64 `json:"health_check_count"`
 }
 
 type RecordCleanupResult struct {
-	DeletedRequestLogs  int64             `json:"deleted_request_logs"`
-	DeletedHealthChecks int64             `json:"deleted_health_checks"`
-	Storage             RecordStorageInfo `json:"storage"`
-	Warning             string            `json:"warning"`
+	DeletedRequestLogs   int64             `json:"deleted_request_logs"`
+	DeletedRelayAttempts int64             `json:"deleted_relay_attempts"`
+	DeletedHealthChecks  int64             `json:"deleted_health_checks"`
+	Storage              RecordStorageInfo `json:"storage"`
+	Warning              string            `json:"warning"`
 }
 
 func averageDuration(acc dashboardAccumulator) float64 {

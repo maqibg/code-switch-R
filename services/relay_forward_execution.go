@@ -1,7 +1,6 @@
 package services
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 
@@ -14,29 +13,32 @@ import (
 const defaultOpenAIChatEndpoint = "/v1/chat/completions"
 
 type relayForwardExecution struct {
-	Kind                  string
-	Provider              Provider
-	RoutePlan             relayprotocol.RoutePlan
-	UpstreamProtocol      UpstreamProtocolType
-	TargetEndpoint        string
-	BodyBytes             []byte
-	IsStream              bool
-	Model                 string
-	UseCodexContinue      bool
-	AnthropicSSEConverter *OpenAIToAnthropicSSEConverter
-	CodexChatMessages     []map[string]any
+	Kind                 string
+	Provider             Provider
+	RoutePlan            relayprotocol.RoutePlan
+	UpstreamProtocol     UpstreamProtocolType
+	TargetEndpoint       string
+	BodyBytes            []byte
+	IsStream             bool
+	Model                string
+	UseCodexContinue     bool
+	ProtocolMatrixBridge bool
+	BufferedMatrixBridge bool
+	MatrixSSEConverter   *ProtocolMatrixSSEConverter
+	CodexChatMessages    []map[string]any
 }
 
 func (prs *ProviderRelayService) newRelayForwardExecution(
 	kind string,
+	clientProtocol relayprotocol.Protocol,
 	provider Provider,
 	endpoint string,
 	bodyBytes []byte,
 	isStream bool,
 	model string,
 ) (*relayForwardExecution, error) {
-	upstreamProtocol := provider.ResolveUpstreamProtocol(endpoint)
-	routePlan := relayprotocol.BuildRoutePlan(kind, string(upstreamProtocol), endpoint)
+	upstreamProtocol := resolveProviderUpstreamProtocol(kind, provider, endpoint)
+	routePlan := relayprotocol.BuildExplicitRoutePlan(kind, clientProtocol, upstreamProtocolToProtocol(upstreamProtocol), endpoint)
 	execution := &relayForwardExecution{
 		Kind:             kind,
 		Provider:         provider,
@@ -51,20 +53,45 @@ func (prs *ProviderRelayService) newRelayForwardExecution(
 		execution.UseCodexContinue = true
 		return execution, nil
 	}
+	if routePlan.NeedsTransform && isResponsesCompactEndpoint(endpoint) {
+		return nil, NewClientRequestRejectedError("Responses compact 仅支持原生 OpenAI Responses 上游")
+	}
 	switch routePlan.Bridge {
 	case relayprotocol.BridgeCodexResponsesToChat:
 		if err := prs.prepareCodexResponsesToChatExecution(execution); err != nil {
 			return nil, err
 		}
-	case relayprotocol.BridgeAnthropicMessagesToChat:
-		if err := prepareAnthropicMessagesToChatExecution(execution); err != nil {
-			return nil, err
+	default:
+		if routePlan.NeedsTransform {
+			if err := prs.prepareMatrixExecution(execution); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return execution, nil
 }
 
+func isResponsesCompactEndpoint(endpoint string) bool {
+	path, _ := splitEndpointQuery(endpoint)
+	normalized := strings.ToLower(strings.TrimSuffix(path, "/"))
+	return strings.HasSuffix(normalized, "/responses/compact")
+}
+
+func upstreamProtocolToProtocol(value UpstreamProtocolType) relayprotocol.Protocol {
+	switch value {
+	case UpstreamProtocolOpenAIChat:
+		return relayprotocol.OpenAIChat
+	case UpstreamProtocolOpenAIResponses:
+		return relayprotocol.OpenAIResponses
+	default:
+		return relayprotocol.AnthropicMessages
+	}
+}
+
 func (prs *ProviderRelayService) prepareCodexResponsesToChatExecution(execution *relayForwardExecution) error {
+	if err := validateCrossProtocolReasoning(execution.BodyBytes, relayprotocol.OpenAIResponses); err != nil {
+		return err
+	}
 	var history []map[string]any
 	if previousID := codexPreviousResponseIDFromBytes(execution.BodyBytes); previousID != "" {
 		history, _ = prs.codexChatHistory.Load(previousID)
@@ -78,32 +105,6 @@ func (prs *ProviderRelayService) prepareCodexResponsesToChatExecution(execution 
 	execution.TargetEndpoint = rewriteOpenAIChatEndpoint(execution.TargetEndpoint)
 	execution.UpstreamProtocol = UpstreamProtocolOpenAIChat
 	return nil
-}
-
-func prepareAnthropicMessagesToChatExecution(execution *relayForwardExecution) error {
-	fmt.Printf("[协议转换] Provider %s 使用 OpenAI Chat 协议\n", execution.Provider.Name)
-	convertedBody, info, err := ConvertAnthropicToOpenAI(execution.BodyBytes, DefaultConvertOptions())
-	if err != nil {
-		return err
-	}
-	logAnthropicChatConvertInfo(info)
-	execution.BodyBytes = convertedBody
-	execution.TargetEndpoint = rewriteOpenAIChatEndpoint(execution.TargetEndpoint)
-	execution.UpstreamProtocol = UpstreamProtocolOpenAIChat
-	execution.AnthropicSSEConverter = NewOpenAIToAnthropicSSEConverter(execution.Model)
-	return nil
-}
-
-func logAnthropicChatConvertInfo(info ConvertInfo) {
-	if len(info.DroppedMetadataKeys) > 0 {
-		fmt.Printf("[协议转换] 丢弃 metadata keys: %v\n", info.DroppedMetadataKeys)
-	}
-	if len(info.DroppedFields) > 0 {
-		fmt.Printf("[协议转换] 丢弃顶层字段: %v\n", info.DroppedFields)
-	}
-	if info.MappedUser != "" {
-		fmt.Printf("[协议转换] metadata.user_id -> user: %s\n", info.MappedUser)
-	}
 }
 
 func rewriteOpenAIChatEndpoint(endpoint string) string {
@@ -155,7 +156,8 @@ func isClientProtocolEndpoint(endpoint string) bool {
 	switch normalized {
 	case "/responses", "/v1/responses", "/v1/v1/responses", "/codex/v1/responses",
 		"/responses/compact", "/v1/responses/compact", "/v1/v1/responses/compact",
-		"/codex/v1/responses/compact", "/v1/messages":
+		"/codex/v1/responses/compact", "/v1/messages", "/messages",
+		"/v1/chat/completions", "/chat/completions":
 		return true
 	default:
 		return false
@@ -168,21 +170,60 @@ func (prs *ProviderRelayService) copyRelayExecutionResponse(
 	execution *relayForwardExecution,
 	requestLog *ReqeustLog,
 ) error {
+	if execution.BufferedMatrixBridge {
+		return prs.writeBufferedMatrixResponse(c, resp, execution, requestLog)
+	}
+	if execution.MatrixSSEConverter != nil && execution.IsStream {
+		_, err := resp.ToHttpResponseWriter(c.Writer, protocolMatrixHook(execution.MatrixSSEConverter, execution.RoutePlan.ClientProtocol, requestLog))
+		if err != nil {
+			return err
+		}
+		if err := execution.MatrixSSEConverter.Err(); err != nil {
+			return err
+		}
+		if execution.RoutePlan.ClientProtocol == relayprotocol.OpenAIResponses {
+			responseID := execution.MatrixSSEConverter.ResponseID()
+			if responseID != "" {
+				prs.codexChatHistory.Store(responseID, appendAssistantChatMessageFromChat(
+					execution.CodexChatMessages,
+					execution.MatrixSSEConverter.AssistantChatMessage(),
+				))
+			}
+		}
+		return nil
+	}
 	if execution.RoutePlan.Bridge == relayprotocol.BridgeCodexResponsesToChat && execution.IsStream {
 		converter := NewCodexChatSSEConverter(execution.Model)
 		_, err := resp.ToHttpResponseWriter(c.Writer, codexChatBridgeHook(converter, requestLog))
-		if err == nil {
+		if err != nil {
+			return err
+		}
+		if err := converter.Err(); err != nil {
+			return err
+		}
+		if converter.ResponseID() != "" {
 			prs.codexChatHistory.Store(converter.ResponseID(), appendAssistantChatMessageFromChat(execution.CodexChatMessages, converter.AssistantChatMessage()))
 		}
-		return err
+		return nil
 	}
 	if execution.RoutePlan.Bridge == relayprotocol.BridgeCodexResponsesToChat {
 		return prs.writeCodexChatBridgeResponse(c, resp, requestLog, execution.CodexChatMessages)
 	}
-	if execution.AnthropicSSEConverter != nil && execution.IsStream {
-		_, err := resp.ToHttpResponseWriter(c.Writer, protocolConvertHook(execution.AnthropicSSEConverter, execution.Kind, requestLog))
-		return err
-	}
-	_, err := resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, execution.Kind, requestLog))
+	_, err := resp.ToHttpResponseWriter(c.Writer, requestLogProtocolHook(execution.RoutePlan.UpstreamProtocol, requestLog))
 	return err
+}
+
+func requestLogProtocolHook(protocol relayprotocol.Protocol, usage *ReqeustLog) func(data []byte) (bool, []byte) {
+	return func(data []byte) (bool, []byte) {
+		payload := strings.TrimSpace(string(data))
+		switch protocol {
+		case relayprotocol.OpenAIChat:
+			parseEventPayload(payload, ReasonixParseTokenUsageFromResponse, usage)
+		case relayprotocol.OpenAIResponses:
+			parseEventPayload(payload, CodexParseTokenUsageFromResponse, usage)
+		default:
+			parseEventPayload(payload, ClaudeCodeParseTokenUsageFromResponse, usage)
+		}
+		return true, data
+	}
 }

@@ -1,6 +1,6 @@
 import { Call } from '@wailsio/runtime'
 
-export type LogPlatform = 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix'
+export type LogPlatform = 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix' | 'pi' | 'custom'
 export type StatsRange = 'today' | '7d' | '30d' | 'month' | 'all'
 
 export type RequestLog = {
@@ -137,7 +137,11 @@ export const fetchProviderDailyStats = async (
   platform: LogPlatform | '' = '',
   range: StatsRange = 'today',
   provider = '',
+  sourceId = '',
 ): Promise<ProviderDailyStat[]> => {
+  if (sourceId) {
+    return Call.ByName('codeswitch/services.LogService.ProviderStatsBySourceAndRange', platform, sourceId, range)
+  }
   if (provider) {
     return Call.ByName('codeswitch/services.LogService.ProviderStatsByProviderAndRange', platform, provider, range)
   }
@@ -177,11 +181,13 @@ export type RecordStorageInfo = {
   wal_bytes: number
   shm_bytes: number
   request_log_count: number
+  relay_attempt_count: number
   health_check_count: number
 }
 
 export type RecordCleanupResult = {
   deleted_request_logs: number
+  deleted_relay_attempts: number
   deleted_health_checks: number
   storage: RecordStorageInfo
   warning?: string
@@ -191,7 +197,7 @@ export type DashboardBundle = {
   range_key: StatsRange
   overview: DashboardOverview
   trend: LogStats
-  platform_stats: Record<LogPlatform, LogStats>
+  platform_stats: Partial<Record<LogPlatform, LogStats>>
   provider_ranks: ProviderDailyStat[]
   model_ranks: ModelDailyStat[]
   recent_logs: RequestLog[]

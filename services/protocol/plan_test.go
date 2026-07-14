@@ -65,3 +65,27 @@ func TestBuildRoutePlanNormalizesCodexAliasEndpoint(t *testing.T) {
 		t.Fatalf("Codex alias target endpoint 期望 /v1/responses/compact，实际 %s", plan.TargetEndpoint)
 	}
 }
+
+func TestBuildExplicitRoutePlanMatrix(t *testing.T) {
+	tests := []struct {
+		client   Protocol
+		upstream Protocol
+		bridge   Bridge
+	}{
+		{AnthropicMessages, AnthropicMessages, BridgeNone},
+		{AnthropicMessages, OpenAIChat, BridgeAnthropicMessagesToChat},
+		{AnthropicMessages, OpenAIResponses, BridgeAnthropicMessagesToResponses},
+		{OpenAIChat, AnthropicMessages, BridgeOpenAIChatToAnthropic},
+		{OpenAIChat, OpenAIChat, BridgeNone},
+		{OpenAIChat, OpenAIResponses, BridgeOpenAIChatToResponses},
+		{OpenAIResponses, AnthropicMessages, BridgeOpenAIResponsesToAnthropic},
+		{OpenAIResponses, OpenAIChat, BridgeCodexResponsesToChat},
+		{OpenAIResponses, OpenAIResponses, BridgeNone},
+	}
+	for _, tc := range tests {
+		plan := BuildExplicitRoutePlan("pi", tc.client, tc.upstream, "/v1/entry")
+		if plan.Bridge != tc.bridge {
+			t.Fatalf("client=%s upstream=%s 期望 bridge=%s，实际 %s", tc.client, tc.upstream, tc.bridge, plan.Bridge)
+		}
+	}
+}

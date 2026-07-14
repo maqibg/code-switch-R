@@ -14,6 +14,7 @@ import (
 	"time"
 
 	modelpricing "codeswitch/resources/model-pricing"
+	relayprotocol "codeswitch/services/protocol"
 
 	"github.com/daodao97/xgo/xdb"
 	"github.com/daodao97/xgo/xrequest"
@@ -62,6 +63,9 @@ type ProviderRelayService struct {
 
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
 var errClientAbort = errors.New("client aborted, skip failure count")
+
+// errResponseCommitted 表示响应头或响应体已经发送，后续不得再切换 Provider。
+var errResponseCommitted = errors.New("response already committed")
 
 func NewProviderRelayService(providerService *ProviderService, geminiService *GeminiService, blacklistService *BlacklistService, notificationService *NotificationService, appSettings *AppSettingsService, addr string) *ProviderRelayService {
 	if addr == "" {
@@ -281,7 +285,7 @@ func (prs *ProviderRelayService) Start() error {
 func (prs *ProviderRelayService) validateConfig() []string {
 	warnings := make([]string, 0)
 
-	for _, kind := range []string{"claude", "codex", "deepseekcode", "reasonix"} {
+	for _, kind := range providerPlatformIDs() {
 		providers, err := prs.providerService.LoadProviders(kind)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("[%s] 加载配置失败: %v", kind, err))
@@ -366,6 +370,12 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/reasonix/chat/completions", prs.proxyHandler("reasonix", "/chat/completions"))
 	router.GET("/reasonix/models", prs.modelsHandler("reasonix"))
 
+	// Pi coding agent 通过 provider/model 选择首选 Provider，并按模型配置使用对应协议。
+	router.POST("/pi/v1/chat/completions", prs.proxyHandler("pi", "/v1/chat/completions"))
+	router.POST("/pi/v1/responses", prs.proxyHandler("pi", "/v1/responses"))
+	router.POST("/pi/v1/messages", prs.proxyHandler("pi", "/v1/messages"))
+	router.GET("/pi/v1/models", prs.piModelsHandler())
+
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
 	router.POST("/custom/:toolId/v1/messages", prs.customCliProxyHandler())
@@ -389,6 +399,21 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
+		telemetryModel := requestedModel
+		preferredProvider := ""
+		if kind == "pi" {
+			filteredBody, providerName, bareModel, err := preparePiRelayRequest(bodyBytes)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			bodyBytes = filteredBody
+			preferredProvider = providerName
+			requestedModel = bareModel
+		}
+		clientProtocol := relayprotocol.ClientProtocolForPlatform(kind, endpoint)
+		telemetry := beginRelayTelemetry(c, kind, clientProtocol, telemetryModel, isStream)
+		defer telemetry.finish(c)
 
 		// 如果未指定模型，记录警告但不拦截
 		if requestedModel == "" {
@@ -404,8 +429,8 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		active := make([]Provider, 0, len(providers))
 		skippedCount := 0
 		for _, provider := range providers {
-			// 基础过滤：enabled、URL、APIKey
-			if !provider.Enabled || provider.APIURL == "" || provider.APIKey == "" {
+			// 无认证上游允许空 API Key，其余认证方式必须提供凭据。
+			if !providerEligibleForRelay(provider, kind) {
 				continue
 			}
 
@@ -454,7 +479,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		levelGroups := make(map[int][]Provider)
 		for _, provider := range active {
 			level := provider.Level
-			if level <= 0 {
+			if preferredProvider != "" && provider.Name == preferredProvider {
+				level = 0
+			} else if level <= 0 {
 				level = 1 // 未配置或零值时默认为 Level 1
 			}
 			levelGroups[level] = append(levelGroups[level], provider)
@@ -586,6 +613,10 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 							fmt.Printf("[INFO] 客户端中断，停止重试\n")
 							return
 						}
+						if errors.Is(err, errResponseCommitted) {
+							fmt.Printf("[WARN] 响应已发送，停止重试和 Provider 降级: %v\n", err)
+							return
+						}
 
 						// 记录失败次数（可能触发拉黑）
 						if err := prs.blacklistService.RecordFailure(kind, provider.Name); err != nil {
@@ -712,6 +743,10 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					})
 					return
 				}
+				if errors.Is(err, errResponseCommitted) {
+					fmt.Printf("[WARN] 响应已发送，停止 Provider 降级: %v\n", err)
+					return
+				}
 
 				// 客户端中断不计入失败次数
 				if errors.Is(err, errClientAbort) {
@@ -790,129 +825,58 @@ func (prs *ProviderRelayService) forwardRequest(
 	bodyBytes []byte,
 	isStream bool,
 	model string,
-) (bool, error) {
-	execution, err := prs.newRelayForwardExecution(kind, provider, endpoint, bodyBytes, isStream, model)
-	if err != nil {
-		return false, err
-	}
-	if execution.UseCodexContinue {
-		return prs.forwardCodexResponsesWithContinue(c, provider, endpoint, query, clientHeaders, bodyBytes, model)
-	}
-	headers := cloneMap(clientHeaders)
-	bodyBytes = execution.BodyBytes
-	targetURL := joinURL(provider.APIURL, execution.TargetEndpoint)
-	upstreamProtocol := execution.UpstreamProtocol
-
-	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
-	// 先清除客户端携带的 x-api-key（避免 DeepSeekCode 等 CLI 的占位 key 干扰）
-	delete(headers, "x-api-key")
-	authType := strings.ToLower(strings.TrimSpace(provider.ConnectivityAuthType))
-	if authType == "" {
-		authType = defaultConnectivityAuthType(kind)
-	}
-	switch authType {
-	case "x-api-key":
-		// 仅当用户显式选择 x-api-key 时使用（Anthropic 官方 API）
-		headers["x-api-key"] = provider.APIKey
-		// 只有 Anthropic 协议才注入 anthropic-version
-		if upstreamProtocol == UpstreamProtocolAnthropic {
-			headers["anthropic-version"] = "2023-06-01"
-		}
-	case "bearer":
-		// 默认使用 Bearer token（兼容所有第三方中转）
-		headers["Authorization"] = fmt.Sprintf("Bearer %s", provider.APIKey)
-	default:
-		// 自定义 Header 名
-		headerName := strings.TrimSpace(provider.ConnectivityAuthType)
-		if headerName == "" || strings.EqualFold(headerName, "custom") {
-			headerName = "Authorization"
-		}
-		headers[headerName] = provider.APIKey
-	}
-
-	// OpenAI 协议时移除 Anthropic 专用头
-	if upstreamProtocol == UpstreamProtocolOpenAIChat {
-		delete(headers, "anthropic-version")
-		delete(headers, "anthropic-beta")
-		delete(headers, "x-api-key")
-		// 确保使用 Bearer 认证
-		if headers["Authorization"] == "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", provider.APIKey)
-		}
-	}
-
-	if _, ok := headers["Accept"]; !ok {
-		headers["Accept"] = "application/json"
-	}
-
-	requestLog := &ReqeustLog{
-		Platform: kind,
-		Provider: provider.Name,
-		Model:    model,
-		IsStream: isStream,
-	}
-	start := time.Now()
+) (success bool, forwardErr error) {
+	requestLog := ReqeustLog{Platform: kind, Provider: provider.Name, Model: model, IsStream: isStream}
+	attemptStarted := time.Now()
+	var execution *relayForwardExecution
 	defer func() {
-		requestLog.DurationSec = time.Since(start).Seconds()
-		// 若请求过程中发生 rename,把旧名兑换成新名再落库
-		requestLog.Provider = ResolveProviderAlias(requestLog.Platform, requestLog.Provider)
-
-		// 【修复】判空保护：避免队列未初始化时 panic
-		if GlobalDBQueueLogs == nil {
-			fmt.Printf("⚠️  写入 request_log 失败: 队列未初始化\n")
+		if execution != nil && execution.UseCodexContinue {
 			return
 		}
-
-		// 使用批量队列写入 request_log（高频同构操作，批量提交）
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		err := GlobalDBQueueLogs.ExecBatchCtx(ctx, `
-			INSERT INTO request_log (
-				platform, model, provider, http_code,
-				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
-				reasoning_tokens, is_stream, duration_sec,
-				ephemeral_5m_tokens, ephemeral_1h_tokens, service_tier
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`,
-			requestLog.Platform,
-			requestLog.Model,
-			requestLog.Provider,
-			requestLog.HttpCode,
-			requestLog.InputTokens,
-			requestLog.OutputTokens,
-			requestLog.CacheCreateTokens,
-			requestLog.CacheReadTokens,
-			requestLog.ReasoningTokens,
-			boolToInt(requestLog.IsStream),
-			requestLog.DurationSec,
-			requestLog.Ephemeral5mTokens,
-			requestLog.Ephemeral1hTokens,
-			requestLog.ServiceTier,
-		)
-
-		if err != nil {
-			fmt.Printf("写入 request_log 失败: %v\n", err)
+		if telemetry := relayTelemetryFromContext(c); telemetry != nil {
+			telemetry.recordAttempt(provider, execution, requestLog, attemptStarted, success, forwardErr)
 		}
 	}()
+
+	clientProtocol := relayprotocol.ClientProtocolForPlatform(kind, endpoint)
+	if telemetry := relayTelemetryFromContext(c); telemetry != nil {
+		clientProtocol = telemetry.ClientProtocol
+	}
+	execution, forwardErr = prs.newRelayForwardExecution(kind, clientProtocol, provider, endpoint, bodyBytes, isStream, model)
+	if forwardErr != nil {
+		return false, forwardErr
+	}
+	execution.BodyBytes, forwardErr = applyProviderRequestBodyPolicy(execution.BodyBytes, provider, execution.UpstreamProtocol)
+	if forwardErr != nil {
+		return false, forwardErr
+	}
+	if execution.UseCodexContinue {
+		return prs.forwardCodexResponsesWithContinue(c, execution, endpoint, query, clientHeaders, bodyBytes, model, &requestLog)
+	}
+	headers, forwardErr := buildUpstreamHeaders(provider, kind, clientHeaders, execution.UpstreamProtocol)
+	if forwardErr != nil {
+		return false, forwardErr
+	}
+	bodyBytes = execution.BodyBytes
+	targetURL := joinURL(provider.APIURL, execution.TargetEndpoint)
 
 	req := xrequest.New().
 		SetHeaders(headers).
 		SetQueryParams(query).
-		SetRetry(1, 500*time.Millisecond).
+		SetRetry(0, 0).
 		SetTimeout(32 * time.Hour) // 32小时超时，适配超大型项目分析
 	proxyConfig := ProxyConfig{}
 	if prs.appSettings != nil {
-		proxyConfig, err = prs.appSettings.GetProviderProxyConfig(provider.ProxyEnabled)
-		if err != nil {
-			return false, fmt.Errorf("读取代理配置失败: %w", err)
+		proxyConfig, forwardErr = prs.appSettings.GetProviderProxyConfig(provider.ProxyEnabled)
+		if forwardErr != nil {
+			return false, fmt.Errorf("读取代理配置失败: %w", forwardErr)
 		}
 	} else if provider.ProxyEnabled {
 		return false, fmt.Errorf("代理配置服务未初始化")
 	}
-	client, err := NewHTTPClientWithProxy(0, nil, proxyConfig)
-	if err != nil {
-		return false, fmt.Errorf("创建代理客户端失败: %w", err)
+	client, forwardErr := NewHTTPClientWithProxy(0, nil, proxyConfig)
+	if forwardErr != nil {
+		return false, fmt.Errorf("创建代理客户端失败: %w", forwardErr)
 	}
 	req = req.SetClient(client)
 
@@ -970,16 +934,34 @@ func (prs *ProviderRelayService) forwardRequest(
 	// 状态码为 0 且无错误：当作成功处理
 	if status == 0 {
 		fmt.Printf("[WARN] Provider %s 返回状态码 0，但无错误，当作成功处理\n", provider.Name)
-		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, requestLog)
+		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, &requestLog)
 		if copyErr != nil {
+			if c.Request.Context().Err() != nil {
+				return false, fmt.Errorf("%w: %v", errClientAbort, copyErr)
+			}
+			if execution.RoutePlan.NeedsTransform {
+				if c.Writer.Written() {
+					return false, fmt.Errorf("%w: 协议响应转换失败: %v", errResponseCommitted, copyErr)
+				}
+				return false, fmt.Errorf("协议响应转换失败: %w", copyErr)
+			}
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
 		return true, nil
 	}
 
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
-		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, requestLog)
+		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, &requestLog)
 		if copyErr != nil {
+			if c.Request.Context().Err() != nil {
+				return false, fmt.Errorf("%w: %v", errClientAbort, copyErr)
+			}
+			if execution.RoutePlan.NeedsTransform {
+				if c.Writer.Written() {
+					return false, fmt.Errorf("%w: 协议响应转换失败: %v", errResponseCommitted, copyErr)
+				}
+				return false, fmt.Errorf("协议响应转换失败: %w", copyErr)
+			}
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
 		// 只要provider返回了2xx状态码，就算成功（复制失败是客户端问题，不是provider问题）
@@ -1143,6 +1125,14 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		{"ephemeral_5m_tokens", "INTEGER DEFAULT 0"},
 		{"ephemeral_1h_tokens", "INTEGER DEFAULT 0"},
 		{"service_tier", "TEXT DEFAULT ''"},
+		{"request_id", "TEXT DEFAULT ''"},
+		{"source_id", "TEXT DEFAULT ''"},
+		{"client_protocol", "TEXT DEFAULT ''"},
+		{"upstream_protocol", "TEXT DEFAULT ''"},
+		{"requested_model", "TEXT DEFAULT ''"},
+		{"attempt_count", "INTEGER DEFAULT 1"},
+		{"error_type", "TEXT DEFAULT ''"},
+		{"pricing_version", "TEXT DEFAULT ''"},
 	}
 	for _, m := range migrations {
 		if err := ensureRequestLogColumn(db, m.column, m.definition); err != nil {
@@ -1191,29 +1181,38 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 	if err := ensureRequestLogIndex(db, "idx_request_log_model_created_at", "model, created_at"); err != nil {
 		return err
 	}
-
-	return nil
+	return ensureRelayAttemptTable(db)
 }
 
-// protocolConvertHook 协议转换 Hook：将 OpenAI SSE 转换为 Anthropic SSE，并提取 usage
-// 注意：xrequest 的 hook 是逐行回调（每次收到一行 SSE 数据）
-func protocolConvertHook(converter *OpenAIToAnthropicSSEConverter, kind string, usage *ReqeustLog) func(data []byte) (bool, []byte) {
-	return func(data []byte) (bool, []byte) {
-		// xrequest 逐行回调，直接传给 ProcessLine
-		line := string(data)
-		converted := converter.ProcessLine(line)
-
-		// 如果没有输出，返回 flush=false 丢弃该行（避免写出空行）
-		if converted == "" {
-			return false, nil
-		}
-
-		// 从转换后的 Anthropic SSE 中提取 usage（使用现有解析器）
-		parseEventPayload(converted, ClaudeCodeParseTokenUsageFromResponse, usage)
-
-		// 返回转换后的数据
-		return true, []byte(converted)
+func ensureRelayAttemptTable(db *sql.DB) error {
+	const createSQL = `CREATE TABLE IF NOT EXISTS relay_attempt (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		request_id TEXT NOT NULL,
+		attempt_index INTEGER NOT NULL,
+		platform TEXT,
+		source_id TEXT DEFAULT '',
+		provider TEXT,
+		model TEXT,
+		upstream_protocol TEXT,
+		http_code INTEGER,
+		success INTEGER DEFAULT 0,
+		error_type TEXT DEFAULT '',
+		error_message TEXT DEFAULT '',
+		duration_sec REAL DEFAULT 0,
+		input_tokens INTEGER DEFAULT 0,
+		output_tokens INTEGER DEFAULT 0,
+		cache_create_tokens INTEGER DEFAULT 0,
+		cache_read_tokens INTEGER DEFAULT 0,
+		reasoning_tokens INTEGER DEFAULT 0,
+		total_cost REAL DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(request_id, attempt_index)
+	)`
+	if _, err := db.Exec(createSQL); err != nil {
+		return err
 	}
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_relay_attempt_provider_created_at ON relay_attempt(platform, provider, created_at)`)
+	return err
 }
 
 func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []byte) (bool, []byte) { // SSE 钩子：累计字节和解析 token 用量
@@ -1255,7 +1254,12 @@ func parseEventPayload(payload string, parser func(string, *ReqeustLog), usage *
 
 type ReqeustLog struct {
 	ID                int64  `json:"id"`
+	RequestID         string `json:"request_id,omitempty"`
 	Platform          string `json:"platform"` // claude、codex 或 gemini
+	SourceID          string `json:"source_id,omitempty"`
+	ClientProtocol    string `json:"client_protocol,omitempty"`
+	UpstreamProtocol  string `json:"upstream_protocol,omitempty"`
+	RequestedModel    string `json:"requested_model,omitempty"`
 	Model             string `json:"model"`
 	Provider          string `json:"provider"` // provider name
 	HttpCode          int    `json:"http_code"`
@@ -1270,6 +1274,8 @@ type ReqeustLog struct {
 	ReasoningTokens   int     `json:"reasoning_tokens"`
 	IsStream          bool    `json:"is_stream"`
 	DurationSec       float64 `json:"duration_sec"`
+	AttemptCount      int     `json:"attempt_count,omitempty"`
+	ErrorType         string  `json:"error_type,omitempty"`
 	CreatedAt         string  `json:"created_at"`
 	// ServiceTier 上游实际分配的档位(default/priority/flex 等),空=未区分。
 	ServiceTier     string  `json:"service_tier"`
@@ -1282,6 +1288,8 @@ type ReqeustLog struct {
 	Ephemeral1hCost float64 `json:"ephemeral_1h_cost"`
 	TotalCost       float64 `json:"total_cost"`
 	HasPricing      bool    `json:"has_pricing"`
+	CostCalculated  bool    `json:"cost_calculated,omitempty"`
+	PricingVersion  string  `json:"pricing_version,omitempty"`
 }
 
 // claude code usage parser
@@ -1321,10 +1329,10 @@ func maxIntInto(dst *int, candidate int) {
 // codex usage parser(OpenAI Responses API)
 func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 	for _, prefix := range []string{"response.usage", "usage"} {
-		usage.InputTokens += int(gjson.Get(data, prefix+".input_tokens").Int())
-		usage.OutputTokens += int(gjson.Get(data, prefix+".output_tokens").Int())
-		usage.CacheReadTokens += int(gjson.Get(data, prefix+".input_tokens_details.cached_tokens").Int())
-		usage.ReasoningTokens += int(gjson.Get(data, prefix+".output_tokens_details.reasoning_tokens").Int())
+		maxIntInto(&usage.InputTokens, int(gjson.Get(data, prefix+".input_tokens").Int()))
+		maxIntInto(&usage.OutputTokens, int(gjson.Get(data, prefix+".output_tokens").Int()))
+		maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, prefix+".input_tokens_details.cached_tokens").Int()))
+		maxIntInto(&usage.ReasoningTokens, int(gjson.Get(data, prefix+".output_tokens_details.reasoning_tokens").Int()))
 	}
 	// service_tier 可能在 response.service_tier 或 response.usage.service_tier,两路径都尝试
 	for _, path := range []string{"response.service_tier", "response.usage.service_tier", "service_tier", "usage.service_tier"} {
@@ -1557,6 +1565,10 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 
 		// 判断是否为流式请求
 		isStream := strings.Contains(endpoint, ":streamGenerateContent") || strings.Contains(query, "alt=sse")
+		requestedModel := extractGeminiModelFromEndpoint(endpoint)
+		telemetry := beginRelayTelemetry(c, "gemini", relayprotocol.GeminiNative, requestedModel, isStream)
+		defer telemetry.finish(c)
+		start := time.Now()
 
 		// 加载 Gemini providers
 		providers := prs.geminiService.GetProviders()
@@ -1603,40 +1615,6 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 
 		fmt.Printf("[Gemini] 共 %d 个 Level 分组: %v\n", len(sortedLevels), sortedLevels)
 
-		// 请求日志
-		requestLog := &ReqeustLog{
-			Platform:     "gemini",
-			IsStream:     isStream,
-			InputTokens:  0,
-			OutputTokens: 0,
-		}
-		start := time.Now()
-
-		// 保存日志的 defer
-		defer func() {
-			requestLog.DurationSec = time.Since(start).Seconds()
-			// 若请求过程中发生 rename,把旧名兑换成新名再落库
-			requestLog.Provider = ResolveProviderAlias(requestLog.Platform, requestLog.Provider)
-			if GlobalDBQueueLogs == nil {
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = GlobalDBQueueLogs.ExecBatchCtx(ctx, `
-				INSERT INTO request_log (
-					platform, model, provider, http_code,
-					input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
-					reasoning_tokens, is_stream, duration_sec,
-						ephemeral_5m_tokens, ephemeral_1h_tokens, service_tier
-					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`,
-				requestLog.Platform, requestLog.Model, requestLog.Provider, requestLog.HttpCode,
-				requestLog.InputTokens, requestLog.OutputTokens, requestLog.CacheCreateTokens,
-				requestLog.CacheReadTokens, requestLog.ReasoningTokens,
-				requestLog.Ephemeral5mTokens, requestLog.Ephemeral1hTokens, requestLog.ServiceTier,
-			)
-		}()
-
 		// 获取拉黑功能开关状态
 		blacklistEnabled := prs.blacklistService.ShouldUseFixedMode()
 
@@ -1679,10 +1657,6 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 						continue
 					}
 
-					// 预填日志
-					requestLog.Provider = provider.Name
-					requestLog.Model = provider.Model
-
 					// 同 Provider 内重试循环
 					for retryCount := 0; retryCount < maxRetryPerProvider; retryCount++ {
 						totalAttempts++
@@ -1696,7 +1670,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 						fmt.Printf("[Gemini] [拉黑模式] Provider: %s (Level %d) | 重试 %d/%d\n",
 							provider.Name, level, retryCount+1, maxRetryPerProvider)
 
-						ok, errMsg, responseWritten := prs.forwardGeminiRequest(c, &provider, endpoint, bodyBytes, isStream, requestLog)
+						ok, errMsg, responseWritten := prs.forwardGeminiAttempt(c, &provider, endpoint, bodyBytes, isStream)
 						if ok {
 							fmt.Printf("[Gemini] ✓ 成功: %s | 重试 %d 次\n", provider.Name, retryCount+1)
 							_ = prs.blacklistService.RecordSuccess("gemini", provider.Name)
@@ -1739,9 +1713,6 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 			// 所有 Provider 都失败或被拉黑
 			fmt.Printf("[Gemini] 💥 拉黑模式：所有 Provider 都失败或被拉黑（共尝试 %d 次）\n", totalAttempts)
 
-			if requestLog.HttpCode == 0 {
-				requestLog.HttpCode = http.StatusBadGateway
-			}
 			c.JSON(http.StatusBadGateway, gin.H{
 				"error":         fmt.Sprintf("所有 Provider 都失败或被拉黑，最后尝试: %s - %s", lastProvider, lastError),
 				"lastProvider":  lastProvider,
@@ -1774,11 +1745,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 			for idx, provider := range providersInLevel {
 				fmt.Printf("[Gemini]   [%d/%d] Provider: %s\n", idx+1, len(providersInLevel), provider.Name)
 
-				// 预填日志，失败也能落库
-				requestLog.Provider = provider.Name
-				requestLog.Model = provider.Model
-
-				ok, errMsg, responseWritten := prs.forwardGeminiRequest(c, &provider, endpoint, bodyBytes, isStream, requestLog)
+				ok, errMsg, responseWritten := prs.forwardGeminiAttempt(c, &provider, endpoint, bodyBytes, isStream)
 				if ok {
 					_ = prs.blacklistService.RecordSuccess("gemini", provider.Name)
 					// 记录最后使用的供应商
@@ -1803,9 +1770,6 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		}
 
 		// 所有 Level 都失败
-		if requestLog.HttpCode == 0 {
-			requestLog.HttpCode = http.StatusBadGateway
-		}
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error":   "all gemini providers failed",
 			"details": lastError,
@@ -1961,6 +1925,26 @@ func (prs *ProviderRelayService) forwardGeminiRequest(
 	return true, "", true
 }
 
+func (prs *ProviderRelayService) forwardGeminiAttempt(
+	c *gin.Context,
+	provider *GeminiProvider,
+	endpoint string,
+	bodyBytes []byte,
+	isStream bool,
+) (success bool, errMsg string, responseWritten bool) {
+	requestLog := &ReqeustLog{Platform: "gemini", IsStream: isStream}
+	started := time.Now()
+	success, errMsg, responseWritten = prs.forwardGeminiRequest(c, provider, endpoint, bodyBytes, isStream, requestLog)
+	var attemptErr error
+	if !success {
+		attemptErr = errors.New(errMsg)
+	}
+	if telemetry := relayTelemetryFromContext(c); telemetry != nil {
+		telemetry.recordGeminiAttempt(*provider, *requestLog, started, success, attemptErr)
+	}
+	return success, errMsg, responseWritten
+}
+
 // parseGeminiUsageMetadata 从 Gemini 非流式响应中提取用量，填充 request_log
 // 复用 mergeGeminiUsageMetadata 统一解析逻辑
 func parseGeminiUsageMetadata(body []byte, reqLog *ReqeustLog) {
@@ -2006,6 +1990,8 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
+		telemetry := beginRelayTelemetry(c, kind, relayprotocol.AnthropicMessages, requestedModel, isStream)
+		defer telemetry.finish(c)
 
 		if requestedModel == "" {
 			fmt.Printf("[CustomCLI][WARN] 请求未指定模型名，无法执行模型智能降级\n")
@@ -2022,7 +2008,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 		active := make([]Provider, 0, len(providers))
 		skippedCount := 0
 		for _, provider := range providers {
-			if !provider.Enabled || provider.APIURL == "" || provider.APIKey == "" {
+			if !providerEligibleForRelay(provider, kind) {
 				continue
 			}
 
@@ -2187,6 +2173,10 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 							fmt.Printf("[CustomCLI][INFO] 客户端中断，停止重试\n")
 							return
 						}
+						if errors.Is(err, errResponseCommitted) {
+							fmt.Printf("[CustomCLI][WARN] 响应已发送，停止重试和 Provider 降级: %v\n", err)
+							return
+						}
 
 						// 记录失败次数（可能触发拉黑）
 						if err := prs.blacklistService.RecordFailure(kind, provider.Name); err != nil {
@@ -2293,6 +2283,9 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 				if errors.Is(err, errClientAbort) {
 					fmt.Printf("[CustomCLI][INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
+				} else if errors.Is(err, errResponseCommitted) {
+					fmt.Printf("[CustomCLI][WARN] 响应已发送，停止 Provider 降级: %v\n", err)
+					return
 				} else if err := prs.blacklistService.RecordFailure(kind, provider.Name); err != nil {
 					fmt.Printf("[CustomCLI][ERROR] 记录失败到黑名单失败: %v\n", err)
 				}
@@ -2357,10 +2350,10 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 		return fmt.Errorf("failed to load providers: %w", err)
 	}
 
-	// 过滤可用的 providers（启用 + URL + APIKey）
+	// 过滤可用的 providers（启用 + URL + 与认证策略匹配的凭据）
 	var activeProviders []Provider
 	for _, provider := range providers {
-		if !provider.Enabled || provider.APIURL == "" || provider.APIKey == "" {
+		if !providerEligibleForRelay(provider, kind) {
 			continue
 		}
 
@@ -2421,35 +2414,13 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// 复制客户端请求头
-	for key, values := range c.Request.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
+	headers, err := buildUpstreamHeaders(*selectedProvider, kind, cloneHeaders(c.Request.Header), resolveProviderUpstreamProtocol(kind, *selectedProvider, "/v1/models"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return err
 	}
-
-	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
-	authType := strings.ToLower(strings.TrimSpace(selectedProvider.ConnectivityAuthType))
-	if authType == "" {
-		authType = defaultConnectivityAuthType(kind)
-	}
-	switch authType {
-	case "x-api-key":
-		req.Header.Set("x-api-key", selectedProvider.APIKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
-	case "bearer":
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", selectedProvider.APIKey))
-	default:
-		headerName := strings.TrimSpace(selectedProvider.ConnectivityAuthType)
-		if headerName == "" || strings.EqualFold(headerName, "custom") {
-			headerName = "Authorization"
-		}
-		req.Header.Set(headerName, selectedProvider.APIKey)
-	}
-
-	// 设置默认 Accept 头
-	if req.Header.Get("Accept") == "" {
-		req.Header.Set("Accept", "application/json")
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 
 	// 发送请求

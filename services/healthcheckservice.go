@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -121,6 +120,8 @@ func NewHealthCheckService(
 			"codex":        {},
 			"gemini":       {},
 			"deepseekcode": {},
+			"reasonix":     {},
+			"pi":           {},
 		},
 		pollInterval: time.Duration(DefaultPollIntervalSeconds) * time.Second,
 	}
@@ -182,7 +183,7 @@ func (hcs *HealthCheckService) GetLatestResults() (map[string][]ProviderTimeline
 	results := make(map[string][]ProviderTimeline)
 
 	// 遍历所有平台
-	for _, platform := range []string{"claude", "codex", "deepseekcode", "reasonix"} {
+	for _, platform := range providerPlatformIDs() {
 		providers, err := hcs.providerService.LoadProviders(platform)
 		if err != nil {
 			log.Printf("[HealthCheck] 加载 %s 供应商失败: %v", platform, err)
@@ -445,7 +446,7 @@ func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64)
 func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, error) {
 	results := make(map[string][]HealthCheckResult)
 
-	for _, platform := range []string{"claude", "codex", "deepseekcode", "reasonix"} {
+	for _, platform := range providerPlatformIDs() {
 		platformResults := hcs.checkAllProviders(platform)
 		results[platform] = platformResults
 	}
@@ -526,7 +527,8 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 	result.Endpoint = endpoint
 
 	// 构建请求体
-	reqBody := hcs.buildTestRequest(platform, model)
+	upstreamProtocol := resolveProviderUpstreamProtocol(platform, provider, endpoint)
+	reqBody, _ := buildProviderTestRequest(upstreamProtocol, model, buildSimpleMathPrompt())
 	if reqBody == nil {
 		result.ErrorMessage = "无法构建测试请求"
 		return result
@@ -559,27 +561,14 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Content-Type", "application/json")
-		if provider.APIKey != "" {
-			authTypeRaw := strings.TrimSpace(provider.ConnectivityAuthType)
-			authType := strings.ToLower(authTypeRaw)
-			if authType == "" {
-				authType = defaultConnectivityAuthType(platform)
-			}
-			switch authType {
-			case "x-api-key":
-				req.Header.Set("x-api-key", provider.APIKey)
-				req.Header.Set("anthropic-version", "2023-06-01")
-			case "bearer":
-				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-			default:
-				headerName := authTypeRaw
-				if headerName == "" || strings.EqualFold(headerName, "custom") {
-					headerName = "Authorization"
-				}
-				req.Header.Set(headerName, provider.APIKey)
-			}
+		headers, err := buildUpstreamHeaders(provider, platform, nil, resolveProviderUpstreamProtocol(platform, provider, endpoint))
+		if err != nil {
+			return nil, err
 		}
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+		req.Header.Set("Content-Type", "application/json")
 		return req, nil
 	}
 
@@ -697,27 +686,9 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 func (hcs *HealthCheckService) getEffectiveEndpoint(provider *Provider, platform string) string {
 	// 优先级 1：用户配置的健康检查专用端点
 	if provider.AvailabilityConfig != nil && provider.AvailabilityConfig.TestEndpoint != "" {
-		return provider.AvailabilityConfig.TestEndpoint
+		return resolveProviderTestEndpoint(platform, *provider, provider.AvailabilityConfig.TestEndpoint)
 	}
-
-	// 优先级 2：用户配置的生产端点（如果配置了 apiEndpoint）
-	if provider.APIEndpoint != "" {
-		return provider.GetEffectiveEndpoint("")
-	}
-
-	// 优先级 3：平台默认端点
-	switch strings.ToLower(platform) {
-	case "claude":
-		return "/v1/messages"
-	case "codex":
-		return "/responses"
-	case "deepseekcode":
-		return "/v1/messages"
-	case "reasonix":
-		return "/chat/completions"
-	default:
-		return "/v1/chat/completions"
-	}
+	return resolveProviderTestEndpoint(platform, *provider, "")
 }
 
 // getEffectiveTimeout 获取有效的超时时间（毫秒）
@@ -727,35 +698,6 @@ func (hcs *HealthCheckService) getEffectiveTimeout(provider *Provider) int {
 		return provider.AvailabilityConfig.Timeout
 	}
 	return DefaultTimeoutMs
-}
-
-// buildTestRequest 构建测试请求体
-func (hcs *HealthCheckService) buildTestRequest(platform, model string) []byte {
-	prompt := buildSimpleMathPrompt()
-
-	// Anthropic 格式
-	if platform == "claude" {
-		reqBody := map[string]interface{}{
-			"model":      model,
-			"max_tokens": 1,
-			"messages": []map[string]string{
-				{"role": "user", "content": prompt},
-			},
-		}
-		data, _ := json.Marshal(reqBody)
-		return data
-	}
-
-	// OpenAI/Codex 格式
-	reqBody := map[string]interface{}{
-		"model":      model,
-		"max_tokens": 1,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-	}
-	data, _ := json.Marshal(reqBody)
-	return data
 }
 
 // saveResult 保存检测结果到数据库
@@ -956,8 +898,7 @@ func (hcs *HealthCheckService) SetAutoAvailabilityPolling(enabled bool) {
 
 // runAllPlatformChecks 执行所有平台的检测
 func (hcs *HealthCheckService) runAllPlatformChecks() {
-	platforms := []string{"claude", "codex", "deepseekcode", "reasonix"}
-	for _, platform := range platforms {
+	for _, platform := range providerPlatformIDs() {
 		hcs.checkAllProviders(platform)
 	}
 }

@@ -120,23 +120,15 @@ func ensureHealthCheckHistoryIndexes(db *sql.DB) error {
 	return nil
 }
 
-func cleanupDeletedProvidersWithRollback(path string, existing []Provider, platform string, deleted []deletedProvider) error {
-	if err := cleanupDeletedProviders(platform, deleted); err == nil {
-		return nil
-	} else {
-		return rollbackProviderFile(path, existing, err)
-	}
-}
-
 func rollbackProviderFile(path string, providers []Provider, primary error) error {
 	originalBytes, err := serializeProviders(providers)
 	if err != nil {
-		return fmt.Errorf("清理已删除供应商数据失败: %w; 序列化回滚配置失败: %v", primary, err)
+		return fmt.Errorf("保存供应商配置失败: %w; 序列化回滚配置失败: %v", primary, err)
 	}
 	if err := atomicWriteFile(path, originalBytes, 0o644); err != nil {
-		return fmt.Errorf("清理已删除供应商数据失败: %w; 配置文件回滚失败: %v", primary, err)
+		return fmt.Errorf("保存供应商配置失败: %w; 配置文件回滚失败: %v", primary, err)
 	}
-	return fmt.Errorf("清理已删除供应商数据失败: %w", primary)
+	return fmt.Errorf("保存供应商配置失败: %w", primary)
 }
 
 func cleanupDeletedProviderByName(platform, providerName string) error {
@@ -166,11 +158,15 @@ func cleanupDeletedProviderTx(tx *sql.Tx, platform string, provider deletedProvi
 }
 
 func deleteDeletedProviderNameRows(tx *sql.Tx, platform, name string) error {
-	if _, err := tx.Exec(
-		`DELETE FROM request_log WHERE platform = ? AND provider = ?`,
-		platform, name,
-	); err != nil {
+	scope, err := resolveProviderDataScope(platform)
+	if err != nil {
+		return err
+	}
+	if err := deleteRequestLogProviderNameRows(tx, scope, name); err != nil {
 		return fmt.Errorf("删除 request_log 失败: %w", err)
+	}
+	if err := deleteRelayAttemptProviderNameRows(tx, scope, name); err != nil {
+		return fmt.Errorf("删除 relay_attempt 失败: %w", err)
 	}
 	if _, err := tx.Exec(
 		`DELETE FROM provider_blacklist WHERE platform = ? AND provider_name = ?`,
@@ -191,6 +187,32 @@ func deleteDeletedProviderNameRows(tx *sql.Tx, platform, name string) error {
 		return fmt.Errorf("删除 provider_alias 名称记录失败: %w", err)
 	}
 	return nil
+}
+
+func deleteRequestLogProviderNameRows(tx *sql.Tx, scope providerDataScope, name string) error {
+	if scope.sourceID == "" {
+		_, err := tx.Exec(`DELETE FROM request_log WHERE platform = ? AND provider = ?`, scope.identityPlatform, name)
+		return err
+	}
+	_, err := tx.Exec(
+		`DELETE FROM request_log
+		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
+		name, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
+	)
+	return err
+}
+
+func deleteRelayAttemptProviderNameRows(tx *sql.Tx, scope providerDataScope, name string) error {
+	if scope.sourceID == "" {
+		_, err := tx.Exec(`DELETE FROM relay_attempt WHERE platform = ? AND provider = ?`, scope.identityPlatform, name)
+		return err
+	}
+	_, err := tx.Exec(
+		`DELETE FROM relay_attempt
+		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
+		name, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
+	)
+	return err
 }
 
 func deleteDeletedProviderIDRows(tx *sql.Tx, platform string, providerID int64) error {

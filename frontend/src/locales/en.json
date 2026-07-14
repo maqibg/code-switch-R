@@ -105,7 +105,9 @@
       "codex": "Codex",
       "gemini": "Gemini",
       "deepseekcode": "DeepSeekCode",
-      "reasonix": "Reasonix"
+      "reasonix": "Reasonix",
+      "pi": "Pi",
+      "custom": "Custom CLI"
     },
     "cards": {
       "requests": "Today's Requests",
@@ -283,6 +285,9 @@
         "tooltip": "Declare which models this provider supports. Supports exact match (claude-sonnet-4) and wildcard (claude-*)",
         "placeholder": "e.g., claude-*",
         "add": "Add",
+        "fetch": "Fetch & Add",
+        "fetching": "Fetching...",
+        "fetchSuccess": "Added {count} models",
         "remove": "Remove model",
         "examples": {
           "title": "Examples:",
@@ -290,6 +295,95 @@
           "prefix": "Prefix match all Claude models",
           "vendor": "Match models with vendor prefix"
         }
+      },
+      "headers": {
+        "label": "Additional Request Headers",
+        "add": "Add Header",
+        "remove": "Remove Header",
+        "keyPlaceholder": "Header name",
+        "valuePlaceholder": "Header value"
+      },
+      "requestTemplate": {
+        "label": "Request header template",
+        "select": "Select a built-in or saved template",
+        "apply": "Apply",
+        "delete": "Delete",
+        "cancel": "Cancel",
+        "deleteConfirmTitle": "Delete request header template",
+        "deleteConfirmMessage": "Delete the template \"{name}\"? This change is written to local configuration immediately.",
+        "save": "Save as template",
+        "namePlaceholder": "Template name",
+        "applied": "Template applied to this provider",
+        "saved": "Template saved",
+        "deleted": "Template deleted",
+        "metadataUserId": "Anthropic metadata.user_id",
+        "metadataPlaceholder": "User ID or a JSON string required by the upstream",
+        "metadataHint": "Injected only for an Anthropic Messages upstream. Do not copy another user's device, account, or session identifiers.",
+        "errors": {
+          "metadataTooLong": "metadataUserId must not exceed 16 KiB",
+          "metadataProtocol": "metadataUserId is only valid for an Anthropic Messages upstream",
+          "metadataJson": "A metadataUserId starting with { must be valid JSON",
+          "headerName": "Invalid Header name: {key}",
+          "headerDuplicate": "Headers {key} and {otherKey} differ only by case and cannot both be configured",
+          "headerManaged": "Header {key} is managed by the relay and cannot be added here",
+          "headerValue": "Header {key} cannot contain line breaks"
+        }
+      },
+      "piModel": {
+        "title": "Complete Pi model definitions",
+        "description": "Configure full models[] metadata. Model IDs also become gateway routing allowlist entries.",
+        "add": "Add model",
+        "remove": "Remove model",
+        "unnamed": "Unnamed model",
+        "empty": "No models configured. Add one manually or fetch from the provider API.",
+        "id": "Model ID",
+        "name": "Display name",
+        "api": "Pi API protocol",
+        "baseUrl": "Per-model baseUrl",
+        "inheritProtocol": "Follow provider upstream protocol",
+        "contextWindow": "Context window",
+        "maxTokens": "Maximum output tokens",
+        "reasoning": "Reasoning support",
+        "auto": "Auto detect",
+        "yes": "Supported",
+        "no": "Not supported",
+        "input": "Input types",
+        "thinkingLevelMap": "thinkingLevelMap",
+        "cost": "Cost per million tokens",
+        "addTier": "Add pricing tier",
+        "removeTier": "Remove pricing tier",
+        "headers": "Per-model headers",
+        "compat": "Protocol compat",
+        "modelOverrides": "Advanced modelOverrides",
+        "overrideHint": "Overrides must target a configured model above. They are merged into the complete code-switch-r models[] definition using Pi's partial override rules.",
+        "errors": {
+          "idRequired": "Model ID is required",
+          "idFormat": "Model ID cannot contain the * wildcard",
+          "duplicate": "Model IDs must be unique within a provider",
+          "contextPositive": "contextWindow must be greater than 0",
+          "maxPositive": "maxTokens must be greater than 0",
+          "maxContext": "maxTokens should not exceed contextWindow",
+          "apiGateway": "The code-switch-R Pi gateway only supports openai-completions, openai-responses, and anthropic-messages",
+          "baseUrlGateway": "A per-model baseUrl bypasses the gateway and cannot preserve the correct credentials and model ID; leave it empty",
+          "headerName": "Invalid Header name {key} in {path}",
+          "headerDuplicate": "Headers {key} and {otherKey} in {path} differ only by case",
+          "headerValue": "Header {key} in {path} cannot contain line breaks",
+          "overrideId": "The model ID at {path} is required and cannot contain *",
+          "overrideObject": "{path} must be a JSON object",
+          "overrideMissing": "{path} does not target a configured model",
+          "overrideUnknown": "{path}.{field} is not supported by the Pi 0.80.6 modelOverrides schema",
+          "overrideInvalid": "{path} has an invalid value type"
+        }
+      },
+      "piPreview": {
+        "title": "Complete models.json preview",
+        "hint": "Fields are ordered as baseUrl, apiKey, api, headers, authHeader, compat, and models. Overrides are merged into models first. Blue marks the current provider; red marks invalid fields.",
+        "loading": "Validating",
+        "failed": "Preview failed",
+        "valid": "Configuration valid",
+        "issueCount": "{count} issues",
+        "warningCount": "{count} warnings",
+        "fixBeforeSave": "Fix the red Pi model configuration issues before saving"
       },
       "modelMapping": {
         "label": "Model Mapping",
@@ -335,7 +429,9 @@
         "hostClaude": "Host Claude Code",
         "hostCodex": "Host Codex",
         "hostGemini": "Host Gemini CLI",
+        "hostDeepSeekCode": "Host DeepSeekCode",
         "hostReasonix": "Host Reasonix",
+        "hostPi": "Host Pi",
         "hostOthers": "Host Custom CLI",
         "tooltip": "Route traffic through the local relay to manage API keys centrally.",
         "statusOn": "Managed",
@@ -426,6 +522,8 @@
           "connectivityTestModel": "Test Model",
           "connectivityTestEndpoint": "Test Endpoint",
           "connectivityAuthType": "Auth Method",
+          "modelsEndpoint": "Models Endpoint",
+          "userAgentPreset": "User-Agent Preset",
           "codexReasoningContinue": "Codex reasoning auto-continue",
           "codexReasoningContinueLog": "Console logs"
         },
@@ -442,6 +540,8 @@
           "customModel": "Or enter custom model",
           "customEndpoint": "Or enter custom endpoint",
           "customAuthHeader": "Custom header name (e.g. Authorization, X-Custom-Key)",
+          "modelsEndpoint": "Leave blank to try /v1/models and /models",
+          "customUserAgent": "Enter the complete User-Agent",
           "searchIcon": "Search icons..."
         },
         "noIconResults": "No matching icons found",
@@ -481,6 +581,13 @@
           "on": "Active",
           "off": "Paused"
         },
+        "auth": {
+          "none": "No authentication"
+        },
+        "userAgent": {
+          "inherit": "Inherit client",
+          "custom": "Custom"
+        },
         "upstreamProtocol": {
           "auto": "Auto Detect",
           "autoDesc": "Automatically detect protocol based on API endpoint",
@@ -490,13 +597,16 @@
           "codexResponsesDesc": "Forward Codex Responses API requests as-is, including native streaming reasoning continuation",
           "openaiChat": "OpenAI Chat",
           "openaiChatDesc": "Use OpenAI Chat Completions API with auto format conversion",
+          "openaiResponses": "OpenAI Responses",
+          "openaiResponsesDesc": "Use the OpenAI Responses API",
           "codexOpenAIChatDesc": "Enable the Codex Responses-to-Chat bridge with text, function tool-call and tool-result round trips, plus previous_response_id history",
           "codexOpenAIChatUnsupported": "Codex OpenAI Chat Completions bridge does not enable reasoning auto-continue."
         },
         "confirmDeleteTitle": "Remove vendor",
         "confirmDeleteMessage": "Are you sure you want to remove {name}? This action cannot be undone.",
         "errors": {
-          "invalidUrl": "Please enter a valid API URL"
+          "invalidUrl": "Please enter a valid API URL",
+          "piProviderName": "Pi provider names cannot contain /"
         },
         "saveFailed": "Failed to save provider configuration"
       },
@@ -731,8 +841,10 @@
         "storage": "Storage used",
         "requestLogs": "Request log rows",
         "healthHistory": "Health history rows",
+        "relayAttempts": "Upstream attempt rows",
         "requestLogsHint": "Total number of saved request_log entries.",
         "healthHistoryHint": "Total number of saved health_check_history entries.",
+        "relayAttemptsHint": "Total number of saved relay_attempt upstream call entries.",
         "actions": "Manual cleanup",
         "loading": "Loading...",
         "loadFailed": "Failed to load",
@@ -740,9 +852,9 @@
         "clearButton": "Clear all records",
         "clearing": "Clearing...",
         "clearHintTitle": "Records only, config untouched",
-        "clearHint": "Clears request_log and health_check_history and reclaims database space. Providers, MCP, and settings stay untouched.",
-        "clearConfirm": "Clear all stored records? This removes request logs and health history and cannot be undone.",
-        "clearSuccess": "Cleared {requests} request logs and {health} health history rows",
+        "clearHint": "Clears request_log, relay_attempt, and health_check_history and reclaims database space. Providers, MCP, and settings stay untouched.",
+        "clearConfirm": "Clear all stored records? This removes request logs, upstream attempts, and health history and cannot be undone.",
+        "clearSuccess": "Cleared {requests} request logs, {attempts} upstream attempts, and {health} health history rows",
         "clearFailed": "Cleanup failed: {error}",
         "warning": "Warning"
       },

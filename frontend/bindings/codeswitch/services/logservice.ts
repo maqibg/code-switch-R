@@ -9,46 +9,130 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function ClearStoredRecords(): $CancellablePromise<$models.RecordCleanupResult> {
+    return $Call.ByID(3702986518).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function CostSince(start: string, platform: string): $CancellablePromise<number> {
     return $Call.ByID(445919367, start, platform);
 }
 
+export function DashboardOverview(platform: string): $CancellablePromise<$models.DashboardOverview> {
+    return $Call.ByID(1030763341, platform).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function DashboardOverviewByRange(platform: string, rangeKey: string): $CancellablePromise<$models.DashboardOverview> {
+    return $Call.ByID(838893105, platform, rangeKey).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function GetDashboardBundle(rangeKey: string, recentLimit: number): $CancellablePromise<$models.DashboardBundle> {
+    return $Call.ByID(553669938, rangeKey, recentLimit).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+export function GetRecordStorageInfo(): $CancellablePromise<$models.RecordStorageInfo> {
+    return $Call.ByID(1051756088).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
 export function HeatmapStats(days: number): $CancellablePromise<$models.HeatmapStat[]> {
     return $Call.ByID(1056815029, days).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType5($result);
     });
 }
 
 export function ListProviders(platform: string): $CancellablePromise<string[]> {
     return $Call.ByID(790916236, platform).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType6($result);
     });
 }
 
 export function ListRequestLogs(platform: string, provider: string, limit: number): $CancellablePromise<$models.ReqeustLog[]> {
     return $Call.ByID(1199056012, platform, provider, limit).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType8($result);
+    });
+}
+
+export function ListRequestLogsByRange(platform: string, provider: string, rangeKey: string, limit: number): $CancellablePromise<$models.ReqeustLog[]> {
+    return $Call.ByID(2369484854, platform, provider, rangeKey, limit).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+export function ModelDailyStats(platform: string): $CancellablePromise<$models.ModelDailyStat[]> {
+    return $Call.ByID(4107228843, platform).then(($result: any) => {
+        return $$createType10($result);
+    });
+}
+
+export function ModelStatsByRange(platform: string, rangeKey: string): $CancellablePromise<$models.ModelDailyStat[]> {
+    return $Call.ByID(4097019652, platform, rangeKey).then(($result: any) => {
+        return $$createType10($result);
     });
 }
 
 export function ProviderDailyStats(platform: string): $CancellablePromise<$models.ProviderDailyStat[]> {
     return $Call.ByID(974013659, platform).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType12($result);
+    });
+}
+
+export function ProviderStatsByProviderAndRange(platform: string, provider: string, rangeKey: string): $CancellablePromise<$models.ProviderDailyStat[]> {
+    return $Call.ByID(4077439788, platform, provider, rangeKey).then(($result: any) => {
+        return $$createType12($result);
+    });
+}
+
+export function ProviderStatsByRange(platform: string, rangeKey: string): $CancellablePromise<$models.ProviderDailyStat[]> {
+    return $Call.ByID(2222483668, platform, rangeKey).then(($result: any) => {
+        return $$createType12($result);
+    });
+}
+
+export function ProviderStatsBySourceAndRange(platform: string, sourceID: string, rangeKey: string): $CancellablePromise<$models.ProviderDailyStat[]> {
+    return $Call.ByID(3177025776, platform, sourceID, rangeKey).then(($result: any) => {
+        return $$createType12($result);
+    });
+}
+
+export function StatsByProviderAndRange(platform: string, provider: string, rangeKey: string): $CancellablePromise<$models.LogStats> {
+    return $Call.ByID(751124359, platform, provider, rangeKey).then(($result: any) => {
+        return $$createType13($result);
+    });
+}
+
+export function StatsByRange(platform: string, rangeKey: string): $CancellablePromise<$models.LogStats> {
+    return $Call.ByID(1880807433, platform, rangeKey).then(($result: any) => {
+        return $$createType13($result);
     });
 }
 
 export function StatsSince(platform: string): $CancellablePromise<$models.LogStats> {
     return $Call.ByID(2831143405, platform).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType13($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $models.HeatmapStat.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Array($Create.Any);
-const $$createType3 = $models.ReqeustLog.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = $models.ProviderDailyStat.createFrom;
-const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = $models.LogStats.createFrom;
+const $$createType0 = $models.RecordCleanupResult.createFrom;
+const $$createType1 = $models.DashboardOverview.createFrom;
+const $$createType2 = $models.DashboardBundle.createFrom;
+const $$createType3 = $models.RecordStorageInfo.createFrom;
+const $$createType4 = $models.HeatmapStat.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $Create.Array($Create.Any);
+const $$createType7 = $models.ReqeustLog.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = $models.ModelDailyStat.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = $models.ProviderDailyStat.createFrom;
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = $models.LogStats.createFrom;

@@ -16,7 +16,20 @@
           </svg>
         </button>
       </label>
+      <BaseButton
+        v-if="provider?.apiUrl"
+        type="button"
+        variant="outline"
+        :disabled="fetching"
+        @click="fetchModels"
+      >
+        {{ fetching ? $t('components.provider.modelWhitelist.fetching') : $t('components.provider.modelWhitelist.fetch') }}
+      </BaseButton>
     </div>
+
+    <p v-if="discoveryMessage" :class="['discovery-message', { error: discoveryError }]">
+      {{ discoveryMessage }}
+    </p>
 
     <!-- 已添加的模型列表 -->
     <div v-if="modelList.length > 0" class="model-tags">
@@ -83,11 +96,15 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Call } from '@wailsio/runtime'
 import BaseInput from './BaseInput.vue'
 import BaseButton from './BaseButton.vue'
 
 interface Props {
   modelValue?: Record<string, boolean>
+  platform?: string
+  provider?: Record<string, unknown>
 }
 
 interface Emits {
@@ -96,6 +113,7 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+const { t } = useI18n()
 
 // 将 Record<string, boolean> 转换为数组便于展示
 const modelList = computed(() => {
@@ -104,6 +122,9 @@ const modelList = computed(() => {
 })
 
 const newModel = ref('')
+const fetching = ref(false)
+const discoveryMessage = ref('')
+const discoveryError = ref(false)
 
 const isWildcard = (model: string) => model.includes('*')
 
@@ -131,6 +152,34 @@ const removeModel = (index: number) => {
   const updated = { ...props.modelValue }
   delete updated[modelName]
   emit('update:modelValue', updated)
+}
+
+const fetchModels = async () => {
+  if (!props.provider?.apiUrl || fetching.value) return
+  fetching.value = true
+  discoveryMessage.value = ''
+  discoveryError.value = false
+  try {
+    const result = await Call.ByName(
+      'codeswitch/services.ProviderModelDiscoveryService.FetchProviderModels',
+      { platform: props.platform || '', provider: props.provider },
+    ) as { models?: Array<{ id?: string }>; sourceUrl?: string }
+    const updated = { ...props.modelValue }
+    let added = 0
+    for (const model of result.models ?? []) {
+      const id = model.id?.trim()
+      if (!id || updated[id]) continue
+      updated[id] = true
+      added++
+    }
+    emit('update:modelValue', updated)
+    discoveryMessage.value = t('components.provider.modelWhitelist.fetchSuccess', { count: added })
+  } catch (error) {
+    discoveryError.value = true
+    discoveryMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    fetching.value = false
+  }
 }
 
 // 初始化空对象
@@ -165,6 +214,17 @@ watch(
   font-weight: 500;
   font-size: 0.875rem;
   color: var(--foreground);
+}
+
+.discovery-message {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--success, #16a34a);
+  overflow-wrap: anywhere;
+}
+
+.discovery-message.error {
+  color: var(--error);
 }
 
 .help-icon {

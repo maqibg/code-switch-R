@@ -12,9 +12,13 @@ const (
 type Bridge string
 
 const (
-	BridgeNone                    Bridge = "none"
-	BridgeAnthropicMessagesToChat Bridge = "anthropic_messages_to_openai_chat"
-	BridgeCodexResponsesToChat    Bridge = "codex_responses_to_openai_chat"
+	BridgeNone                         Bridge = "none"
+	BridgeAnthropicMessagesToChat      Bridge = "anthropic_messages_to_openai_chat"
+	BridgeAnthropicMessagesToResponses Bridge = "anthropic_messages_to_openai_responses"
+	BridgeOpenAIChatToAnthropic        Bridge = "openai_chat_to_anthropic_messages"
+	BridgeOpenAIChatToResponses        Bridge = "openai_chat_to_openai_responses"
+	BridgeCodexResponsesToChat         Bridge = "codex_responses_to_openai_chat"
+	BridgeOpenAIResponsesToAnthropic   Bridge = "openai_responses_to_anthropic_messages"
 )
 
 type UsageParser string

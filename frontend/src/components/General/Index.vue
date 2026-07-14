@@ -556,6 +556,7 @@ const handleClearStoredRecords = async () => {
     const warningText = result.warning ? `\n${t('components.general.records.warning')}: ${result.warning}` : ''
     alert(t('components.general.records.clearSuccess', {
       requests: result.deleted_request_logs,
+      attempts: result.deleted_relay_attempts,
       health: result.deleted_health_checks,
     }) + warningText)
   } catch (error) {
@@ -1058,6 +1059,12 @@ onMounted(async () => {
             <span class="records-card-kicker">{{ $t('components.general.records.healthHistory') }}</span>
             <strong class="records-card-value">{{ recordStorageInfo?.health_check_count ?? 0 }}</strong>
             <p class="records-card-copy">{{ $t('components.general.records.healthHistoryHint') }}</p>
+          </article>
+
+          <article class="records-card records-card--metric">
+            <span class="records-card-kicker">{{ $t('components.general.records.relayAttempts') }}</span>
+            <strong class="records-card-value">{{ recordStorageInfo?.relay_attempt_count ?? 0 }}</strong>
+            <p class="records-card-copy">{{ $t('components.general.records.relayAttemptsHint') }}</p>
           </article>
         </div>
 

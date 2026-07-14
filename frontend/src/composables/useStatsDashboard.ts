@@ -11,7 +11,7 @@ import {
 import { getLatestResults, HealthStatus, type ProviderTimeline } from '../services/healthcheck'
 import { formatBeijingDateTime } from '../utils/beijingTime'
 
-const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode', 'reasonix']
+const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode', 'reasonix', 'pi', 'custom']
 const REFRESH_INTERVAL = 60
 const RANGE_CACHE_TTL_MS = 45_000
 
@@ -78,6 +78,8 @@ export function useStatsDashboard() {
     gemini: emptyStats(),
     deepseekcode: emptyStats(),
     reasonix: emptyStats(),
+    pi: emptyStats(),
+    custom: emptyStats(),
   })
 
   const rangeCache = new Map<StatsRange, CacheEntry>()
@@ -231,9 +233,9 @@ export function useStatsDashboard() {
     providerRanks.value = bundle.provider_ranks
     modelRanks.value = bundle.model_ranks
     recentLogs.value = bundle.recent_logs
-    platformStats.claude = bundle.platform_stats.claude ?? emptyStats()
-    platformStats.codex = bundle.platform_stats.codex ?? emptyStats()
-    platformStats.gemini = bundle.platform_stats.gemini ?? emptyStats()
+    for (const platform of PLATFORM_ORDER) {
+      platformStats[platform] = bundle.platform_stats[platform] ?? emptyStats()
+    }
     lastUpdated.value = new Date(fetchedAt)
   }
 

@@ -57,6 +57,8 @@
 | `.code-switch-R/codex.json` | Codex provider 配置 |
 | `.code-switch-R/deepseekcode.json` | DeepSeekCode provider 配置 |
 | `.code-switch-R/reasonix.json` | Reasonix provider 配置 |
+| `.code-switch-R/pi.json` | Pi 上游 Provider、完整模型定义、模型覆盖、请求头和 `metadataUserId` 配置 |
+| `.code-switch-R/provider-request-templates.json` | 用户保存的 Provider 请求头与 `metadataUserId` 模板；内置模板不写入该文件 |
 | `.code-switch-R/providers/{toolId}.json` | 自定义 CLI 工具 provider 配置 |
 | `.code-switch-R/app.json` | 应用设置、预算周期、自动更新、轮询、通知、全局代理等 |
 | `.code-switch-R/network.json` | 监听模式、WSL/LAN/custom 地址配置 |
@@ -72,9 +74,10 @@
 
 - `ProviderRelayService`：代理核心，在 `services/providerrelay.go`。负责路由注册、Provider 选择、Level 分组、轮询、失败降级、黑名单集成、请求转发、日志写入、模型列表代理、Gemini 和自定义 CLI 特殊路径。
 - `ProviderService`：Provider JSON 文件读写、迁移、验证、复制、删除清理和改名。`Provider.Name` 不能通过 `SaveProviders` 直接修改，改名必须走 `RenameProvider()`。
+- `PiSettingsService`：维护 `~/.pi/agent/models.json`、`auth.json` 和 `.code-switch-R/proxy-state/pi.json`，保留文件中的其他 Provider，只注入或恢复 `code-switch-r` 网关段；预览接口与实际写入共用同一构建和校验路径。
 - `provider_delete.go`：删除 provider 时清理 `request_log`、`provider_blacklist`、`health_check_history`、`provider_alias`。清理失败会回滚 provider JSON，避免配置和数据库状态分裂。
 - `provider_rename.go`：改名时事务更新历史表，并写入 48 小时 `provider_alias`，用于承接仍使用旧名的 in-flight 请求。禁止 48 小时内链式改名。
-- `Protocol Adapter`：`services/protocol_adapter.go` 负责 Anthropic Messages API 与 OpenAI Chat Completions 的转换。当前支持文本和流式场景；工具调用等不支持时应显式失败，不要静默降级。
+- `Protocol Adapter`：`services/protocol_matrix_adapter.go` 与 `services/protocol_matrix_stream.go` 负责 Anthropic Messages、OpenAI Chat Completions 和 OpenAI Responses 的双向矩阵转换。无法保持 reasoning、工具选择或流式事件语义时必须显式失败；流式响应一旦提交就不得再切换 Provider 或追加 JSON 错误。
 - `BlacklistService` 与 `HealthCheckService`：分别管理请求失败拉黑和后台可用性监控。`auto_connectivity_test` 字段现在复用为自动可用性轮询开关。
 - `LogService` 与 `resources/model-pricing`：读取请求日志、聚合统计、热力图、成本估算、模型定价匹配。
 - `MCPService`：管理 Claude、Codex、Gemini、DeepSeekCode、Reasonix 的 MCP 配置，并同步到对应平台文件。
@@ -97,13 +100,23 @@ POST /deepseekcode/v1/messages     -> DeepSeekCode Anthropic Messages
 GET  /deepseekcode/v1/models       -> DeepSeekCode models
 POST /reasonix/chat/completions    -> Reasonix OpenAI Chat Completions
 GET  /reasonix/models              -> Reasonix models
+POST /pi/v1/chat/completions       -> Pi OpenAI Chat Completions
+POST /pi/v1/responses              -> Pi OpenAI Responses
+POST /pi/v1/messages               -> Pi Anthropic Messages
+GET  /pi/v1/models                 -> Pi models
 POST /custom/:toolId/v1/messages   -> 自定义 CLI Messages
 GET  /custom/:toolId/v1/models     -> 自定义 CLI models
 ```
 
 Provider 选择顺序是：启用状态、URL/API Key、配置校验、模型支持、黑名单状态、Level 分组、同 Level 轮询设置。黑名单固定模式开启时，同一 provider 会按阈值重试直到拉黑再切换；未开启时每个 provider 单次失败后降级到下一个。
 
-认证默认值由 `defaultConnectivityAuthType(platform)` 决定：`deepseekcode` 使用 `x-api-key`，其他平台默认 `bearer`。显式填写 `Provider.ConnectivityAuthType` 时以配置为准。转发前会删除客户端传来的 `x-api-key`，避免占位 Key 污染上游请求；`openai_chat` 上游会移除 Anthropic 专属头。
+认证默认值由 `defaultConnectivityAuthType(platform)` 决定：`deepseekcode` 使用 `x-api-key`，其他平台默认 `bearer`。显式填写 `Provider.AuthScheme` 或兼容字段 `Provider.ConnectivityAuthType` 时以配置为准，协议类型只控制 `anthropic-version` 等协议专属头，不得把显式 `x-api-key` 改写成 Bearer。转发前会删除客户端传来的认证头，避免占位 Key 污染上游请求。
+
+Pi 保持单一 `code-switch-r` Gateway Provider，不能把各上游直接写成 Pi Provider 绕过故障转移、黑名单、统计和协议转换。暴露给 Pi 的模型 ID 使用 `provider/model`，代理只切分第一个 `/`，因此上游真实模型 ID 可以继续包含 `/`。生成的 Provider 字段顺序固定为 `baseUrl`、`apiKey`、`api`、`headers`、`authHeader`、`compat`、`models`、`modelOverrides`；完整模型字段按 `PiModelEntry` 声明顺序输出。单模型 `baseUrl` 指向外部地址会让 Pi 直接请求上游，预览必须显示绕过网关警告。`models` 是完整定义，`modelOverrides` 是局部覆盖；在自定义网关下，未知覆盖目标会被 Pi 忽略，同 ID 完整模型会替换覆盖结果，前端和后端都必须显式诊断这类无效组合。
+
+Provider 自定义 Header 在兼容预设之后应用，可以覆盖 User-Agent 等默认值，但认证头和危险 transport Header 仍由代理控制。`metadataUserId` 只允许最终上游协议为 Anthropic Messages，并在协议转换完成后写入请求体 `metadata.user_id`；不得把设备、账号或会话标识硬编码进内置模板。
+
+统计成功统一定义为 HTTP 2xx 且 `error_type` 为空；失败数必须是该条件的补集。自定义 CLI 的新日志使用 `platform=custom` 与 `source_id=<toolId>`，查询时必须按当前工具隔离，并兼容旧的 `platform=custom:<toolId>` 记录。
 
 ## 前端结构
 
@@ -202,6 +215,7 @@ GitHub Release 由 `.github/workflows/release.yml` 在推送 `v*` tag 时触发�
 | 改动范围 | 建议验证 |
 |---|---|
 | Provider 模型、映射、认证、Level、删除、改名 | `go test ./services -run "TestProvider|TestModels|TestRename|TestSaveProviders|TestDefaultConnectivityAuthType" -timeout 60s` |
+| Pi 模型、网关、请求头模板、metadata 与预览 | `go test ./services -run "TestPi|TestBuildPiGateway|TestValidatePiProviderMetadata|TestRequestHeaderTemplate|TestApplyProviderRequestBodyPolicy" -timeout 120s` |
 | Relay 转发、协议转换、日志解析 | `go test ./services -run "TestReplaceModel|TestModelMapping|TestProviderConfig|TestModels" -timeout 60s` |
 | Gemini provider 或 `.env` 解析 | `go test ./services -run TestGemini -timeout 60s` |
 | 日志、统计、时区、成本 | `go test ./services -run "Test.*Range|Test.*Stats|Test.*Timezone" -timeout 60s` 和 `go test ./resources/model-pricing -timeout 60s` |

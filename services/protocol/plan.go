@@ -4,16 +4,25 @@ import "strings"
 
 func ClientProtocolForPlatform(platform string, endpoint string) Protocol {
 	switch normalizePlatform(platform) {
-	case "codex":
-		return OpenAIResponses
 	case "gemini":
 		return GeminiNative
-	case "reasonix":
+	}
+	ep := normalizeEndpoint(endpoint)
+	if strings.Contains(ep, "/chat/completions") {
+		return OpenAIChat
+	}
+	if strings.Contains(ep, "/responses") {
+		return OpenAIResponses
+	}
+	if strings.Contains(ep, "/messages") {
+		return AnthropicMessages
+	}
+	switch normalizePlatform(platform) {
+	case "codex":
+		return OpenAIResponses
+	case "reasonix", "pi":
 		return OpenAIChat
 	default:
-		if strings.Contains(normalizeEndpoint(endpoint), "/chat/completions") {
-			return OpenAIChat
-		}
 		return AnthropicMessages
 	}
 }
@@ -34,17 +43,25 @@ func UpstreamProtocolFromLegacy(platform string, upstreamProtocol string, endpoi
 func BuildRoutePlan(platform string, upstreamProtocol string, endpoint string) RoutePlan {
 	clientProtocol := ClientProtocolForPlatform(platform, endpoint)
 	targetProtocol := UpstreamProtocolFromLegacy(platform, upstreamProtocol, endpoint)
-	bridge := bridgeFor(clientProtocol, targetProtocol)
+	return BuildExplicitRoutePlan(platform, clientProtocol, targetProtocol, endpoint)
+}
+
+// BuildExplicitRoutePlan builds a route without inferring either protocol from the platform.
+// New multi-protocol entries such as Pi use this path; BuildRoutePlan remains for compatibility.
+func BuildExplicitRoutePlan(platform string, clientProtocol Protocol, upstreamProtocol Protocol, endpoint string) RoutePlan {
+	clientProtocol = normalizeProtocol(clientProtocol)
+	upstreamProtocol = normalizeProtocol(upstreamProtocol)
+	bridge := bridgeFor(clientProtocol, upstreamProtocol)
 
 	return RoutePlan{
 		Platform:         normalizePlatform(platform),
 		ClientProtocol:   clientProtocol,
-		UpstreamProtocol: targetProtocol,
+		UpstreamProtocol: upstreamProtocol,
 		Endpoint:         endpoint,
 		TargetEndpoint:   normalizeTargetEndpoint(endpoint),
 		Bridge:           bridge,
 		NeedsTransform:   bridge != BridgeNone,
-		UsageParser:      usageParserFor(targetProtocol),
+		UsageParser:      usageParserFor(upstreamProtocol),
 	}
 }
 
@@ -79,7 +96,28 @@ func bridgeFor(clientProtocol Protocol, upstreamProtocol Protocol) Bridge {
 	if clientProtocol == OpenAIResponses && upstreamProtocol == OpenAIChat {
 		return BridgeCodexResponsesToChat
 	}
+	if clientProtocol == AnthropicMessages && upstreamProtocol == OpenAIResponses {
+		return BridgeAnthropicMessagesToResponses
+	}
+	if clientProtocol == OpenAIChat && upstreamProtocol == AnthropicMessages {
+		return BridgeOpenAIChatToAnthropic
+	}
+	if clientProtocol == OpenAIChat && upstreamProtocol == OpenAIResponses {
+		return BridgeOpenAIChatToResponses
+	}
+	if clientProtocol == OpenAIResponses && upstreamProtocol == AnthropicMessages {
+		return BridgeOpenAIResponsesToAnthropic
+	}
 	return BridgeNone
+}
+
+func normalizeProtocol(value Protocol) Protocol {
+	switch value {
+	case AnthropicMessages, OpenAIChat, OpenAIResponses, GeminiNative:
+		return value
+	default:
+		return AnthropicMessages
+	}
 }
 
 func usageParserFor(upstreamProtocol Protocol) UsageParser {

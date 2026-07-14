@@ -9,6 +9,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function DeleteRequestTemplate(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3634643075, id);
+}
+
 /**
  * DuplicateProvider 复制供应商配置，生成新的副本
  * 返回新创建的 Provider 对象
@@ -19,9 +23,15 @@ export function DuplicateProvider(kind: string, sourceID: number): $CancellableP
     });
 }
 
+export function ListRequestTemplates(): $CancellablePromise<$models.ProviderRequestTemplate[]> {
+    return $Call.ByID(3784656507).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
 export function LoadProviders(kind: string): $CancellablePromise<$models.Provider[]> {
     return $Call.ByID(3413098935, kind).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -43,6 +53,12 @@ export function SaveProviders(kind: string, providers: $models.Provider[]): $Can
     return $Call.ByID(1034860836, kind, providers);
 }
 
+export function SaveRequestTemplate(template: $models.ProviderRequestTemplate): $CancellablePromise<$models.ProviderRequestTemplate> {
+    return $Call.ByID(1141326029, template).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function Start(): $CancellablePromise<void> {
     return $Call.ByID(194327613);
 }
@@ -54,4 +70,6 @@ export function Stop(): $CancellablePromise<void> {
 // Private type creation functions
 const $$createType0 = $models.Provider.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = $Create.Array($$createType0);
+const $$createType2 = $models.ProviderRequestTemplate.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = $Create.Array($$createType0);

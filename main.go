@@ -120,6 +120,8 @@ func main() {
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	deepseekCodeSettings := services.NewDeepSeekCodeSettingsService(providerRelay.Addr())
 	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
+	piSettings := services.NewPiSettingsService(providerRelay.Addr(), providerService)
+	providerModelDiscovery := services.NewProviderModelDiscoveryService(appSettings)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
 	logService := services.NewLogService(providerService)
 	mcpService := services.NewMCPService()
@@ -250,6 +252,8 @@ func main() {
 			application.NewService(networkService),
 			application.NewService(deepseekCodeSettings),
 			application.NewService(reasonixSettings),
+			application.NewService(piSettings),
+			application.NewService(providerModelDiscovery),
 			application.NewService(frontendPreferencesService),
 		},
 		Assets: application.AssetOptions{

@@ -15,8 +15,18 @@ export function ListServers(): $CancellablePromise<$models.MCPServer[]> {
     });
 }
 
+export function ListServersForPlatform(platform: string): $CancellablePromise<$models.MCPServer[]> {
+    return $Call.ByID(1872956556, platform).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 export function SaveServers(servers: $models.MCPServer[]): $CancellablePromise<void> {
     return $Call.ByID(2073851319, servers);
+}
+
+export function SaveServersForPlatform(platform: string, servers: $models.MCPServer[]): $CancellablePromise<void> {
+    return $Call.ByID(1909302905, platform, servers);
 }
 
 // Private type creation functions

@@ -396,7 +396,7 @@ func replaceMainDatabaseTables(sourcePath string) (map[string]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	tables := []string{"app_settings", "provider_blacklist", "request_log", "health_check_history"}
+	tables := []string{"app_settings", "provider_blacklist", "request_log", "relay_attempt", "health_check_history"}
 	return replaceSQLiteTables(db, sourcePath, tables)
 }
 

@@ -85,10 +85,10 @@ export function TestProvider(provider: $models.Provider, platform: string): $Can
 }
 
 /**
- * TestProviderManual 手动测试供应商连通性（供前端测试按钮调用）
+ * TestProviderManual 手动做供应商延迟检查（供前端按钮调用）
  */
-export function TestProviderManual(platform: string, apiURL: string, apiKey: string, model: string, endpoint: string, authType: string): $CancellablePromise<$models.ManualTestResult> {
-    return $Call.ByID(2146278070, platform, apiURL, apiKey, model, endpoint, authType).then(($result: any) => {
+export function TestProviderManual(platform: string, apiURL: string, apiKey: string, model: string, endpoint: string, authType: string, proxyEnabled: boolean): $CancellablePromise<$models.ManualTestResult> {
+    return $Call.ByID(2146278070, platform, apiURL, apiKey, model, endpoint, authType, proxyEnabled).then(($result: any) => {
         return $$createType4($result);
     });
 }

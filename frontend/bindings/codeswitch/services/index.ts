@@ -10,15 +10,20 @@ import * as ConnectivityTestService from "./connectivitytestservice.js";
 import * as ConsoleService from "./consoleservice.js";
 import * as CustomCliService from "./customcliservice.js";
 import * as DeepLinkService from "./deeplinkservice.js";
+import * as DeepSeekCodeSettingsService from "./deepseekcodesettingsservice.js";
 import * as EnvCheckService from "./envcheckservice.js";
+import * as FrontendPreferencesService from "./frontendpreferencesservice.js";
 import * as GeminiService from "./geminiservice.js";
 import * as HealthCheckService from "./healthcheckservice.js";
 import * as ImportService from "./importservice.js";
 import * as LogService from "./logservice.js";
 import * as MCPService from "./mcpservice.js";
 import * as NetworkService from "./networkservice.js";
+import * as PiSettingsService from "./pisettingsservice.js";
 import * as PromptService from "./promptservice.js";
+import * as ProviderModelDiscoveryService from "./providermodeldiscoveryservice.js";
 import * as ProviderService from "./providerservice.js";
+import * as ReasonixSettingsService from "./reasonixsettingsservice.js";
 import * as SettingsService from "./settingsservice.js";
 import * as SkillService from "./skillservice.js";
 import * as SpeedTestService from "./speedtestservice.js";
@@ -34,15 +39,20 @@ export {
     ConsoleService,
     CustomCliService,
     DeepLinkService,
+    DeepSeekCodeSettingsService,
     EnvCheckService,
+    FrontendPreferencesService,
     GeminiService,
     HealthCheckService,
     ImportService,
     LogService,
     MCPService,
     NetworkService,
+    PiSettingsService,
     PromptService,
+    ProviderModelDiscoveryService,
     ProviderService,
+    ReasonixSettingsService,
     SettingsService,
     SkillService,
     SpeedTestService,
@@ -71,9 +81,14 @@ export {
     ConsoleLog,
     CustomCliProxyStatus,
     CustomCliTool,
+    DashboardBundle,
+    DashboardOverview,
     DeepLinkImportRequest,
+    DeepSeekCodeProxyStatus,
+    DiscoveredModel,
     EndpointLatency,
     EnvConflict,
+    FrontendPreferences,
     GeminiAuthType,
     GeminiPreset,
     GeminiProvider,
@@ -89,12 +104,31 @@ export {
     MCPParseResult,
     MCPServer,
     ManualTestResult,
+    ModelDailyStat,
     NetworkSettings,
+    PiConfigDiagnostic,
+    PiModelCost,
+    PiModelCostTier,
+    PiModelEntry,
+    PiModelOverride,
+    PiModelOverrideCost,
+    PiModelsPreviewRequest,
+    PiModelsPreviewResult,
+    ProjectTransferInfo,
+    ProjectTransferResult,
     Prompt,
     Provider,
     ProviderDailyStat,
+    ProviderModelDiscoveryRequest,
+    ProviderModelDiscoveryResult,
+    ProviderRequestTemplate,
     ProviderTimeline,
+    ProxyConfig,
     ProxyInjection,
+    ProxyTestResult,
+    ReasonixProxyStatus,
+    RecordCleanupResult,
+    RecordStorageInfo,
     ReqeustLog,
     RetryConfig,
     Skill,

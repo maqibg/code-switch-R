@@ -1,9 +1,13 @@
 package services
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/daodao97/xgo/xrequest"
+	"github.com/gin-gonic/gin"
 )
 
 type codexRoundLog struct {
@@ -34,8 +38,9 @@ type codexIncompleteOutput struct {
 }
 
 func (prs *ProviderRelayService) foldCodexResponsesStream(
+	c *gin.Context,
 	w http.ResponseWriter,
-	provider Provider,
+	execution *relayForwardExecution,
 	endpoint string,
 	query map[string]string,
 	headers map[string]string,
@@ -44,17 +49,29 @@ func (prs *ProviderRelayService) foldCodexResponsesStream(
 	config codexContinueConfig,
 	state *codexFoldState,
 	traceID string,
+	firstAttemptStarted time.Time,
 ) error {
+	provider := execution.Provider
 	response := firstResponse
+	attemptStarted := firstAttemptStarted
 	for roundNo, continuations := 1, 0; ; roundNo++ {
 		result, err := readCodexContinueRound(w, response, roundNo, state)
 		if err != nil {
+			attemptLog := codexContinueRoundRequestLog(provider, execution.Model, response, result.usage)
+			prs.recordCodexContinueAttempt(c, provider, execution, attemptLog, attemptStarted, false, err)
 			completeCodexContinueWithIncomplete(codexIncompleteOutput{
 				w: w, state: state, traceID: traceID, reason: "upstream_error", roundNo: roundNo, step: config.Step, err: err,
 			})
 			return nil
 		}
 		state.usage.add(result.usage)
+		attemptLog := codexContinueRoundRequestLog(provider, execution.Model, response, result.usage)
+		attemptSuccess := result.terminal != nil
+		var attemptErr error
+		if !attemptSuccess {
+			attemptErr = fmt.Errorf("upstream stream ended without terminal event")
+		}
+		prs.recordCodexContinueAttempt(c, provider, execution, attemptLog, attemptStarted, attemptSuccess, attemptErr)
 		truncated := isCodexReasoningTruncated(result.reasoningTokens, config.Step)
 		hasEncrypted := lastReasoningHasEncrypted(result.roundReasoning)
 		canContinue := result.terminal != nil && truncated && hasEncrypted && continuations < config.MaxContinuations
@@ -83,8 +100,22 @@ func (prs *ProviderRelayService) foldCodexResponsesStream(
 				return nil
 			}
 			logCodexContinue("INFO", traceID, "发起续写请求 | next_round=%d | provider=%s | replay_items=%d", roundNo+1, provider.Name, len(state.replayTail))
+			attemptStarted = time.Now()
 			response, err = prs.sendNativeCodexResponsesRequest(provider, endpoint, query, headers, nextBody)
 			if err != nil || response == nil || response.StatusCode() < 200 || response.StatusCode() >= 300 || !isEventStream(response) {
+				attemptErr := err
+				if attemptErr == nil {
+					switch {
+					case response == nil:
+						attemptErr = fmt.Errorf("empty response")
+					case response.StatusCode() < 200 || response.StatusCode() >= 300:
+						attemptErr = fmt.Errorf("upstream status %d", response.StatusCode())
+					default:
+						attemptErr = fmt.Errorf("upstream response is not event-stream")
+					}
+				}
+				attemptLog := codexContinueRoundRequestLog(provider, execution.Model, response, nil)
+				prs.recordCodexContinueAttempt(c, provider, execution, attemptLog, attemptStarted, false, attemptErr)
 				logCodexContinuationUpstreamFailure(traceID, roundNo, response, err)
 				writeCodexSSEEvent(w, syntheticCodexIncomplete(state, "upstream_error", roundNo, config.Step))
 				writeCodexSSEDone(w)
@@ -109,6 +140,18 @@ func (prs *ProviderRelayService) foldCodexResponsesStream(
 		flushWriter(w)
 		return nil
 	}
+}
+
+func codexContinueRoundRequestLog(provider Provider, model string, response *xrequest.Response, usage map[string]any) ReqeustLog {
+	logEntry := ReqeustLog{Platform: "codex", Provider: provider.Name, Model: model, IsStream: true}
+	if response != nil {
+		logEntry.HttpCode = response.StatusCode()
+	}
+	if usage != nil {
+		encoded, _ := json.Marshal(map[string]any{"usage": usage})
+		CodexParseTokenUsageFromResponse(string(encoded), &logEntry)
+	}
+	return logEntry
 }
 
 func recordCodexContinueRound(entry codexRoundLog) {

@@ -18,6 +18,18 @@ export function GetAppSettings(): $CancellablePromise<$models.AppSettings> {
     });
 }
 
+export function GetGlobalProxyConfig(): $CancellablePromise<$models.ProxyConfig> {
+    return $Call.ByID(2080592793).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function GetProviderProxyConfig(enabled: boolean): $CancellablePromise<$models.ProxyConfig> {
+    return $Call.ByID(3863070771, enabled).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 /**
  * SaveAppSettings persists the provided settings to disk.
  */
@@ -27,5 +39,13 @@ export function SaveAppSettings(settings: $models.AppSettings): $CancellableProm
     });
 }
 
+export function TestGlobalProxy(protocol: string, host: string, port: number): $CancellablePromise<$models.ProxyTestResult> {
+    return $Call.ByID(535813047, protocol, host, port).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 // Private type creation functions
 const $$createType0 = $models.AppSettings.createFrom;
+const $$createType1 = $models.ProxyConfig.createFrom;
+const $$createType2 = $models.ProxyTestResult.createFrom;

@@ -13,21 +13,21 @@ import (
 
 // DeepLinkImportRequest 深度链接导入请求模型
 type DeepLinkImportRequest struct {
-	Version      string  `json:"version"`              // 协议版本 (e.g., "v1")
-	Resource     string  `json:"resource"`             // 资源类型 (e.g., "provider")
-	App          string  `json:"app"`                  // 目标应用 (claude/codex/gemini)
-	Name         string  `json:"name"`                 // 供应商名称
-	Homepage     string  `json:"homepage"`             // 供应商主页
-	Endpoint     string  `json:"endpoint"`             // API 端点
-	APIKey       string  `json:"apiKey"`               // API 密钥
-	Model        *string `json:"model,omitempty"`      // 可选模型名称
-	Notes        *string `json:"notes,omitempty"`      // 可选备注
-	HaikuModel   *string `json:"haikuModel,omitempty"` // Claude Haiku 模型
+	Version      string  `json:"version"`                // 协议版本 (e.g., "v1")
+	Resource     string  `json:"resource"`               // 资源类型 (e.g., "provider")
+	App          string  `json:"app"`                    // 目标应用
+	Name         string  `json:"name"`                   // 供应商名称
+	Homepage     string  `json:"homepage"`               // 供应商主页
+	Endpoint     string  `json:"endpoint"`               // API 端点
+	APIKey       string  `json:"apiKey"`                 // API 密钥
+	Model        *string `json:"model,omitempty"`        // 可选模型名称
+	Notes        *string `json:"notes,omitempty"`        // 可选备注
+	HaikuModel   *string `json:"haikuModel,omitempty"`   // Claude Haiku 模型
 	SonnetModel  *string `json:"sonnetModel,omitempty"`  // Claude Sonnet 模型
-	OpusModel    *string `json:"opusModel,omitempty"`  // Claude Opus 模型
-	Config       *string `json:"config,omitempty"`     // Base64 编码的配置
+	OpusModel    *string `json:"opusModel,omitempty"`    // Claude Opus 模型
+	Config       *string `json:"config,omitempty"`       // Base64 编码的配置
 	ConfigFormat *string `json:"configFormat,omitempty"` // 配置格式 (json/toml)
-	ConfigURL    *string `json:"configUrl,omitempty"`  // 远程配置 URL
+	ConfigURL    *string `json:"configUrl,omitempty"`    // 远程配置 URL
 }
 
 // DeepLinkService 深度链接服务
@@ -94,8 +94,8 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if app == "" {
 		return nil, fmt.Errorf("缺少 'app' 参数")
 	}
-	if app != "claude" && app != "codex" && app != "gemini" && app != "deepseekcode" && app != "reasonix" {
-		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 'gemini', 'deepseekcode' 或 'reasonix', 得到 '%s'", app)
+	if app != "claude" && app != "codex" && app != "gemini" && app != "deepseekcode" && app != "reasonix" && app != "pi" {
+		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 'gemini', 'deepseekcode', 'reasonix' 或 'pi', 得到 '%s'", app)
 	}
 
 	name := params.Get("name")
@@ -205,6 +205,8 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 		kind = "deepseekcode"
 	case "reasonix":
 		kind = "reasonix"
+	case "pi":
+		kind = "pi"
 	default:
 		return "", fmt.Errorf("不支持的 app 类型: %s", merged.App)
 	}
@@ -306,6 +308,8 @@ func (s *DeepLinkService) parseAndMergeConfig(request *DeepLinkImportRequest) (*
 	case "deepseekcode":
 		s.mergeClaudeConfig(&merged, configData)
 	case "reasonix":
+		s.mergeReasonixConfig(&merged, configData)
+	case "pi":
 		s.mergeReasonixConfig(&merged, configData)
 	}
 

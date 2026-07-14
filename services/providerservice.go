@@ -71,6 +71,31 @@ type Provider struct {
 	// auto: 根据 APIEndpoint 自动检测（包含 /chat/completions 则为 openai_chat）
 	UpstreamProtocol string `json:"upstreamProtocol,omitempty"`
 
+	// AuthScheme is the relay authentication policy. ConnectivityAuthType remains a
+	// read-compatible legacy fallback because older provider files already use it.
+	AuthScheme string `json:"authScheme,omitempty"`
+	AuthHeader string `json:"authHeader,omitempty"`
+
+	// Headers contains non-authentication upstream headers. Dangerous transport and
+	// credential headers are rejected before requests are sent.
+	Headers map[string]string `json:"headers,omitempty"`
+
+	// UserAgentPreset selects a known compatibility identity. "custom" uses CustomUserAgent;
+	// an empty value keeps the inbound runtime User-Agent.
+	UserAgentPreset string `json:"userAgentPreset,omitempty"`
+	CustomUserAgent string `json:"customUserAgent,omitempty"`
+
+	// ModelsEndpoint overrides model discovery only and does not affect inference requests.
+	ModelsEndpoint string `json:"modelsEndpoint,omitempty"`
+
+	// PiModels stores the complete Pi model definitions exposed by this upstream
+	// provider. Empty keeps the legacy supportedModels-derived gateway behavior.
+	PiModels []PiModelEntry `json:"piModels,omitempty"`
+	// PiModelOverrides are merged into matching generated models before writing
+	// the custom code-switch-r provider. Pi cannot apply overrides to unknown custom models itself.
+	PiModelOverrides map[string]PiModelOverride `json:"piModelOverrides,omitempty"`
+	MetadataUserID   string                     `json:"metadataUserId,omitempty"`
+
 	// Codex reasoning 自动续写 - 仅对 Codex 原生 Responses 流式请求生效
 	CodexReasoningContinueEnabled bool `json:"codexReasoningContinueEnabled,omitempty"`
 
@@ -107,7 +132,8 @@ func defaultConnectivityAuthType(platform string) string {
 }
 
 type ProviderService struct {
-	mu sync.Mutex
+	mu            sync.Mutex
+	piGatewaySync func([]Provider) error
 }
 
 func NewProviderService() *ProviderService {
@@ -132,6 +158,8 @@ func providerFilePath(kind string) (string, error) {
 		filename = "deepseekcode.json"
 	case "reasonix":
 		filename = "reasonix.json"
+	case "pi":
+		filename = "pi.json"
 	default:
 		// 支持自定义 CLI 工具的供应商存储：custom:{tool-id}
 		if strings.HasPrefix(kind, "custom:") {
@@ -155,6 +183,12 @@ func (ps *ProviderService) SaveProviders(kind string, providers []Provider) erro
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	return ps.saveProvidersLocked(kind, providers)
+}
+
+func (ps *ProviderService) setPiGatewaySync(syncGateway func([]Provider) error) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.piGatewaySync = syncGateway
 }
 
 // loadProvidersRaw 原样读取配置文件（不迁移、不保存）
@@ -214,6 +248,16 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	validationErrors := make([]string, 0)
 	for i := range providers {
 		p := &providers[i]
+		if strings.EqualFold(strings.TrimSpace(kind), "pi") &&
+			(strings.TrimSpace(p.Name) == "" || strings.Contains(p.Name, "/")) {
+			validationErrors = append(validationErrors, fmt.Sprintf("[%s] Pi Provider 名称不能为空且不能包含 '/'", p.Name))
+		}
+		if strings.EqualFold(strings.TrimSpace(kind), "pi") {
+			syncPiModelsToSupportedModels(p)
+			for _, errMsg := range validatePiProviderConfiguration(*p) {
+				validationErrors = append(validationErrors, fmt.Sprintf("[%s] %s", p.Name, errMsg))
+			}
+		}
 
 		// 规则：name 不可修改（走独立 RenameProvider 路径,SaveProviders 只允许既有 name）
 		if oldName, ok := nameByID[p.ID]; ok && oldName != p.Name {
@@ -243,24 +287,41 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	if len(validationErrors) > 0 {
 		return fmt.Errorf("配置验证失败：\n  - %s", strings.Join(validationErrors, "\n  - "))
 	}
+	for i := range providers {
+		if err := canonicalizeProviderHeaderMaps(&providers[i]); err != nil {
+			return fmt.Errorf("[%s] Header 规范化失败: %w", providers[i].Name, err)
+		}
+	}
 
 	data, err := json.MarshalIndent(providerEnvelope{Providers: providers}, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := atomicWriteFile(path, data, 0o644); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
+
+	piSynced := false
+	if strings.EqualFold(strings.TrimSpace(kind), "pi") && ps.piGatewaySync != nil {
+		if err := ps.piGatewaySync(providers); err != nil {
+			return rollbackProviderFile(path, existingProviders, fmt.Errorf("同步 Pi models.json 失败: %w", err))
+		}
+		piSynced = true
 	}
 
 	if len(deletedProviders) == 0 {
 		return nil
 	}
-	return cleanupDeletedProvidersWithRollback(path, existingProviders, aliasPlatform, deletedProviders)
+	if err := cleanupDeletedProviders(aliasPlatform, deletedProviders); err != nil {
+		if piSynced {
+			if syncErr := ps.piGatewaySync(existingProviders); syncErr != nil {
+				err = fmt.Errorf("%w; Pi gateway 回滚失败: %v", err, syncErr)
+			}
+		}
+		return rollbackProviderFile(path, existingProviders, err)
+	}
+	return nil
 }
 
 func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
@@ -447,6 +508,12 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		APIEndpoint:          source.APIEndpoint,          // 复制端点配置
 		UpstreamProtocol:     source.UpstreamProtocol,     // 复制上游协议配置
 		ConnectivityAuthType: source.ConnectivityAuthType, // 复制认证方式
+		AuthScheme:           source.AuthScheme,
+		AuthHeader:           source.AuthHeader,
+		UserAgentPreset:      source.UserAgentPreset,
+		CustomUserAgent:      source.CustomUserAgent,
+		ModelsEndpoint:       source.ModelsEndpoint,
+		MetadataUserID:       source.MetadataUserID,
 		// 可用性监控配置
 		AvailabilityMonitorEnabled: source.AvailabilityMonitorEnabled,
 		ConnectivityAutoBlacklist:  false, // 副本默认关闭自动拉黑
@@ -475,6 +542,14 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 			cloned.ModelMapping[k] = v
 		}
 	}
+	if source.Headers != nil {
+		cloned.Headers = make(map[string]string, len(source.Headers))
+		for k, v := range source.Headers {
+			cloned.Headers[k] = v
+		}
+	}
+	cloned.PiModels = clonePiModelEntries(source.PiModels)
+	cloned.PiModelOverrides = clonePiModelOverrides(source.PiModelOverrides)
 
 	// 7. 添加到列表并保存（使用内部方法避免死锁）
 	providers = append(providers, *cloned)
@@ -627,6 +702,20 @@ func (p *Provider) ResolveUpstreamProtocol(effectiveEndpoint string) UpstreamPro
 	return protocol
 }
 
+func resolveProviderUpstreamProtocol(platform string, provider Provider, effectiveEndpoint string) UpstreamProtocolType {
+	if strings.TrimSpace(provider.UpstreamProtocol) != "" {
+		return provider.ResolveUpstreamProtocol(effectiveEndpoint)
+	}
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case "codex":
+		return UpstreamProtocolOpenAIResponses
+	case "reasonix", "pi":
+		return UpstreamProtocolOpenAIChat
+	default:
+		return UpstreamProtocolAnthropic
+	}
+}
+
 // ValidateConfiguration 验证 provider 的模型配置
 // 返回验证错误列表（空则表示验证通过）
 func (p *Provider) ValidateConfiguration() []string {
@@ -670,8 +759,61 @@ func (p *Provider) ValidateConfiguration() []string {
 
 	// 规则 3 移除：自映射不会破坏功能，最多是无效配置，不阻塞保存
 
+	if scheme := strings.ToLower(strings.TrimSpace(p.AuthScheme)); scheme != "" {
+		switch scheme {
+		case "bearer", "x-api-key", "custom", "none":
+		default:
+			errors = append(errors, fmt.Sprintf("不支持的认证方式: %s", p.AuthScheme))
+		}
+		if scheme == "custom" && strings.TrimSpace(p.AuthHeader) == "" {
+			errors = append(errors, "自定义认证方式必须填写 authHeader")
+		}
+	}
+	if strings.TrimSpace(p.AuthHeader) != "" {
+		if err := validateHeaderNameAndValue(p.AuthHeader, p.APIKey); err != nil {
+			errors = append(errors, err.Error())
+		}
+	}
+	normalizedHeaders, err := canonicalizeHeaderMap(p.Headers)
+	if err != nil {
+		errors = append(errors, err.Error())
+	}
+	for key, value := range normalizedHeaders {
+		if err := validateAdditionalHeader(key, value); err != nil {
+			errors = append(errors, err.Error())
+		}
+	}
+	if err := applyUserAgentPolicy(map[string]string{}, *p); err != nil {
+		errors = append(errors, err.Error())
+	}
+
 	p.configErrors = errors
 	return errors
+}
+
+func canonicalizeProviderHeaderMaps(provider *Provider) error {
+	if provider == nil {
+		return nil
+	}
+	var err error
+	provider.Headers, err = canonicalizeHeaderMap(provider.Headers)
+	if err != nil {
+		return err
+	}
+	for index := range provider.PiModels {
+		provider.PiModels[index].Headers, err = canonicalizeHeaderMap(provider.PiModels[index].Headers)
+		if err != nil {
+			return fmt.Errorf("piModels[%d].headers: %w", index, err)
+		}
+	}
+	for modelID, override := range provider.PiModelOverrides {
+		override.Headers, err = canonicalizeHeaderMap(override.Headers)
+		if err != nil {
+			return fmt.Errorf("piModelOverrides.%s.headers: %w", modelID, err)
+		}
+		provider.PiModelOverrides[modelID] = override
+	}
+	return nil
 }
 
 // matchWildcard 通配符匹配函数

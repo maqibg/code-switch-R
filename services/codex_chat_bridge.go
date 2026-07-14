@@ -43,6 +43,9 @@ func ConvertOpenAIChatToCodexResponse(bodyBytes []byte) ([]byte, error) {
 		return convertOpenAIChatErrorToCodexResponse(body)
 	}
 	message := firstChatChoiceMessage(body["choices"])
+	if _, exists := message["reasoning_content"]; exists {
+		return nil, fmt.Errorf("OpenAI Chat 响应包含 reasoning_content，无法转换为语义等价的 Responses reasoning 输出")
+	}
 	content, err := chatMessageTextContent(message)
 	if err != nil {
 		return nil, err
