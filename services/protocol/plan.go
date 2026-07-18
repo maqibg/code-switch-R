@@ -132,14 +132,24 @@ func usageParserFor(upstreamProtocol Protocol) UsageParser {
 }
 
 func normalizeTargetEndpoint(endpoint string) string {
-	ep := normalizeEndpoint(endpoint)
-	switch ep {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	path, query := trimmed, ""
+	if index := strings.IndexByte(trimmed, '?'); index >= 0 {
+		path, query = trimmed[:index], trimmed[index:]
+	}
+	switch strings.ToLower(path) {
 	case "/v1/v1/responses", "/codex/v1/responses":
-		return "/v1/responses"
+		return "/v1/responses" + query
 	case "/v1/v1/responses/compact", "/codex/v1/responses/compact":
-		return "/v1/responses/compact"
+		return "/v1/responses/compact" + query
 	default:
-		return ep
+		return path + query
 	}
 }
 

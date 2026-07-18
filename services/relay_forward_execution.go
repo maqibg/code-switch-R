@@ -39,6 +39,9 @@ func (prs *ProviderRelayService) newRelayForwardExecution(
 ) (*relayForwardExecution, error) {
 	upstreamProtocol := resolveProviderUpstreamProtocol(kind, provider, endpoint)
 	routePlan := relayprotocol.BuildExplicitRoutePlan(kind, clientProtocol, upstreamProtocolToProtocol(upstreamProtocol), endpoint)
+	if routePlan.ClientProtocol != routePlan.UpstreamProtocol && routePlan.Bridge == relayprotocol.BridgeNone {
+		return nil, NewClientRequestRejectedError("当前网关不支持 " + string(routePlan.ClientProtocol) + " -> " + string(routePlan.UpstreamProtocol) + " 协议转换")
+	}
 	execution := &relayForwardExecution{
 		Kind:             kind,
 		Provider:         provider,
@@ -83,6 +86,8 @@ func upstreamProtocolToProtocol(value UpstreamProtocolType) relayprotocol.Protoc
 		return relayprotocol.OpenAIChat
 	case UpstreamProtocolOpenAIResponses:
 		return relayprotocol.OpenAIResponses
+	case UpstreamProtocolGoogle:
+		return relayprotocol.GeminiNative
 	default:
 		return relayprotocol.AnthropicMessages
 	}
@@ -221,6 +226,8 @@ func requestLogProtocolHook(protocol relayprotocol.Protocol, usage *ReqeustLog) 
 			parseEventPayload(payload, ReasonixParseTokenUsageFromResponse, usage)
 		case relayprotocol.OpenAIResponses:
 			parseEventPayload(payload, CodexParseTokenUsageFromResponse, usage)
+		case relayprotocol.GeminiNative:
+			parseEventPayload(payload, GeminiParseTokenUsageFromResponse, usage)
 		default:
 			parseEventPayload(payload, ClaudeCodeParseTokenUsageFromResponse, usage)
 		}

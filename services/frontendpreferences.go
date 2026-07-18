@@ -17,6 +17,8 @@ type FrontendPreferences struct {
 	SidebarCollapsed       bool     `json:"sidebar_collapsed"`
 	VisitedPages           []string `json:"visited_pages"`
 	DismissedUpdateVersion string   `json:"dismissed_update_version"`
+	HomePlatformOrder      []string `json:"home_platform_order"`
+	PiPlatformOrder        []string `json:"pi_platform_order"`
 }
 
 type FrontendPreferencesService struct{}
@@ -27,12 +29,16 @@ func NewFrontendPreferencesService() *FrontendPreferencesService {
 
 func defaultFrontendPreferences() FrontendPreferences {
 	return FrontendPreferences{
-		Theme:            "dark",
-		Locale:           "zh",
-		SidebarCollapsed: false,
-		VisitedPages:     []string{},
+		Theme:             "dark",
+		Locale:            "zh",
+		SidebarCollapsed:  false,
+		VisitedPages:      []string{},
+		HomePlatformOrder: append([]string(nil), defaultHomePlatformOrder...),
+		PiPlatformOrder:   []string{},
 	}
 }
+
+var defaultHomePlatformOrder = []string{"claude", "codex", "gemini", "deepseekcode", "reasonix", "others"}
 
 func normalizeFrontendPreferences(prefs FrontendPreferences) FrontendPreferences {
 	switch prefs.Theme {
@@ -45,11 +51,6 @@ func normalizeFrontendPreferences(prefs FrontendPreferences) FrontendPreferences
 	case "zh", "en":
 	default:
 		prefs.Locale = "zh"
-	}
-
-	if len(prefs.VisitedPages) == 0 {
-		prefs.VisitedPages = []string{}
-		return prefs
 	}
 
 	seen := make(map[string]struct{}, len(prefs.VisitedPages))
@@ -66,7 +67,50 @@ func normalizeFrontendPreferences(prefs FrontendPreferences) FrontendPreferences
 		filtered = append(filtered, page)
 	}
 	prefs.VisitedPages = filtered
+	prefs.HomePlatformOrder = normalizeHomePlatformOrder(prefs.HomePlatformOrder)
+	prefs.PiPlatformOrder = normalizePlatformOrder(prefs.PiPlatformOrder, nil)
 	return prefs
+}
+
+func normalizeHomePlatformOrder(order []string) []string {
+	allowed := make(map[string]struct{}, len(defaultHomePlatformOrder))
+	for _, id := range defaultHomePlatformOrder {
+		allowed[id] = struct{}{}
+	}
+
+	normalized := normalizePlatformOrder(order, allowed)
+	seen := make(map[string]struct{}, len(defaultHomePlatformOrder))
+	for _, id := range normalized {
+		seen[id] = struct{}{}
+	}
+	for _, id := range defaultHomePlatformOrder {
+		if _, ok := seen[id]; !ok {
+			normalized = append(normalized, id)
+		}
+	}
+	return normalized
+}
+
+func normalizePlatformOrder(order []string, allowed map[string]struct{}) []string {
+	seen := make(map[string]struct{}, len(order))
+	normalized := make([]string, 0, len(order))
+	for _, id := range order {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if allowed != nil {
+			if _, ok := allowed[id]; !ok {
+				continue
+			}
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	return normalized
 }
 
 func getFrontendPreferencesPath() (string, error) {

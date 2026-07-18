@@ -3,8 +3,56 @@ package services
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"testing"
 )
+
+func TestProviderPiTemplateJSONRoundTrip(t *testing.T) {
+	original := Provider{
+		ID: 1, Name: "pi-anthropic", APIURL: "https://example.com",
+		Enabled: true, PiTemplate: "anthropic",
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored Provider
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.PiTemplate != "anthropic" {
+		t.Fatalf("PiTemplate round trip = %q, want anthropic", restored.PiTemplate)
+	}
+}
+
+func TestValidatePiSupplierURLUniqueness(t *testing.T) {
+	providers := []Provider{
+		{Name: "Alpha", APIURL: "HTTPS://EXAMPLE.COM/v1/", PiTemplate: "anthropic"},
+		{Name: "Beta", APIURL: "https://example.com/v1", PiTemplate: "anthropic"},
+		{Name: "Responses", APIURL: "https://example.com/v1", PiTemplate: "openai-codex"},
+	}
+	errors := validatePiSupplierURLUniqueness(providers)
+	if len(errors) != 1 {
+		t.Fatalf("同模板同 URL 应只产生一个重复错误: %#v", errors)
+	}
+	if got := errors[0]; !strings.Contains(got, "Alpha") || !strings.Contains(got, "Beta") {
+		t.Fatalf("重复错误应包含两个供应商名称: %s", got)
+	}
+}
+
+func TestCanonicalPiSupplierURLPreservesDistinctPaths(t *testing.T) {
+	first, err := canonicalPiSupplierURL("https://example.com/openai/v1/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := canonicalPiSupplierURL("https://example.com/anthropic/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("不同 API 路径不能合并: %q", first)
+	}
+}
 
 // ==================== 通配符匹配测试 ====================
 

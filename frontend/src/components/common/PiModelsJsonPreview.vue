@@ -46,12 +46,14 @@ type ObjectRange = { start: number; end: number }
 const props = withDefaults(defineProps<{
   json?: string
   currentModelIds?: string[]
+  currentPlatformId?: string
   diagnostics?: PiConfigDiagnostic[]
   loading?: boolean
   error?: string
 }>(), {
   json: '',
   currentModelIds: () => [],
+  currentPlatformId: '',
   diagnostics: () => [],
   loading: false,
   error: '',
@@ -131,8 +133,20 @@ const modelLine = (modelId: string) => {
   return sourceLines.value.findIndex((line) => line.includes(`"id": ${encoded}`) || line.trimStart().startsWith(`${encoded}:`))
 }
 
+const platformLine = (platformId: string) => {
+  if (!platformId) return -1
+  const encoded = JSON.stringify(platformId)
+  return sourceLines.value.findIndex((line) => line.startsWith(`    ${encoded}: {`))
+}
+
 const currentLines = computed(() => {
   const result = new Set<number>()
+  const activePlatformLine = platformLine(props.currentPlatformId)
+  const platformRange = activePlatformLine >= 0 ? smallestObjectAtLine(activePlatformLine) : undefined
+  if (platformRange) {
+    for (let index = platformRange.start; index <= platformRange.end; index++) result.add(index)
+    return result
+  }
   for (const modelId of props.currentModelIds) {
     const line = modelLine(modelId)
     const range = line >= 0 ? smallestObjectAtLine(line) : undefined
@@ -189,22 +203,30 @@ watch(
     if (line < 0 || line === lastScrolledLine) return
     lastScrolledLine = line
     await nextTick()
-    lineElements.get(line)?.scrollIntoView({ block: 'center' })
+    const container = codeContainer.value
+    const target = lineElements.get(line)
+    if (!container || !target) return
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    container.scrollTop += targetRect.top - containerRect.top - (container.clientHeight - targetRect.height) / 2
   },
   { immediate: true },
 )
 </script>
 
 <style scoped>
-.pi-preview { display: grid; gap: 10px; }
+.pi-preview { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--mac-border); border-radius: 12px; background: var(--mac-surface); box-shadow: 0 1px 3px color-mix(in srgb, var(--mac-text) 6%, transparent); }
 .pi-preview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.pi-preview-header h4 { margin: 0; font-size: 0.9rem; }
-.pi-preview-header p { margin: 4px 0 0; color: var(--foreground-muted); font-size: 0.74rem; line-height: 1.45; }
-.pi-preview-state { flex: none; color: var(--foreground-muted); font-size: 0.72rem; font-weight: 600; }
+.pi-preview-header h4 { margin: 0; color: var(--mac-text); font-size: 0.92rem; font-weight: 650; }
+.pi-preview-header p { max-width: 760px; margin: 4px 0 0; color: var(--mac-text-secondary); font-size: 0.72rem; line-height: 1.45; }
+.pi-preview-state { display: inline-flex; align-items: center; flex: none; min-height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--mac-text-secondary) 10%, transparent); color: var(--mac-text-secondary); font-size: 0.68rem; font-weight: 600; }
 .pi-preview-state.valid { color: var(--success, #16a34a); }
 .pi-preview-state.error, .pi-preview-error { color: var(--error); }
 .pi-preview-state.warning { color: #d97706; }
-.pi-preview-code { height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: #111418; color: #d8dee9; padding: 8px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.72rem; line-height: 1.55; }
+.pi-preview-state.valid { background: color-mix(in srgb, var(--success, #16a34a) 11%, transparent); }
+.pi-preview-state.error { background: color-mix(in srgb, var(--error) 10%, transparent); }
+.pi-preview-state.warning { background: color-mix(in srgb, #d97706 11%, transparent); }
+.pi-preview-code { height: 400px; overflow: auto; border: 1px solid color-mix(in srgb, #94a3b8 22%, transparent); border-radius: 9px; background: #15181d; color: #d8dee9; padding: 10px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.71rem; line-height: 1.58; }
 .pi-preview-line { display: grid; grid-template-columns: 44px minmax(max-content, 1fr); min-height: 1.55em; padding-right: 12px; }
 .pi-preview-line.current { background: rgba(37, 99, 235, 0.2); box-shadow: inset 3px 0 #60a5fa; }
 .pi-preview-line.warning { background: rgba(217, 119, 6, 0.24); box-shadow: inset 3px 0 #fbbf24; }
@@ -218,9 +240,14 @@ watch(
 .token-punctuation { color: #cad3f5; }
 .pi-preview-error { margin: 0; font-size: 0.75rem; overflow-wrap: anywhere; }
 .pi-preview-diagnostics { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.pi-preview-diagnostics li { display: grid; gap: 2px; border-left: 3px solid var(--error); padding: 5px 8px; background: color-mix(in srgb, var(--error) 7%, transparent); font-size: 0.74rem; }
+.pi-preview-diagnostics li { display: grid; gap: 3px; border: 1px solid color-mix(in srgb, var(--error) 22%, var(--mac-border)); border-left: 3px solid var(--error); border-radius: 7px; padding: 7px 9px; background: color-mix(in srgb, var(--error) 6%, var(--mac-surface-strong)); font-size: 0.72rem; }
 .pi-preview-diagnostics li.warning { border-left-color: #d97706; background: color-mix(in srgb, #d97706 9%, transparent); }
 .pi-preview-diagnostics li.warning code { color: #d97706; }
 .pi-preview-diagnostics code { color: var(--error); overflow-wrap: anywhere; }
-.pi-preview-diagnostics span { color: var(--foreground); line-height: 1.4; }
+.pi-preview-diagnostics span { color: var(--mac-text); line-height: 1.4; }
+@media (max-width: 680px) {
+  .pi-preview { padding: 13px; }
+  .pi-preview-header { flex-direction: column; }
+  .pi-preview-code { height: 340px; }
+}
 </style>

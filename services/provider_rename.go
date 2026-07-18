@@ -20,6 +20,15 @@ type providerDataScope struct {
 	sourceID          string
 }
 
+type providerRenameCommit struct {
+	kind                         string
+	scope                        providerDataScope
+	providerID                   int64
+	oldName, newName             string
+	originalProviders, providers []Provider
+	data                         []byte
+}
+
 func resolveProviderDataScope(kind string) (providerDataScope, error) {
 	platform, err := resolvePlatform(kind)
 	if err != nil {
@@ -103,11 +112,6 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 		return err
 	}
 
-	// 备份原 JSON bytes(用于 DB commit 失败时补偿)
-	originalBytes, err := serializeProviders(providers)
-	if err != nil {
-		return fmt.Errorf("序列化原配置失败: %w", err)
-	}
 	originalProviders := append([]Provider(nil), providers...)
 
 	// 更新内存中的 provider.Name,序列化新配置
@@ -116,56 +120,169 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 	if err != nil {
 		return fmt.Errorf("序列化新配置失败: %w", err)
 	}
-	path, err := providerFilePath(kind)
+	return ps.commitProviderRenameLocked(providerRenameCommit{
+		kind: kind, scope: scope, providerID: id, oldName: oldName, newName: newName,
+		originalProviders: originalProviders, providers: providers, data: newBytes,
+	})
+}
+
+// SaveProvidersWithRename 原子保存一次编辑中的字段更新和名称变更。
+// 该入口只允许更新现有 provider 集合，新增和删除仍使用 SaveProviders。
+func (ps *ProviderService) SaveProvidersWithRename(kind string, providerID int64, providers []Provider) error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	existingProviders, err := ps.loadProvidersRaw(kind)
+	if err != nil {
+		return fmt.Errorf("读取配置失败: %w", err)
+	}
+
+	var oldProvider *Provider
+	for i := range existingProviders {
+		if existingProviders[i].ID == providerID {
+			oldProvider = &existingProviders[i]
+			break
+		}
+	}
+	if oldProvider == nil {
+		return fmt.Errorf("未找到 id=%d 的 provider", providerID)
+	}
+
+	var nextProvider *Provider
+	for i := range providers {
+		if providers[i].ID == providerID {
+			nextProvider = &providers[i]
+			break
+		}
+	}
+	if nextProvider == nil {
+		return fmt.Errorf("待保存配置中缺少 id=%d 的 provider", providerID)
+	}
+	nextProvider.Name = strings.TrimSpace(nextProvider.Name)
+	if nextProvider.Name == "" {
+		return fmt.Errorf("新名字不能为空")
+	}
+	if err := validateProviderSetUnchanged(existingProviders, providers); err != nil {
+		return err
+	}
+	if oldProvider.Name == nextProvider.Name {
+		return ps.saveProvidersLocked(kind, providers)
+	}
+
+	scope, err := resolveProviderDataScope(kind)
 	if err != nil {
 		return err
 	}
+	if strings.EqualFold(strings.TrimSpace(kind), "pi") && strings.Contains(nextProvider.Name, "/") {
+		return fmt.Errorf("Pi Provider 名称不能包含 '/'")
+	}
+	for _, provider := range providers {
+		if provider.ID != providerID && strings.EqualFold(strings.TrimSpace(provider.Name), nextProvider.Name) {
+			return fmt.Errorf("同 kind 下已存在名为 %q 的 provider", nextProvider.Name)
+		}
+	}
+	if err := ensureRequestLogTable(); err != nil {
+		return fmt.Errorf("初始化请求统计表失败: %w", err)
+	}
+	if err := cleanupExpiredAliases(); err != nil {
+		return fmt.Errorf("清理过期 alias 失败: %w", err)
+	}
+	if err := checkAliasConstraints(scope.identityPlatform, providerID, nextProvider.Name); err != nil {
+		return err
+	}
 
-	// 1) 先原子替换文件
-	if err := atomicWriteFile(path, newBytes, 0o644); err != nil {
+	plan, err := prepareProviderSave(kind, providers, existingProviders, providerID)
+	if err != nil {
+		return err
+	}
+	if len(plan.deletedProviders) != 0 {
+		return fmt.Errorf("原子改名保存不能同时删除 provider")
+	}
+
+	return ps.commitProviderRenameLocked(providerRenameCommit{
+		kind: kind, scope: scope, providerID: providerID,
+		oldName: oldProvider.Name, newName: nextProvider.Name,
+		originalProviders: existingProviders, providers: plan.providers, data: plan.data,
+	})
+}
+
+func (ps *ProviderService) commitProviderRenameLocked(commit providerRenameCommit) error {
+	path, err := providerFilePath(commit.kind)
+	if err != nil {
+		return err
+	}
+	originalBytes, err := serializeProviders(commit.originalProviders)
+	if err != nil {
+		return fmt.Errorf("序列化原配置失败: %w", err)
+	}
+	if err := atomicWriteFile(path, commit.data, 0o644); err != nil {
 		return fmt.Errorf("写入配置文件失败: %w", err)
 	}
-	// 后续任一 DB 步骤失败都需要把 JSON 还原到 rename 前;回滚本身失败要合并到返回错误,避免 split-brain 被静默。
 	rollbackFile := func(primary error) error {
-		if rbErr := atomicWriteFile(path, originalBytes, 0o644); rbErr != nil {
-			log.Printf("[RenameProvider] CRITICAL 回滚配置文件失败 path=%s primary=%v rollback=%v", path, primary, rbErr)
-			return fmt.Errorf("%w; 配置文件回滚失败: %v", primary, rbErr)
+		if rollbackErr := atomicWriteFile(path, originalBytes, 0o644); rollbackErr != nil {
+			log.Printf("[ProviderRename] CRITICAL 回滚配置文件失败 path=%s primary=%v rollback=%v", path, primary, rollbackErr)
+			return fmt.Errorf("%w; 配置文件回滚失败: %v", primary, rollbackErr)
 		}
 		return primary
 	}
 
-	// 2) 开启 DB 事务更新历史数据 + 写 alias
 	db, err := xdb.DB("default")
 	if err != nil {
 		return rollbackFile(fmt.Errorf("获取数据库连接失败: %w", err))
 	}
-
 	tx, err := db.Begin()
 	if err != nil {
 		return rollbackFile(fmt.Errorf("开启事务失败: %w", err))
 	}
-	if err := doRenameTx(tx, scope, id, oldName, newName); err != nil {
+	if err := doRenameTx(tx, commit.scope, commit.providerID, commit.oldName, commit.newName); err != nil {
 		_ = tx.Rollback()
 		return rollbackFile(fmt.Errorf("更新历史数据失败: %w", err))
 	}
+
 	piSynced := false
-	if strings.EqualFold(strings.TrimSpace(kind), "pi") && ps.piGatewaySync != nil {
-		if err := ps.piGatewaySync(providers); err != nil {
+	if strings.EqualFold(strings.TrimSpace(commit.kind), "pi") && ps.piGatewaySync != nil {
+		if err := ps.piGatewaySync(commit.providers); err != nil {
 			_ = tx.Rollback()
-			return rollbackFile(fmt.Errorf("同步 Pi models.json 失败: %w", err))
+			primary := fmt.Errorf("同步 Pi models.json 失败: %w", err)
+			if syncErr := ps.piGatewaySync(commit.originalProviders); syncErr != nil {
+				primary = fmt.Errorf("%w; Pi gateway 回滚失败: %v", primary, syncErr)
+			}
+			return rollbackFile(primary)
 		}
 		piSynced = true
 	}
 	if err := tx.Commit(); err != nil {
 		primary := fmt.Errorf("提交事务失败: %w", err)
 		if piSynced {
-			if syncErr := ps.piGatewaySync(originalProviders); syncErr != nil {
+			if syncErr := ps.piGatewaySync(commit.originalProviders); syncErr != nil {
 				primary = fmt.Errorf("%w; Pi gateway 回滚失败: %v", primary, syncErr)
 			}
 		}
 		return rollbackFile(primary)
 	}
+	return nil
+}
 
+func validateProviderSetUnchanged(existingProviders, providers []Provider) error {
+	if len(existingProviders) != len(providers) {
+		return fmt.Errorf("原子改名保存不能同时新增或删除 provider")
+	}
+	existingIDs := make(map[int64]struct{}, len(existingProviders))
+	nextIDs := make(map[int64]struct{}, len(providers))
+	for _, provider := range existingProviders {
+		existingIDs[provider.ID] = struct{}{}
+	}
+	for _, provider := range providers {
+		if _, ok := existingIDs[provider.ID]; !ok {
+			return fmt.Errorf("原子改名保存不能同时新增 provider id=%d", provider.ID)
+		}
+		nextIDs[provider.ID] = struct{}{}
+	}
+	for providerID := range existingIDs {
+		if _, ok := nextIDs[providerID]; !ok {
+			return fmt.Errorf("原子改名保存不能同时删除 provider id=%d", providerID)
+		}
+	}
 	return nil
 }
 

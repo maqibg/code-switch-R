@@ -6,6 +6,8 @@ export type FrontendPreferences = {
   sidebar_collapsed: boolean
   visited_pages: string[]
   dismissed_update_version: string
+  home_platform_order: string[]
+  pi_platform_order: string[]
 }
 
 const SERVICE = 'codeswitch/services.FrontendPreferencesService'

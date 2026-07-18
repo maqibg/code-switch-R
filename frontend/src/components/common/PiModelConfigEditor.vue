@@ -6,7 +6,7 @@
         <p>{{ t('components.provider.piModel.description') }}</p>
       </div>
       <div class="pi-model-actions">
-        <BaseButton type="button" variant="outline" :disabled="fetching || !provider?.apiUrl" @click="fetchModels">
+        <BaseButton v-if="showFetchButton" type="button" variant="outline" :disabled="fetching || !provider?.apiUrl" @click="fetchModels">
           {{ fetching ? t('components.provider.modelWhitelist.fetching') : t('components.provider.modelWhitelist.fetch') }}
         </BaseButton>
         <BaseButton type="button" variant="outline" @click="addModel">
@@ -18,7 +18,13 @@
     <p v-if="discoveryMessage" :class="['pi-model-message', { error: discoveryError }]">{{ discoveryMessage }}</p>
 
     <div v-if="localModels.length" class="pi-model-list">
-      <details v-for="(model, index) in localModels" :key="modelKeys[index]" class="pi-model-item" :open="index === 0">
+      <details
+        v-for="(model, index) in localModels"
+        :key="modelKeys[index]"
+        :ref="(element) => setModelElement(element as HTMLDetailsElement | null, index)"
+        class="pi-model-item"
+        :open="model.id === initialModelId || (!initialModelId && index === 0)"
+      >
         <summary>
           <span class="pi-model-summary-name">{{ model.name || model.id || t('components.provider.piModel.unnamed') }}</span>
           <code>{{ model.id || 'model-id' }}</code>
@@ -35,14 +41,14 @@
               <span>{{ t('components.provider.piModel.name') }}</span>
               <input :value="model.name || ''" @input="setString(index, 'name', eventValue($event))" />
             </label>
-            <label>
+            <label v-if="!gatewayOnly">
               <span>{{ t('components.provider.piModel.api') }}</span>
               <select :value="model.api || ''" @change="setString(index, 'api', eventValue($event))">
                 <option value="">{{ t('components.provider.piModel.inheritProtocol') }}</option>
                 <option v-for="api in apiOptions" :key="api" :value="api">{{ api }}</option>
               </select>
             </label>
-            <label>
+            <label v-if="!gatewayOnly">
               <span>{{ t('components.provider.piModel.baseUrl') }}</span>
               <input :value="model.baseUrl || ''" placeholder="http://127.0.0.1:18100/pi/v1" @input="setString(index, 'baseUrl', eventValue($event))" />
             </label>
@@ -121,7 +127,7 @@
     </div>
     <div v-else class="pi-model-empty">{{ t('components.provider.piModel.empty') }}</div>
 
-    <div class="pi-overrides">
+    <div v-if="showModelOverrides" ref="overridesElement" class="pi-overrides">
       <JsonObjectEditor
         :model-value="overrides as Record<string, unknown>"
         :label="t('components.provider.piModel.modelOverrides')"
@@ -138,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Call } from '@wailsio/runtime'
 import { useI18n } from 'vue-i18n'
 import type { PiModelCost, PiModelDefinition, PiModelOverride } from '../../data/cards'
@@ -151,12 +157,21 @@ const props = withDefaults(defineProps<{
   modelValue?: PiModelDefinition[]
   modelOverrides?: Record<string, PiModelOverride>
   supportedModels?: Record<string, boolean>
+  supportedModelFactory?: (id: string) => PiModelDefinition
   provider?: Record<string, unknown>
+  showFetchButton?: boolean
+  showModelOverrides?: boolean
+  gatewayOnly?: boolean
+  initialModelId?: string
 }>(), {
   modelValue: () => [],
   modelOverrides: () => ({}),
   supportedModels: () => ({}),
   provider: () => ({}),
+  showFetchButton: true,
+  showModelOverrides: true,
+  gatewayOnly: true,
+  initialModelId: '',
 })
 
 const emit = defineEmits<{
@@ -170,6 +185,8 @@ const { t } = useI18n()
 const localModels = ref<PiModelDefinition[]>([])
 const overrides = ref<Record<string, PiModelOverride>>({})
 const modelKeys = ref<number[]>([])
+const modelElements = new Map<number, HTMLDetailsElement>()
+const overridesElement = ref<HTMLElement | null>(null)
 const jsonValidity = reactive<Record<string, boolean>>({})
 const fetching = ref(false)
 const discoveryMessage = ref('')
@@ -178,14 +195,42 @@ let nextKey = 1
 let lastEmittedModels = ''
 let lastEmittedOverrides = ''
 
-const apiOptions = [
+const gatewayAPIOptions = [
   'openai-completions', 'openai-responses', 'anthropic-messages',
 ]
-const gatewayAPIs = new Set(apiOptions)
+const nativeAPIOptions = [
+  ...gatewayAPIOptions,
+  'openai-codex-responses', 'google-generative-ai', 'mistral-conversations',
+  'azure-openai-responses', 'bedrock-converse-stream', 'google-vertex',
+]
+const apiOptions = computed(() => props.gatewayOnly ? gatewayAPIOptions : nativeAPIOptions)
+const gatewayAPIs = new Set(gatewayAPIOptions)
 const costFields = ['input', 'output', 'cacheRead', 'cacheWrite'] as const
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 const eventValue = (event: Event) => (event.target as HTMLInputElement | HTMLSelectElement).value
+
+const setModelElement = (element: HTMLDetailsElement | null, index: number) => {
+  if (element) modelElements.set(index, element)
+  else modelElements.delete(index)
+}
+
+const revealInitialModel = async () => {
+  const modelId = props.initialModelId.trim()
+  if (!modelId) return
+  await nextTick()
+  const modelIndex = localModels.value.findIndex((model) => model.id === modelId)
+  const modelElement = modelIndex >= 0 ? modelElements.get(modelIndex) : undefined
+  if (modelElement) modelElement.open = true
+  const target = modelElement || (Object.hasOwn(overrides.value, modelId) ? overridesElement.value : null)
+  const scrollContainer = target?.closest('.modal-scrollable') as HTMLElement | null
+  if (!target || !scrollContainer) return
+  await nextTick()
+  const containerRect = scrollContainer.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  scrollContainer.scrollTop += targetRect.top - containerRect.top - 16
+  modelElement?.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true })
+}
 
 const defaultModel = (id = '', name = ''): PiModelDefinition => ({
   id,
@@ -204,7 +249,7 @@ const ensureSupportedModels = () => {
   const existing = new Set(localModels.value.map((model) => model.id.trim()).filter(Boolean))
   const additions = Object.keys(props.supportedModels)
     .filter((id) => props.supportedModels[id] && id.trim() && !id.includes('*') && !existing.has(id.trim()))
-    .map((id) => defaultModel(id.trim()))
+    .map((id) => props.supportedModelFactory?.(id.trim()) || defaultModel(id.trim()))
   if (additions.length) {
     localModels.value.push(...additions)
     modelKeys.value.push(...additions.map(() => nextKey++))
@@ -242,6 +287,11 @@ watch(
 )
 
 watch(() => props.supportedModels, ensureSupportedModels, { deep: true })
+watch(
+  [() => props.initialModelId, () => props.modelValue],
+  () => void revealInitialModel(),
+  { immediate: true, flush: 'post' },
+)
 
 const emitModels = () => {
   const value = clone(localModels.value)
@@ -386,8 +436,8 @@ const modelValidation = computed(() => localModels.value.map((model, index) => {
   if ((model.contextWindow ?? 1) <= 0) messages.push(t('components.provider.piModel.errors.contextPositive'))
   if ((model.maxTokens ?? 1) <= 0) messages.push(t('components.provider.piModel.errors.maxPositive'))
   if (model.contextWindow && model.maxTokens && model.maxTokens > model.contextWindow) messages.push(t('components.provider.piModel.errors.maxContext'))
-  if (model.api && !gatewayAPIs.has(model.api)) messages.push(t('components.provider.piModel.errors.apiGateway'))
-  if (model.baseUrl?.trim()) messages.push(t('components.provider.piModel.errors.baseUrlGateway'))
+  if (props.gatewayOnly && model.api && !gatewayAPIs.has(model.api)) messages.push(t('components.provider.piModel.errors.apiGateway'))
+  if (props.gatewayOnly && model.baseUrl?.trim()) messages.push(t('components.provider.piModel.errors.baseUrlGateway'))
   appendHeaderValidation(messages, model.headers, `models[${index}].headers`)
   return messages
 }))
@@ -412,7 +462,7 @@ const overrideValidation = computed(() => {
       messages.push(t('components.provider.piModel.errors.overrideObject', { path }))
       continue
     }
-    if (!modelIds.has(modelId.trim())) {
+    if (props.gatewayOnly && !modelIds.has(modelId.trim())) {
       messages.push(t('components.provider.piModel.errors.overrideMissing', { path }))
     }
     for (const field of Object.keys(rawOverride)) {
@@ -538,30 +588,37 @@ const fetchModels = async () => {
 <style scoped>
 .pi-model-editor { display: grid; gap: 12px; }
 .pi-model-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.pi-model-toolbar h4 { margin: 0; font-size: 0.9rem; }
-.pi-model-toolbar p, .pi-overrides p { margin: 4px 0 0; color: var(--foreground-muted); font-size: 0.76rem; line-height: 1.45; }
+.pi-model-toolbar h4 { margin: 0; color: var(--mac-text); font-size: 0.88rem; font-weight: 650; }
+.pi-model-toolbar p, .pi-overrides p { margin: 4px 0 0; color: var(--mac-text-secondary); font-size: 0.72rem; line-height: 1.45; }
 .pi-model-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .pi-model-message { margin: 0; color: var(--success, #16a34a); font-size: 0.78rem; }
 .pi-model-message.error, .pi-model-errors { color: var(--error); }
 .pi-model-list { display: grid; gap: 8px; }
-.pi-model-item { border: 1px solid var(--border); border-radius: 6px; background: var(--background-secondary); overflow: hidden; }
-.pi-model-item summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, auto) 44px; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; cursor: pointer; }
-.pi-model-item summary code { color: var(--foreground-muted); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; }
-.pi-model-summary-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 0.82rem; }
-.pi-model-remove { width: 44px; height: 44px; border: 0; background: transparent; color: var(--error); font-size: 1.1rem; cursor: pointer; }
-.pi-model-body { display: grid; gap: 14px; padding: 12px; border-top: 1px solid var(--border); }
+.pi-model-item { border: 1px solid var(--mac-border); border-radius: 9px; background: var(--mac-surface-strong); overflow: hidden; }
+.pi-model-item[open] { border-color: color-mix(in srgb, var(--mac-accent) 28%, var(--mac-border)); }
+.pi-model-item summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, auto) 34px; align-items: center; gap: 10px; min-height: 42px; padding: 0 8px 0 12px; cursor: pointer; }
+.pi-model-item summary:hover { background: color-mix(in srgb, var(--mac-accent) 5%, transparent); }
+.pi-model-item summary code { color: var(--mac-text-secondary); font-size: 0.69rem; overflow: hidden; text-overflow: ellipsis; }
+.pi-model-summary-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mac-text); font-weight: 600; font-size: 0.8rem; }
+.pi-model-remove { width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--error); font-size: 1rem; cursor: pointer; }
+.pi-model-remove:hover { background: color-mix(in srgb, var(--error) 9%, transparent); }
+.pi-model-body { display: grid; gap: 14px; padding: 13px; border-top: 1px solid var(--mac-border); background: var(--mac-surface); }
 .pi-model-grid { display: grid; gap: 10px; }
 .pi-model-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pi-model-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .pi-model-grid label, .pi-image-toggle { display: grid; gap: 5px; min-width: 0; }
-.pi-model-grid label > span, .pi-subsection-label { color: var(--foreground-muted); font-size: 0.76rem; font-weight: 600; }
-.pi-model-grid input, .pi-model-grid select, .pi-cost-tier input { min-width: 0; height: 34px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); padding: 0 9px; }
-.pi-check-row { display: flex; align-items: center; gap: 7px; min-height: 34px; color: var(--foreground); font-size: 0.78rem; }
+.pi-model-grid label > span, .pi-subsection-label { color: var(--mac-text-secondary); font-size: 0.72rem; font-weight: 600; }
+.pi-model-grid input, .pi-model-grid select, .pi-cost-tier input { min-width: 0; height: 36px; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); color: var(--mac-text); padding: 0 9px; }
+.pi-model-grid input:focus, .pi-model-grid select:focus, .pi-cost-tier input:focus { outline: none; border-color: var(--mac-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mac-accent) 17%, transparent); }
+.pi-check-row { display: flex; align-items: center; gap: 7px; min-height: 34px; color: var(--mac-text); font-size: 0.76rem; }
 .pi-model-cost, .pi-model-subsection, .pi-overrides { display: grid; gap: 8px; }
+.pi-model-cost, .pi-model-subsection { padding-top: 2px; }
 .pi-cost-tier { display: grid; grid-template-columns: 1.3fr repeat(4, 1fr) 44px; gap: 6px; }
-.pi-cost-tier button { width: 44px; height: 44px; border: 0; background: transparent; color: var(--error); cursor: pointer; }
+.pi-cost-tier button { width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--error); cursor: pointer; }
+.pi-cost-tier button:hover { background: color-mix(in srgb, var(--error) 9%, transparent); }
 .pi-model-errors { margin: 0; padding-left: 18px; font-size: 0.75rem; }
-.pi-model-empty { border: 1px dashed var(--border); border-radius: 6px; padding: 18px; color: var(--foreground-muted); text-align: center; font-size: 0.8rem; }
+.pi-model-empty { border: 1px dashed color-mix(in srgb, var(--mac-text-secondary) 35%, var(--mac-border)); border-radius: 9px; padding: 22px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); text-align: center; font-size: 0.76rem; }
+.pi-overrides { padding-top: 4px; }
 @media (max-width: 760px) {
   .pi-model-toolbar { flex-direction: column; }
   .pi-model-actions { justify-content: flex-start; }

@@ -20,7 +20,8 @@ var piSupportedAPIs = map[string]struct{}{
 }
 
 var piGatewayAPIs = map[string]struct{}{
-	"openai-completions": {}, "openai-responses": {}, "anthropic-messages": {},
+	"openai-completions": {}, "openai-responses": {}, "openai-codex-responses": {},
+	"anthropic-messages": {}, "google-generative-ai": {},
 }
 
 var piThinkingLevels = map[string]struct{}{
@@ -334,7 +335,7 @@ func validatePiCompat(path, api string, compat map[string]any) []string {
 			booleanFields[key] = struct{}{}
 		}
 	case "anthropic-messages":
-		for _, key := range []string{"supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "forceAdaptiveThinking"} {
+		for _, key := range []string{"supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "supportsTemperature", "forceAdaptiveThinking"} {
 			booleanFields[key] = struct{}{}
 		}
 	default:

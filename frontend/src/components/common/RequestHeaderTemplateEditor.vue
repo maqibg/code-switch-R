@@ -2,15 +2,28 @@
   <div class="request-template-editor-shell">
   <section class="request-template-editor">
     <div class="template-toolbar">
-      <label class="template-select-field">
+      <div class="template-select-field">
         <span>{{ t('components.provider.requestTemplate.label') }}</span>
-        <select v-model="selectedTemplateId" :disabled="loading">
-          <option value="">{{ t('components.provider.requestTemplate.select') }}</option>
-          <option v-for="template in templates" :key="template.id" :value="template.id">
-            {{ template.name }}
-          </option>
-        </select>
-      </label>
+        <Listbox v-model="selectedTemplateId" :disabled="loading" v-slot="{ open }">
+          <div class="template-select">
+            <ListboxButton class="template-select-button" :aria-label="t('components.provider.requestTemplate.label')">
+              <span>{{ selectedTemplate?.name || t('components.provider.requestTemplate.select') }}</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 8l4 4 4-4" /></svg>
+            </ListboxButton>
+            <ListboxOptions v-if="open" class="template-select-options">
+              <ListboxOption value="" v-slot="{ active, selected }">
+                <div :class="['template-option', { active, selected }]">{{ t('components.provider.requestTemplate.select') }}</div>
+              </ListboxOption>
+              <ListboxOption v-for="template in templates" :key="template.id" :value="template.id" v-slot="{ active, selected }">
+                <div :class="['template-option', { active, selected }]">
+                  <span>{{ template.name }}</span>
+                  <span v-if="selected" class="template-option-check">✓</span>
+                </div>
+              </ListboxOption>
+            </ListboxOptions>
+          </div>
+        </Listbox>
+      </div>
       <div class="template-actions">
         <BaseButton type="button" variant="outline" :disabled="!selectedTemplate" @click="applyTemplate">
           {{ t('components.provider.requestTemplate.apply') }}
@@ -76,6 +89,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/vue'
 import { useI18n } from 'vue-i18n'
 import {
   DeleteRequestTemplate,
@@ -256,7 +270,18 @@ onMounted(loadTemplates)
 .template-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 10px; }
 .template-select-field { display: grid; flex: 1; gap: 6px; min-width: 0; }
 .template-select-field > span, .metadata-field > span { color: var(--foreground-muted); font-size: 0.78rem; font-weight: 600; }
-.template-select-field select { width: 100%; height: 34px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); padding: 0 9px; }
+.template-select { position: relative; }
+.template-select-button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 38px; padding: 0 10px; border: 1px solid var(--mac-border, var(--border)); border-radius: 8px; background: var(--mac-surface-strong, var(--background)); color: var(--mac-text, var(--foreground)); font: inherit; font-size: .75rem; text-align: left; cursor: pointer; }
+.template-select-button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--mac-accent) 35%, var(--mac-border)); }
+.template-select-button:focus-visible { outline: 2px solid var(--mac-accent); outline-offset: 2px; }
+.template-select-button:disabled { cursor: not-allowed; opacity: .45; }
+.template-select-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.template-select-button svg { flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.template-select-options { position: absolute; z-index: 40; top: calc(100% + 5px); left: 0; display: grid; width: 100%; max-height: 210px; margin: 0; padding: 4px; overflow: auto; border: 1px solid var(--mac-border, var(--border)); border-radius: 8px; background: var(--mac-surface, var(--background)); box-shadow: 0 14px 34px rgba(0, 0, 0, .28); list-style: none; }
+.template-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; padding: 0 9px; border-radius: 6px; color: var(--mac-text, var(--foreground)); font-size: .75rem; cursor: pointer; }
+.template-option.active { background: color-mix(in srgb, var(--mac-accent) 9%, var(--mac-surface-strong)); }
+.template-option.selected { color: var(--mac-accent); font-weight: 600; }
+.template-option-check { flex: none; }
 .template-actions { display: flex; gap: 8px; }
 .metadata-field { display: grid; gap: 6px; }
 .metadata-field textarea { width: 100%; min-height: 76px; resize: vertical; border: 1px solid var(--border); border-radius: 6px; background: var(--background-secondary); color: var(--foreground); padding: 9px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.76rem; line-height: 1.45; }

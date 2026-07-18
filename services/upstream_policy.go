@@ -53,6 +53,11 @@ func providerEligibleForRelay(provider Provider, platform string) bool {
 }
 
 func buildUpstreamHeaders(provider Provider, platform string, clientHeaders map[string]string, upstreamProtocol UpstreamProtocolType) (map[string]string, error) {
+	var err error
+	provider, err = resolvePiProviderConfigValues(provider, platform)
+	if err != nil {
+		return nil, err
+	}
 	headers := make(map[string]string, len(clientHeaders)+len(provider.Headers)+4)
 	for key, value := range clientHeaders {
 		if shouldDropClientHeader(key) {

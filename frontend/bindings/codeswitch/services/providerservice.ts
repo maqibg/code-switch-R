@@ -9,6 +9,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function CreatePiProviderTemplate(template: $models.PiProviderTemplate): $CancellablePromise<void> {
+    return $Call.ByID(2616012367, template);
+}
+
+export function DeletePiProviderTemplate(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1702610160, id);
+}
+
 export function DeleteRequestTemplate(id: string): $CancellablePromise<void> {
     return $Call.ByID(3634643075, id);
 }
@@ -23,15 +31,21 @@ export function DuplicateProvider(kind: string, sourceID: number): $CancellableP
     });
 }
 
+export function ListPiProviderTemplates(): $CancellablePromise<$models.PiProviderTemplate[]> {
+    return $Call.ByID(2300603348).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
 export function ListRequestTemplates(): $CancellablePromise<$models.ProviderRequestTemplate[]> {
     return $Call.ByID(3784656507).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
     });
 }
 
 export function LoadProviders(kind: string): $CancellablePromise<$models.Provider[]> {
     return $Call.ByID(3413098935, kind).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType6($result);
     });
 }
 
@@ -53,9 +67,17 @@ export function SaveProviders(kind: string, providers: $models.Provider[]): $Can
     return $Call.ByID(1034860836, kind, providers);
 }
 
+/**
+ * SaveProvidersWithRename 原子保存一次编辑中的字段更新和名称变更。
+ * 该入口只允许更新现有 provider 集合，新增和删除仍使用 SaveProviders。
+ */
+export function SaveProvidersWithRename(kind: string, providerID: number, providers: $models.Provider[]): $CancellablePromise<void> {
+    return $Call.ByID(391038558, kind, providerID, providers);
+}
+
 export function SaveRequestTemplate(template: $models.ProviderRequestTemplate): $CancellablePromise<$models.ProviderRequestTemplate> {
     return $Call.ByID(1141326029, template).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -67,9 +89,15 @@ export function Stop(): $CancellablePromise<void> {
     return $Call.ByID(291391407);
 }
 
+export function UpdatePiProviderTemplate(template: $models.PiProviderTemplate): $CancellablePromise<void> {
+    return $Call.ByID(3644834370, template);
+}
+
 // Private type creation functions
 const $$createType0 = $models.Provider.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = $models.ProviderRequestTemplate.createFrom;
+const $$createType2 = $models.PiProviderTemplate.createFrom;
 const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = $Create.Array($$createType0);
+const $$createType4 = $models.ProviderRequestTemplate.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $Create.Array($$createType0);

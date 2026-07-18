@@ -70,6 +70,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/', icon: 'home', labelKey: 'sidebar.home' },
+  { path: '/pi', icon: 'cpu', labelKey: 'sidebar.pi', isNew: true },
   { path: '/stats', icon: 'pie-chart', labelKey: 'sidebar.stats' },
   { path: '/prompts', icon: 'file-text', labelKey: 'sidebar.prompts', isNew: true },
   { path: '/mcp', icon: 'plug', labelKey: 'sidebar.mcp' },
@@ -114,6 +115,13 @@ const navigate = (path: string) => {
         <svg v-if="item.icon === 'home'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+
+        <!-- Pi -->
+        <svg v-else-if="item.icon === 'cpu'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+          <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+          <rect x="9" y="9" width="6" height="6" rx="1"></rect>
+          <path d="M9 1v4M15 1v4M9 19v4M15 19v4M19 9h4M19 14h4M1 9h4M1 14h4"></path>
         </svg>
 
         <!-- File Text -->

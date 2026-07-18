@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -36,6 +37,13 @@ func defaultWindowsWindowTheme() application.WindowsWindow {
 	return application.WindowsWindow{
 		Theme: application.Dark,
 	}
+}
+
+func runtimeSetting(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (a *AppService) SetApp(app *application.App) {
@@ -84,6 +92,10 @@ func (a *AppService) OpenSecondWindow() {
 // and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
 // logs any error that might occur.
 func main() {
+	appName := runtimeSetting("CODE_SWITCH_APP_NAME", "code-switch-R")
+	instanceID := runtimeSetting("CODE_SWITCH_INSTANCE_ID", "com.rogers-f.code-switch-r")
+	relayAddr := runtimeSetting("CODE_SWITCH_RELAY_ADDR", "127.0.0.1:18100")
+
 	appservice := &AppService{}
 	var mainWindow application.Window
 	var focusMainWindow func()
@@ -114,8 +126,8 @@ func main() {
 	appSettings := services.NewAppSettingsService(autoStartService)
 	notificationService := services.NewNotificationService(appSettings) // 通知服务
 	blacklistService := services.NewBlacklistService(settingsService, notificationService)
-	geminiService := services.NewGeminiService("127.0.0.1:18100")
-	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, notificationService, appSettings, ":18100")
+	geminiService := services.NewGeminiService(relayAddr)
+	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, notificationService, appSettings, relayAddr)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	deepseekCodeSettings := services.NewDeepSeekCodeSettingsService(providerRelay.Addr())
@@ -200,10 +212,10 @@ func main() {
 	// 'Bind' is a list of Go struct instances. The frontend has access to the methods of these instances.
 	// 'Mac' options tailor the application when running an macOS.
 	app := application.New(application.Options{
-		Name:        "code-switch-R",
+		Name:        appName,
 		Description: "code-switch-R desktop relay controller",
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "com.rogers-f.code-switch-r",
+			UniqueID: instanceID,
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 				log.Printf("检测到第二个实例启动，参数=%v，工作目录=%s", data.Args, data.WorkingDir)
 				if showMainWindow != nil {

@@ -49,6 +49,7 @@ export type AutomationCard = {
   modelsEndpoint?: string
   piModels?: PiModelDefinition[]
   piModelOverrides?: Record<string, PiModelOverride>
+  piTemplate?: string
   metadataUserId?: string
   // 上游协议类型（anthropic / openai_chat / openai_responses / auto）
   upstreamProtocol?: string

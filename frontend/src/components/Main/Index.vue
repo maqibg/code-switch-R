@@ -1,5 +1,5 @@
 <template>
-  <div class="main-shell">
+  <div class="main-shell" @click="closePlatformOrderMenu">
     <div class="global-actions">
       <p class="global-eyebrow">{{ t('components.main.hero.eyebrow') }}</p>
       <button
@@ -134,6 +134,7 @@
             :aria-selected="selectedIndex === idx"
             type="button"
             @click="onTabChange(idx)"
+            @contextmenu.prevent.stop="openPlatformOrderMenu($event, tab)"
           >
             {{ tab.label }}
           </button>
@@ -497,6 +498,33 @@
         @saved="onConfigFileSaved"
       />
       </section>
+
+      <div
+        v-if="platformOrderMenu.open"
+        class="platform-order-context-menu"
+        role="menu"
+        :style="{ left: `${platformOrderMenu.x}px`, top: `${platformOrderMenu.y}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          role="menuitem"
+          :disabled="!canMoveHomePlatform(platformOrderMenu.tab, -1)"
+          @click="moveHomePlatform(-1)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
+          {{ t('components.main.tabs.moveUp') }}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          :disabled="!canMoveHomePlatform(platformOrderMenu.tab, 1)"
+          @click="moveHomePlatform(1)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m6-6-6 6-6-6" /></svg>
+          {{ t('components.main.tabs.moveDown') }}
+        </button>
+      </div>
 
       <BaseModal
       :open="modalState.open"
@@ -1165,6 +1193,11 @@ import { fetchProviderDailyStats, type ProviderDailyStat } from '../../services/
 import { fetchCurrentVersion } from '../../services/version'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
+import {
+  getStoredHomePlatformOrder,
+  persistFrontendPreferencesPatch,
+  setStoredHomePlatformOrder,
+} from '../../utils/frontendPreferences'
 import { useRouter } from 'vue-router'
 import { showToast } from '../../utils/toast'
 import { extractErrorMessage } from '../../utils/error'
@@ -1648,17 +1681,81 @@ interface GeminiProvider {
   settingsConfig?: Record<string, any>
 }
 
-const tabs = [
+const defaultTabs = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'codex', label: 'Codex' },
   { id: 'gemini', label: 'Gemini' },
   { id: 'deepseekcode', label: 'DeepSeekCode' },
   { id: 'reasonix', label: 'Reasonix' },
-  { id: 'pi', label: 'Pi' },
   { id: 'others', label: '其他' },
 ] as const
-type ProviderTab = (typeof tabs)[number]['id']
-const providerTabIds = tabs.map((tab) => tab.id) as ProviderTab[]
+type HomeProviderTab = (typeof defaultTabs)[number]['id']
+type ProviderTab = HomeProviderTab | 'pi'
+type HomePlatformTab = { id: HomeProviderTab; label: string }
+
+const orderedHomePlatformTabs = (): HomePlatformTab[] => {
+  const tabsByID = new Map<HomeProviderTab, HomePlatformTab>(
+    defaultTabs.map((tab) => [tab.id, { ...tab }]),
+  )
+  const ordered: HomePlatformTab[] = []
+  for (const id of getStoredHomePlatformOrder()) {
+    const tab = tabsByID.get(id as HomeProviderTab)
+    if (!tab) continue
+    ordered.push(tab)
+    tabsByID.delete(tab.id)
+  }
+  for (const tab of defaultTabs) {
+    const remaining = tabsByID.get(tab.id)
+    if (remaining) ordered.push(remaining)
+  }
+  return ordered
+}
+
+const tabs = reactive<HomePlatformTab[]>(orderedHomePlatformTabs())
+const providerTabIds = defaultTabs.map((tab) => tab.id) as ProviderTab[]
+const platformOrderMenu = reactive<{ open: boolean; x: number; y: number; tab?: HomePlatformTab }>({
+  open: false,
+  x: 0,
+  y: 0,
+})
+
+const openPlatformOrderMenu = (event: MouseEvent, tab: HomePlatformTab) => {
+  platformOrderMenu.open = true
+  platformOrderMenu.tab = tab
+  platformOrderMenu.x = Math.max(8, Math.min(event.clientX, window.innerWidth - 208))
+  platformOrderMenu.y = Math.max(8, Math.min(event.clientY, window.innerHeight - 92))
+}
+
+const closePlatformOrderMenu = () => {
+  platformOrderMenu.open = false
+}
+
+const canMoveHomePlatform = (tab: HomePlatformTab | undefined, direction: -1 | 1) => {
+  if (!tab) return false
+  const index = tabs.findIndex((item) => item.id === tab.id)
+  const target = index + direction
+  return index >= 0 && target >= 0 && target < tabs.length
+}
+
+const moveHomePlatform = (direction: -1 | 1) => {
+  const tab = platformOrderMenu.tab
+  if (!canMoveHomePlatform(tab, direction) || !tab) return
+  const activeID = activeTab.value
+  const index = tabs.findIndex((item) => item.id === tab.id)
+  const target = index + direction
+  const [moved] = tabs.splice(index, 1)
+  tabs.splice(target, 0, moved)
+  selectedIndex.value = Math.max(0, tabs.findIndex((item) => item.id === activeID))
+
+  const order = tabs.map((item) => item.id)
+  setStoredHomePlatformOrder(order)
+  void persistFrontendPreferencesPatch({ home_platform_order: order })
+  closePlatformOrderMenu()
+}
+
+const handlePlatformOrderMenuKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') closePlatformOrderMenu()
+}
 
 const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: createAutomationCards(automationCardGroups.claude),
@@ -2286,6 +2383,15 @@ const loadLastUsedProviders = async () => {
 // 切换到指定平台的 Tab 并高亮供应商
 // @author sm
 const switchToTabAndHighlight = (platform: string, providerName: string) => {
+  if (platform === 'pi') {
+    lastUsedProviders[platform] = {
+      platform,
+      provider_name: providerName,
+      updated_at: Date.now(),
+    }
+    void router.push('/pi')
+    return
+  }
   // 切换到对应的 Tab
   const tabIndex = tabs.findIndex(tab => tab.id === platform)
   if (tabIndex >= 0 && selectedIndex.value !== tabIndex) {
@@ -2352,6 +2458,8 @@ let unsubscribeSwitched: (() => void) | undefined
 let unsubscribeBlacklisted: (() => void) | undefined
 
 onMounted(async () => {
+  window.addEventListener('keydown', handlePlatformOrderMenuKeydown)
+  window.addEventListener('resize', closePlatformOrderMenu)
   void initHeatmap()
   await loadProvidersFromDisk()
   await Promise.all(providerTabIds.map(refreshProxyState))
@@ -2414,6 +2522,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', handlePlatformOrderMenuKeydown)
+  window.removeEventListener('resize', closePlatformOrderMenu)
   cleanupHeatmap()
   stopProviderStatsTimer()
   window.removeEventListener('app-settings-updated', handleAppSettingsUpdated)
@@ -3394,6 +3504,7 @@ const vendorInitials = (name: string) => {
 }
 
 const onTabChange = (idx: number) => {
+  closePlatformOrderMenu()
   selectedIndex.value = idx
   const nextTab = tabs[idx]?.id
   if (nextTab) {
@@ -3691,6 +3802,53 @@ const confirmDeleteCliTool = async () => {
 </script>
 
 <style scoped>
+.platform-order-context-menu {
+  position: fixed;
+  z-index: 1200;
+  display: grid;
+  width: 200px;
+  padding: 5px;
+  border: 1px solid var(--mac-border);
+  border-radius: 9px;
+  background: var(--mac-surface);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
+}
+
+.platform-order-context-menu button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mac-text);
+  font-size: .72rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.platform-order-context-menu button:hover:not(:disabled) {
+  background: var(--mac-surface-strong);
+}
+
+.platform-order-context-menu button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.platform-order-context-menu svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* 正在使用的供应商卡片样式 */
 /* @author sm */
 .automation-card.is-last-used {

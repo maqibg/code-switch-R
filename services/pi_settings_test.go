@@ -158,8 +158,8 @@ func TestBuildPiGatewayProviderProtocols(t *testing.T) {
 
 func TestValidatePiProviderRejectsUnsupportedGatewayTransport(t *testing.T) {
 	errors := validatePiProviderConfiguration(Provider{
-		Name: "google", Enabled: true, UpstreamProtocol: "openai_chat",
-		PiModels: []PiModelEntry{{ID: "gemini", API: "google-generative-ai", BaseURL: "https://example.com"}},
+		Name: "mistral", Enabled: true, UpstreamProtocol: "openai_chat",
+		PiModels: []PiModelEntry{{ID: "mistral-test", API: "mistral-conversations", BaseURL: "https://example.com"}},
 	})
 	joined := strings.Join(errors, "\n")
 	if !strings.Contains(joined, "当前不能通过 code-switch-R Pi 网关转发") {
@@ -287,6 +287,16 @@ func TestValidatePiCompatNestedSchemas(t *testing.T) {
 	}
 }
 
+func TestValidatePiAnthropicCompatSupportsTemperature(t *testing.T) {
+	model := PiModelEntry{
+		ID: "claude-opus", API: "anthropic-messages",
+		Compat: map[string]any{"forceAdaptiveThinking": true, "supportsTemperature": false},
+	}
+	if errors := validatePiModelEntry("piModels[0]", model, "anthropic-messages"); len(errors) != 0 {
+		t.Fatalf("Anthropic supportsTemperature 应被 Pi 0.80.6 schema 接受: %#v", errors)
+	}
+}
+
 func containsExactString(values []string, expected string) bool {
 	for _, value := range values {
 		if value == expected {
@@ -354,47 +364,46 @@ func TestReadJSONObjectAcceptsPiJSONComments(t *testing.T) {
 	}
 }
 
-func TestPiModelsPreviewPreservesForeignProvidersAndHighlightsCurrentModels(t *testing.T) {
+func TestPiModelsPreviewPreservesPlatformsAndHighlightsCurrentPlatformModels(t *testing.T) {
 	service := newTestPiSettingsService(t, nil)
-	if err := AtomicWriteJSON(service.modelsPath(), map[string]any{"providers": map[string]any{"foreign": map[string]any{"baseUrl": "https://example.com"}}}); err != nil {
+	if err := AtomicWriteJSON(service.modelsPath(), map[string]any{"providers": map[string]any{
+		"foreign": map[string]any{"baseUrl": "https://example.com"},
+		"current": map[string]any{"baseUrl": "https://current.example.com", "apiKey": "secret", "api": "openai-completions", "models": []map[string]any{{"id": "gpt-test"}}},
+	}}); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.PreviewModelsJSON(PiModelsPreviewRequest{
-		Providers:         []Provider{{ID: 7, Name: "current", Enabled: true, SupportedModels: map[string]bool{"gpt-test": true}}},
-		CurrentProviderID: 7,
-	})
+	result, err := service.PreviewModelsJSON(PiModelsPreviewRequest{CurrentPlatformID: "current"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result.JSON, `"foreign"`) || !strings.Contains(result.JSON, `"code-switch-r"`) {
+	if !strings.Contains(result.JSON, `"foreign"`) || !strings.Contains(result.JSON, `"current"`) || !strings.Contains(result.JSON, `"apiKey": "secret"`) || strings.Contains(result.JSON, `"***"`) {
 		t.Fatalf("预览未包含完整 providers: %s", result.JSON)
 	}
-	if len(result.CurrentModelIDs) != 1 || result.CurrentModelIDs[0] != "current/gpt-test" {
+	if len(result.CurrentModelIDs) != 1 || result.CurrentModelIDs[0] != "gpt-test" {
 		t.Fatalf("当前供应商模型定位错误: %#v", result.CurrentModelIDs)
 	}
 }
 
-func TestPiModelsPreviewRejectsModelBaseURLBypassingGateway(t *testing.T) {
+func TestPiModelsPreviewWarnsModelBaseURLBypassingPlatformGateway(t *testing.T) {
 	service := newTestPiSettingsService(t, nil)
-	result, err := service.PreviewModelsJSON(PiModelsPreviewRequest{
-		Providers: []Provider{{
-			ID: 8, Name: "direct", Enabled: true,
-			PiModels: []PiModelEntry{{ID: "model", BaseURL: "https://upstream.example.com/v1"}},
-		}},
-		CurrentProviderID: 8,
-	})
+	if err := AtomicWriteJSON(service.modelsPath(), map[string]any{"providers": map[string]any{
+		"direct": map[string]any{"api": "openai-completions", "models": []map[string]any{{"id": "model", "baseUrl": "https://upstream.example.com/v1"}}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.PreviewModelsJSON(PiModelsPreviewRequest{CurrentPlatformID: "direct"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
 	for _, diagnostic := range result.Diagnostics {
-		if diagnostic.Severity == "error" && diagnostic.ModelID == "direct/model" && diagnostic.Field == "baseUrl" {
+		if diagnostic.Severity == "warning" && diagnostic.ModelID == "model" && diagnostic.Field == "baseUrl" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("外部单模型 baseUrl 应显示阻断错误: %#v", result.Diagnostics)
+		t.Fatalf("外部单模型 baseUrl 应显示绕过警告: %#v", result.Diagnostics)
 	}
 }
 

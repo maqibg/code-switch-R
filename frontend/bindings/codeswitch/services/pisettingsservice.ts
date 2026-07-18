@@ -9,23 +9,57 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function CreateModelsProvider(input: $models.PiModelsProviderTemplate): $CancellablePromise<void> {
+    return $Call.ByID(3033850315, input);
+}
+
+export function DeleteModelsProvider(id: string, expectedFingerprint: string): $CancellablePromise<void> {
+    return $Call.ByID(2846090288, id, expectedFingerprint);
+}
+
+export function DisablePlatformProxy(providerID: string): $CancellablePromise<void> {
+    return $Call.ByID(132977601, providerID);
+}
+
 export function DisableProxy(): $CancellablePromise<void> {
     return $Call.ByID(293752948);
+}
+
+export function EnablePlatformProxy(providerID: string): $CancellablePromise<void> {
+    return $Call.ByID(1945348056, providerID);
 }
 
 export function EnableProxy(): $CancellablePromise<void> {
     return $Call.ByID(894580513);
 }
 
+export function GetModelsProvider(id: string): $CancellablePromise<$models.PiModelsProviderTemplate> {
+    return $Call.ByID(2421562723, id).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function ModelsCatalog(): $CancellablePromise<$models.PiModelsCatalogSnapshot> {
+    return $Call.ByID(1386777041).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function PlatformProxyStatus(providerID: string): $CancellablePromise<$models.PiPlatformProxyStatus> {
+    return $Call.ByID(762802391, providerID).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function PreviewModelsJSON(input: $models.PiModelsPreviewRequest): $CancellablePromise<$models.PiModelsPreviewResult> {
     return $Call.ByID(3412279864, input).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType3($result);
     });
 }
 
 export function ProxyStatus(): $CancellablePromise<$models.ClaudeProxyStatus> {
     return $Call.ByID(2361587658).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType4($result);
     });
 }
 
@@ -37,6 +71,13 @@ export function SyncGatewayIfEnabled(): $CancellablePromise<void> {
     return $Call.ByID(3504247529);
 }
 
+export function UpdateModelsProvider(input: $models.PiModelsProviderTemplate): $CancellablePromise<void> {
+    return $Call.ByID(4201432918, input);
+}
+
 // Private type creation functions
-const $$createType0 = $models.PiModelsPreviewResult.createFrom;
-const $$createType1 = $models.ClaudeProxyStatus.createFrom;
+const $$createType0 = $models.PiModelsProviderTemplate.createFrom;
+const $$createType1 = $models.PiModelsCatalogSnapshot.createFrom;
+const $$createType2 = $models.PiPlatformProxyStatus.createFrom;
+const $$createType3 = $models.PiModelsPreviewResult.createFrom;
+const $$createType4 = $models.ClaudeProxyStatus.createFrom;

@@ -12,10 +12,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as time$0 from "../../time/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -55,7 +51,7 @@ export function IsBlacklistEnabled(): $CancellablePromise<boolean> {
 /**
  * IsBlacklisted 检查 provider 是否在黑名单中
  */
-export function IsBlacklisted(platform: string, providerName: string): $CancellablePromise<[boolean, time$0.Time | null]> {
+export function IsBlacklisted(platform: string, providerName: string): $CancellablePromise<[boolean, string | null]> {
     return $Call.ByID(237122095, platform, providerName);
 }
 

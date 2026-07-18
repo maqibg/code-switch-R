@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestPiRelayPrefersQualifiedProviderAndFiltersPrivateFields(t *testing.T) {
+func TestPiRelayFiltersSuppliersByPlatformAndPrivateFields(t *testing.T) {
 	setupRenameTestEnv(t)
 	gin.SetMode(gin.TestMode)
 	var preferredCalls atomic.Int32
@@ -23,7 +23,7 @@ func TestPiRelayPrefersQualifiedProviderAndFiltersPrivateFields(t *testing.T) {
 			t.Fatalf("解析 Pi 上游请求失败: %v", err)
 		}
 		if body["model"] != "gpt-test" {
-			t.Fatalf("Pi 上游模型应移除 Provider 前缀，实际 %#v", body["model"])
+			t.Fatalf("Pi 上游模型应保持平台内裸 ID，实际 %#v", body["model"])
 		}
 		if _, exists := body["_pi"]; exists {
 			t.Fatalf("Pi 私有字段不应发送到上游: %#v", body)
@@ -47,15 +47,15 @@ func TestPiRelayPrefersQualifiedProviderAndFiltersPrivateFields(t *testing.T) {
 
 	providerService := NewProviderService()
 	providers := []Provider{
-		{ID: 1, Name: "fallback", APIURL: fallback.URL, APIKey: "fallback-key", Enabled: true, Level: 1, UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
-		{ID: 2, Name: "preferred", APIURL: preferred.URL, APIKey: "preferred-key", Enabled: true, Level: 10, UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
+		{ID: 1, Name: "fallback", APIURL: fallback.URL, APIKey: "fallback-key", Enabled: true, Level: 1, PiPlatform: "other-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
+		{ID: 2, Name: "preferred", APIURL: preferred.URL, APIKey: "preferred-key", Enabled: true, Level: 10, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
 	}
 	if err := providerService.SaveProviders("pi", providers); err != nil {
 		t.Fatalf("保存 Pi Provider 失败: %v", err)
 	}
 	router := newPiRelayTestRouter(providerService)
 	body := map[string]any{
-		"model": "preferred/gpt-test",
+		"model": "gpt-test",
 		"_pi":   map[string]any{"session": "private"},
 		"messages": []any{
 			map[string]any{"role": "user", "content": "hi"},
@@ -82,7 +82,7 @@ func TestPiRelayPrefersQualifiedProviderAndFiltersPrivateFields(t *testing.T) {
 	}
 }
 
-func TestPiRelayFallsBackAfterQualifiedProviderFailure(t *testing.T) {
+func TestPiRelayFallsBackWithinPlatform(t *testing.T) {
 	setupRenameTestEnv(t)
 	gin.SetMode(gin.TestMode)
 	var preferredCalls atomic.Int32
@@ -100,14 +100,14 @@ func TestPiRelayFallsBackAfterQualifiedProviderFailure(t *testing.T) {
 
 	providerService := NewProviderService()
 	if err := providerService.SaveProviders("pi", []Provider{
-		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 9, UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
-		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 1, UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
+		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 1, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
+		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 2, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
 	}); err != nil {
 		t.Fatalf("保存 Pi Provider 失败: %v", err)
 	}
 	router := newPiRelayTestRouter(providerService)
 	response := executePiChatRequest(router, map[string]any{
-		"model":    "preferred/gpt-test",
+		"model":    "gpt-test",
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
 	if response.Code != http.StatusOK {
@@ -118,9 +118,51 @@ func TestPiRelayFallsBackAfterQualifiedProviderFailure(t *testing.T) {
 	}
 }
 
-func TestPreparePiRelayRequestRejectsUnqualifiedModel(t *testing.T) {
-	if _, _, _, err := preparePiRelayRequest([]byte("{\"model\":\"gpt-test\"}")); err == nil {
-		t.Fatal("Pi 裸模型必须被拒绝")
+func TestPreparePiRelayRequestAcceptsPlatformScopedBareModel(t *testing.T) {
+	_, model, err := preparePiRelayRequest([]byte("{\"model\":\"gpt-test\"}"), "/chat/completions")
+	if err != nil || model != "gpt-test" {
+		t.Fatalf("Pi 平台路由应接受裸模型: model=%q err=%v", model, err)
+	}
+}
+
+func TestPiRelayForwardsGoogleNativePathAndStripsClientCredential(t *testing.T) {
+	setupRenameTestEnv(t)
+	gin.SetMode(gin.TestMode)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models/gemini-test:generateContent" {
+			t.Fatalf("Google 请求路径错误: %s", r.URL.Path)
+		}
+		if value := r.URL.Query().Get("key"); value != "" {
+			t.Fatalf("客户端占位 key 不应转发: %q", value)
+		}
+		if value := r.Header.Get("x-goog-api-key"); value != "real-key" {
+			t.Fatalf("Google 认证 Header 错误: %q", value)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if _, injected := body["model"]; injected {
+			t.Fatalf("Google 原生请求不应在 body 注入 model: %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":3}}`))
+	}))
+	defer upstream.Close()
+
+	providerService := NewProviderService()
+	if err := providerService.SaveProviders("pi", []Provider{{
+		ID: 1, Name: "google", APIURL: upstream.URL, APIKey: "real-key", Enabled: true,
+		PiPlatform: "google", UpstreamProtocol: "google", AuthScheme: "custom", AuthHeader: "x-goog-api-key",
+		SupportedModels: map[string]bool{"gemini-test": true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/pi/providers/google/models/gemini-test:generateContent?key=placeholder", strings.NewReader(`{"contents":[]}`))
+	response := httptest.NewRecorder()
+	newPiRelayTestRouter(providerService).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Google Pi 请求失败: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -141,12 +183,12 @@ func TestPiRelayAllowsNoAuthProviderWithEmptyAPIKey(t *testing.T) {
 	providerService := NewProviderService()
 	if err := providerService.SaveProviders("pi", []Provider{{
 		ID: 1, Name: "local", APIURL: upstream.URL, APIKey: "", AuthScheme: "none",
-		Enabled: true, UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true},
+		Enabled: true, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	response := executePiChatRequest(newPiRelayTestRouter(providerService), map[string]any{
-		"model": "local/gpt-test", "messages": []any{map[string]any{"role": "user", "content": "hi"}},
+		"model": "gpt-test", "messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
 	if response.Code != http.StatusOK {
 		t.Fatalf("none 认证 Provider 应可转发，status=%d body=%s", response.Code, response.Body.String())
@@ -178,12 +220,12 @@ func TestPiRelayStreamsAnthropicToolCallsIncrementally(t *testing.T) {
 	providerService := NewProviderService()
 	if err := providerService.SaveProviders("pi", []Provider{{
 		ID: 1, Name: "anthropic", APIURL: upstream.URL, APIKey: "key", Enabled: true,
-		UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true},
+		PiPlatform: "test-platform", UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	response := executePiChatRequest(newPiRelayTestRouter(providerService), map[string]any{
-		"model": "anthropic/m", "stream": true,
+		"model": "m", "stream": true,
 		"messages": []any{map[string]any{"role": "user", "content": "lookup"}},
 	})
 	if response.Code != http.StatusOK {
@@ -215,14 +257,14 @@ func TestPiRelayDoesNotFallbackAfterStreamResponseCommitted(t *testing.T) {
 
 	providerService := NewProviderService()
 	if err := providerService.SaveProviders("pi", []Provider{
-		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 1, UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true}},
-		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 2, UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"m": true}},
+		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 1, PiPlatform: "test-platform", UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true}},
+		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 2, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"m": true}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	response := executePiChatRequest(newPiRelayTestRouter(providerService), map[string]any{
-		"model": "preferred/m", "stream": true,
+		"model": "m", "stream": true,
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
 	if fallbackCalls.Load() != 0 {
@@ -235,7 +277,7 @@ func TestPiRelayDoesNotFallbackAfterStreamResponseCommitted(t *testing.T) {
 
 func executePiChatRequest(router *gin.Engine, body map[string]any) *httptest.ResponseRecorder {
 	data, _ := json.Marshal(body)
-	request := httptest.NewRequest(http.MethodPost, "/pi/v1/chat/completions", bytes.NewReader(data))
+	request := httptest.NewRequest(http.MethodPost, "/pi/providers/test-platform/chat/completions", bytes.NewReader(data))
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response

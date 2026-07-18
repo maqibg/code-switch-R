@@ -319,13 +319,13 @@ func TestPiChatToAnthropicMatrixRoute(t *testing.T) {
 	providerService := NewProviderService()
 	if err := providerService.SaveProviders("pi", []Provider{{
 		ID: 1, Name: "anthropic", APIURL: upstream.URL, APIKey: "key", Enabled: true,
-		UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true},
+		PiPlatform: "anthropic", UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true},
 	}}); err != nil {
 		t.Fatalf("保存 Pi Provider 失败: %v", err)
 	}
 	router := newPiRelayTestRouter(providerService)
-	request := httptest.NewRequest(http.MethodPost, "/pi/v1/chat/completions", strings.NewReader(
-		"{\"model\":\"anthropic/m\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}",
+	request := httptest.NewRequest(http.MethodPost, "/pi/providers/anthropic/chat/completions", strings.NewReader(
+		"{\"model\":\"m\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}",
 	))
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)

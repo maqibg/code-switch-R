@@ -370,11 +370,8 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/reasonix/chat/completions", prs.proxyHandler("reasonix", "/chat/completions"))
 	router.GET("/reasonix/models", prs.modelsHandler("reasonix"))
 
-	// Pi coding agent 通过 provider/model 选择首选 Provider，并按模型配置使用对应协议。
-	router.POST("/pi/v1/chat/completions", prs.proxyHandler("pi", "/v1/chat/completions"))
-	router.POST("/pi/v1/responses", prs.proxyHandler("pi", "/v1/responses"))
-	router.POST("/pi/v1/messages", prs.proxyHandler("pi", "/v1/messages"))
-	router.GET("/pi/v1/models", prs.piModelsHandler())
+	// Pi 的每个 models.json Provider 使用独立路由，避免跨平台模型 ID 冲突。
+	router.POST("/pi/providers/:provider/*any", prs.piPlatformProxyHandler())
 
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
@@ -400,20 +397,32 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
 		telemetryModel := requestedModel
-		preferredProvider := ""
+		piPlatform := ""
 		if kind == "pi" {
-			filteredBody, providerName, bareModel, err := preparePiRelayRequest(bodyBytes)
+			piPlatform = c.GetString(piPlatformContextKey)
+			filteredBody, bareModel, err := preparePiRelayRequest(bodyBytes, endpoint)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 			bodyBytes = filteredBody
-			preferredProvider = providerName
 			requestedModel = bareModel
+			telemetryModel = bareModel
+			isStream = isStream || strings.Contains(strings.ToLower(endpoint), "streamgeneratecontent")
 		}
 		clientProtocol := relayprotocol.ClientProtocolForPlatform(kind, endpoint)
+		if protocolName, exists := c.Get(piClientProtocolContextKey); exists {
+			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
+		}
 		telemetry := beginRelayTelemetry(c, kind, clientProtocol, telemetryModel, isStream)
+		if piPlatform != "" {
+			telemetry.SourceID = piPlatform
+		}
 		defer telemetry.finish(c)
+		relayScope := kind
+		if piPlatform != "" {
+			relayScope = "pi:" + piPlatform
+		}
 
 		// 如果未指定模型，记录警告但不拦截
 		if requestedModel == "" {
@@ -429,6 +438,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		active := make([]Provider, 0, len(providers))
 		skippedCount := 0
 		for _, provider := range providers {
+			if piPlatform != "" && provider.piPlatformKey() != piPlatform {
+				continue
+			}
 			// 无认证上游允许空 API Key，其余认证方式必须提供凭据。
 			if !providerEligibleForRelay(provider, kind) {
 				continue
@@ -449,7 +461,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			}
 
 			// 黑名单检查：跳过已拉黑的 provider
-			if isBlacklisted, until := prs.blacklistService.IsBlacklisted(kind, provider.Name); isBlacklisted {
+			if isBlacklisted, until := prs.blacklistService.IsBlacklisted(relayScope, provider.Name); isBlacklisted {
 				fmt.Printf("⛔ Provider %s 已拉黑，过期时间: %v\n", provider.Name, until.Format("15:04:05"))
 				skippedCount++
 				continue
@@ -479,9 +491,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		levelGroups := make(map[int][]Provider)
 		for _, provider := range active {
 			level := provider.Level
-			if preferredProvider != "" && provider.Name == preferredProvider {
-				level = 0
-			} else if level <= 0 {
+			if level <= 0 {
 				level = 1 // 未配置或零值时默认为 Level 1
 			}
 			levelGroups[level] = append(levelGroups[level], provider)
@@ -497,6 +507,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		fmt.Printf("[INFO] 共 %d 个 Level 分组：%v\n", len(levels), levels)
 
 		query := flattenQuery(c.Request.URL.Query())
+		if piPlatform != "" {
+			dropPiClientCredentialQuery(query)
+		}
 		clientHeaders := cloneHeaders(c.Request.Header)
 
 		// 获取拉黑功能开关状态
@@ -531,40 +544,39 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 				// 如果启用轮询，对同 Level 的 providers 进行轮询排序
 				if roundRobinSettingEnabled {
-					providersInLevel = prs.roundRobinOrder(kind, level, providersInLevel)
+					providersInLevel = prs.roundRobinOrder(relayScope, level, providersInLevel)
 				}
 
 				fmt.Printf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 				for _, provider := range providersInLevel {
 					// 检查是否已被拉黑（跳过已拉黑的 provider）
-					if blacklisted, until := prs.blacklistService.IsBlacklisted(kind, provider.Name); blacklisted {
+					if blacklisted, until := prs.blacklistService.IsBlacklisted(relayScope, provider.Name); blacklisted {
 						fmt.Printf("[INFO] ⏭️ 跳过已拉黑的 Provider: %s (解禁时间: %v)\n", provider.Name, until)
 						continue
 					}
 
 					// 获取实际模型名
 					effectiveModel := provider.GetEffectiveModel(requestedModel)
+					effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 					currentBodyBytes := bodyBytes
 					if effectiveModel != requestedModel && requestedModel != "" {
 						fmt.Printf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
-						modifiedBody, err := ReplaceModelInRequestBody(bodyBytes, effectiveModel)
+						modifiedBody, modifiedEndpoint, err := applyPiAwareModelMapping(bodyBytes, effectiveEndpoint, requestedModel, effectiveModel, clientProtocol)
 						if err != nil {
 							fmt.Printf("[ERROR] 模型映射失败: %v，跳过此 Provider\n", err)
 							continue
 						}
 						currentBodyBytes = modifiedBody
+						effectiveEndpoint = modifiedEndpoint
 					}
-
-					// 获取有效端点
-					effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 
 					// 同 Provider 内重试循环
 					for retryCount := 0; retryCount < maxRetryPerProvider; retryCount++ {
 						totalAttempts++
 
 						// 再次检查是否已被拉黑（重试过程中可能被拉黑）
-						if blacklisted, _ := prs.blacklistService.IsBlacklisted(kind, provider.Name); blacklisted {
+						if blacklisted, _ := prs.blacklistService.IsBlacklisted(relayScope, provider.Name); blacklisted {
 							fmt.Printf("[INFO] 🚫 Provider %s 已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -579,10 +591,10 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						if ok {
 							fmt.Printf("[INFO] ✓ 成功: %s | 重试 %d 次 | 耗时: %.2fs\n",
 								provider.Name, retryCount+1, duration.Seconds())
-							if err := prs.blacklistService.RecordSuccess(kind, provider.Name); err != nil {
+							if err := prs.blacklistService.RecordSuccess(relayScope, provider.Name); err != nil {
 								fmt.Printf("[WARN] 清零失败计数失败: %v\n", err)
 							}
-							prs.setLastUsedProvider(kind, provider.Name)
+							prs.setLastUsedProvider(relayScope, provider.Name)
 							return
 						}
 
@@ -619,12 +631,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						}
 
 						// 记录失败次数（可能触发拉黑）
-						if err := prs.blacklistService.RecordFailure(kind, provider.Name); err != nil {
+						if err := prs.blacklistService.RecordFailure(relayScope, provider.Name); err != nil {
 							fmt.Printf("[ERROR] 记录失败到黑名单失败: %v\n", err)
 						}
 
 						// 检查是否刚被拉黑
-						if blacklisted, _ := prs.blacklistService.IsBlacklisted(kind, provider.Name); blacklisted {
+						if blacklisted, _ := prs.blacklistService.IsBlacklisted(relayScope, provider.Name); blacklisted {
 							fmt.Printf("[INFO] 🚫 Provider %s 达到失败阈值，已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -673,7 +685,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 			// 如果启用轮询，对同 Level 的 providers 进行轮询排序
 			if roundRobinEnabled {
-				providersInLevel = prs.roundRobinOrder(kind, level, providersInLevel)
+				providersInLevel = prs.roundRobinOrder(relayScope, level, providersInLevel)
 			}
 
 			fmt.Printf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
@@ -685,24 +697,24 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				effectiveModel := provider.GetEffectiveModel(requestedModel)
 
 				// 如果需要映射，修改请求体
+				effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 				currentBodyBytes := bodyBytes
 				if effectiveModel != requestedModel && requestedModel != "" {
 					fmt.Printf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
 
-					modifiedBody, err := ReplaceModelInRequestBody(bodyBytes, effectiveModel)
+					modifiedBody, modifiedEndpoint, err := applyPiAwareModelMapping(bodyBytes, effectiveEndpoint, requestedModel, effectiveModel, clientProtocol)
 					if err != nil {
 						fmt.Printf("[ERROR] 替换模型名失败: %v\n", err)
 						// 映射失败不应阻止尝试其他 provider
 						continue
 					}
 					currentBodyBytes = modifiedBody
+					effectiveEndpoint = modifiedEndpoint
 				}
 
 				fmt.Printf("[INFO]   [%d/%d] Provider: %s | Model: %s\n", i+1, len(providersInLevel), provider.Name, effectiveModel)
 
 				// 尝试发送请求
-				// 获取有效的端点（用户配置优先）
-				effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 				startTime := time.Now()
 				ok, err := prs.forwardProviderRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
 				duration := time.Since(startTime)
@@ -711,12 +723,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					fmt.Printf("[INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
 
 					// 成功：清零连续失败计数
-					if err := prs.blacklistService.RecordSuccess(kind, provider.Name); err != nil {
+					if err := prs.blacklistService.RecordSuccess(relayScope, provider.Name); err != nil {
 						fmt.Printf("[WARN] 清零失败计数失败: %v\n", err)
 					}
 
 					// 记录最后使用的供应商
-					prs.setLastUsedProvider(kind, provider.Name)
+					prs.setLastUsedProvider(relayScope, provider.Name)
 
 					return // 成功，立即返回
 				}
@@ -751,7 +763,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				// 客户端中断不计入失败次数
 				if errors.Is(err, errClientAbort) {
 					fmt.Printf("[INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
-				} else if err := prs.blacklistService.RecordFailure(kind, provider.Name); err != nil {
+				} else if err := prs.blacklistService.RecordFailure(relayScope, provider.Name); err != nil {
 					fmt.Printf("[ERROR] 记录失败到黑名单失败: %v\n", err)
 				}
 
@@ -775,7 +787,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 							FromProvider: provider.Name,
 							ToProvider:   nextProvider,
 							Reason:       errorMsg,
-							Platform:     kind,
+							Platform:     relayScope,
 						})
 					}
 				}

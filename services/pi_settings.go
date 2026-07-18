@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,14 +34,16 @@ type PiGatewayProvider struct {
 }
 
 type PiModelsPreviewRequest struct {
-	Providers         []Provider `json:"providers"`
-	CurrentProviderID int64      `json:"currentProviderId"`
+	Providers         []Provider `json:"providers,omitempty"`
+	CurrentProviderID int64      `json:"currentProviderId,omitempty"`
+	CurrentPlatformID string     `json:"currentPlatformId,omitempty"`
 }
 
 type PiModelsPreviewResult struct {
-	JSON            string               `json:"json"`
-	CurrentModelIDs []string             `json:"currentModelIds"`
-	Diagnostics     []PiConfigDiagnostic `json:"diagnostics"`
+	JSON              string               `json:"json"`
+	CurrentModelIDs   []string             `json:"currentModelIds"`
+	CurrentPlatformID string               `json:"currentPlatformId,omitempty"`
+	Diagnostics       []PiConfigDiagnostic `json:"diagnostics"`
 }
 
 type PiAuthEntry struct {
@@ -65,23 +68,28 @@ type PiProxyState struct {
 }
 
 type PiSettingsService struct {
-	relayAddr      string
-	configDir      string
-	statePath      string
-	providerLoader func() ([]Provider, error)
+	modelsMu          sync.Mutex
+	relayAddr         string
+	configDir         string
+	statePath         string
+	platformStatePath string
+	providerService   *ProviderService
+	providerLoader    func() ([]Provider, error)
 }
 
 func NewPiSettingsService(relayAddr string, providerService *ProviderService) *PiSettingsService {
 	home, _ := os.UserHomeDir()
 	statePath, _ := GetProxyStatePath("pi")
+	platformStatePath, _ := GetProxyStatePath("pi-platforms")
 	service := &PiSettingsService{
-		relayAddr: relayAddr,
-		configDir: filepath.Join(home, ".pi", "agent"),
-		statePath: statePath,
+		relayAddr:         relayAddr,
+		configDir:         filepath.Join(home, ".pi", "agent"),
+		statePath:         statePath,
+		platformStatePath: platformStatePath,
+		providerService:   providerService,
 	}
 	if providerService != nil {
 		service.providerLoader = func() ([]Provider, error) { return providerService.LoadProviders("pi") }
-		providerService.setPiGatewaySync(service.syncGatewayIfEnabledWithProviders)
 	}
 	return service
 }
@@ -342,45 +350,78 @@ func (s *PiSettingsService) buildGatewayRawForProviders(providers []Provider) (j
 }
 
 func (s *PiSettingsService) PreviewModelsJSON(input PiModelsPreviewRequest) (PiModelsPreviewResult, error) {
-	root, _, err := readJSONObjectOrDefault(s.modelsPath(), map[string]json.RawMessage{})
+	data, err := os.ReadFile(s.modelsPath())
 	if err != nil {
 		return PiModelsPreviewResult{}, fmt.Errorf("读取 Pi models.json 失败: %w", err)
 	}
-	providerObjects, err := ensureNestedJSONObject(root, "providers")
+	cleaned := stripJSONComments(data)
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(cleaned, &root); err != nil {
+		return PiModelsPreviewResult{}, fmt.Errorf("解析 Pi models.json 失败: %w", err)
+	}
+	providerObjects, err := nestedJSONObject(root, "providers")
 	if err != nil {
 		return PiModelsPreviewResult{}, err
 	}
-	gateway, err := buildPiGatewayProvider(input.Providers, s.baseURL())
-	if err != nil {
-		return PiModelsPreviewResult{}, err
+	for providerID, raw := range providerObjects {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			continue
+		}
+		providerObjects[providerID], _ = marshalOrderedPiProvider(fields)
 	}
-	gatewayRaw, err := json.Marshal(gateway)
-	if err != nil {
-		return PiModelsPreviewResult{}, err
-	}
-	providerObjects[piGatewayProviderKey] = gatewayRaw
-	root["providers"], err = json.Marshal(providerObjects)
-	if err != nil {
-		return PiModelsPreviewResult{}, err
-	}
+	root["providers"], _ = json.Marshal(providerObjects)
 	previewJSON, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
 		return PiModelsPreviewResult{}, err
 	}
-	result := PiModelsPreviewResult{JSON: string(previewJSON), Diagnostics: []PiConfigDiagnostic{}}
-	for _, provider := range input.Providers {
-		for _, message := range validatePiProviderConfiguration(provider) {
-			localPath := diagnosticPathFromMessage(message)
-			modelID, field := diagnosticModelLocation(provider, localPath)
+	result := PiModelsPreviewResult{
+		JSON: string(previewJSON), CurrentPlatformID: strings.TrimSpace(input.CurrentPlatformID),
+		Diagnostics: []PiConfigDiagnostic{},
+	}
+	if result.CurrentPlatformID == "" {
+		return result, nil
+	}
+	currentRaw, exists := providerObjects[result.CurrentPlatformID]
+	if !exists {
+		return result, nil
+	}
+	var current piModelsProviderFile
+	if err := json.Unmarshal(currentRaw, &current); err != nil {
+		return PiModelsPreviewResult{}, err
+	}
+	state, _ := s.loadPlatformState()
+	_, managed := state.Platforms[result.CurrentPlatformID]
+	for index, model := range current.Models {
+		result.CurrentModelIDs = append(result.CurrentModelIDs, model.ID)
+		for _, message := range validateNativePiModelEntry(fmt.Sprintf("models[%d]", index), model, current.API) {
 			result.Diagnostics = append(result.Diagnostics, PiConfigDiagnostic{
-				Path: "providers." + provider.Name + "." + localPath, Message: message,
-				Severity: "error", ModelID: modelID, Field: field,
+				Path:    "providers." + result.CurrentPlatformID + "." + diagnosticPathFromMessage(message),
+				Message: message, Severity: "error", ModelID: model.ID,
 			})
 		}
-		if provider.ID == input.CurrentProviderID {
-			result.CurrentModelIDs = piQualifiedModelIDs(provider)
+		if strings.TrimSpace(model.BaseURL) != "" {
+			severity := "warning"
+			message := "模型级 baseUrl 会绕过平台网关，开启托管前必须移除"
+			if managed {
+				severity = "error"
+			}
+			result.Diagnostics = append(result.Diagnostics, PiConfigDiagnostic{
+				Path:    "providers." + result.CurrentPlatformID + fmt.Sprintf(".models[%d].baseUrl", index),
+				Message: message, Severity: severity, ModelID: model.ID, Field: "baseUrl",
+			})
 		}
 	}
+	for modelID, override := range current.ModelOverrides {
+		result.CurrentModelIDs = append(result.CurrentModelIDs, modelID)
+		for _, message := range validateNativePiModelOverride("modelOverrides."+modelID, override) {
+			result.Diagnostics = append(result.Diagnostics, PiConfigDiagnostic{
+				Path:    "providers." + result.CurrentPlatformID + "." + diagnosticPathFromMessage(message),
+				Message: message, Severity: "error", ModelID: modelID,
+			})
+		}
+	}
+	sort.Strings(result.CurrentModelIDs)
 	return result, nil
 }
 
@@ -619,6 +660,8 @@ func piAPIForProtocol(protocol UpstreamProtocolType) string {
 		return "anthropic-messages"
 	case UpstreamProtocolOpenAIResponses:
 		return "openai-responses"
+	case UpstreamProtocolGoogle:
+		return "google-generative-ai"
 	default:
 		return "openai-completions"
 	}

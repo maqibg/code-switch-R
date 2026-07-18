@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,7 +95,12 @@ type Provider struct {
 	// PiModelOverrides are merged into matching generated models before writing
 	// the custom code-switch-r provider. Pi cannot apply overrides to unknown custom models itself.
 	PiModelOverrides map[string]PiModelOverride `json:"piModelOverrides,omitempty"`
-	MetadataUserID   string                     `json:"metadataUserId,omitempty"`
+	// PiPlatform identifies the models.json Provider key that owns this Pi supplier.
+	PiPlatform string `json:"piPlatform,omitempty"`
+	// PiTemplate is the legacy name used by earlier development builds. It is
+	// migrated to PiPlatform on load and is no longer written by new saves.
+	PiTemplate     string `json:"piTemplate,omitempty"`
+	MetadataUserID string `json:"metadataUserId,omitempty"`
 
 	// Codex reasoning 自动续写 - 仅对 Codex 原生 Responses 流式请求生效
 	CodexReasoningContinueEnabled bool `json:"codexReasoningContinueEnabled,omitempty"`
@@ -129,6 +135,13 @@ func defaultConnectivityAuthType(platform string) string {
 	default:
 		return "bearer"
 	}
+}
+
+func (p Provider) piPlatformKey() string {
+	if value := strings.TrimSpace(p.PiPlatform); value != "" {
+		return value
+	}
+	return strings.TrimSpace(p.PiTemplate)
 }
 
 type ProviderService struct {
@@ -185,6 +198,14 @@ func (ps *ProviderService) SaveProviders(kind string, providers []Provider) erro
 	return ps.saveProvidersLocked(kind, providers)
 }
 
+type providerSavePlan struct {
+	providers        []Provider
+	data             []byte
+	aliasPlatform    string
+	aliasEnabled     bool
+	deletedProviders []deletedProvider
+}
+
 func (ps *ProviderService) setPiGatewaySync(syncGateway func([]Provider) error) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -232,22 +253,57 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	if err != nil {
 		return err
 	}
+	plan, err := prepareProviderSave(kind, providers, existingProviders, 0)
+	if err != nil {
+		return err
+	}
+
+	if err := atomicWriteFile(path, plan.data, 0o644); err != nil {
+		return err
+	}
+
+	piSynced := false
+	if strings.EqualFold(strings.TrimSpace(kind), "pi") && ps.piGatewaySync != nil {
+		if err := ps.piGatewaySync(plan.providers); err != nil {
+			return rollbackProviderFile(path, existingProviders, fmt.Errorf("同步 Pi models.json 失败: %w", err))
+		}
+		piSynced = true
+	}
+
+	if len(plan.deletedProviders) == 0 {
+		return nil
+	}
+	if err := cleanupDeletedProviders(plan.aliasPlatform, plan.deletedProviders); err != nil {
+		if piSynced {
+			if syncErr := ps.piGatewaySync(existingProviders); syncErr != nil {
+				err = fmt.Errorf("%w; Pi gateway 回滚失败: %v", err, syncErr)
+			}
+		}
+		return rollbackProviderFile(path, existingProviders, err)
+	}
+	return nil
+}
+
+func prepareProviderSave(kind string, providers, existingProviders []Provider, allowedRenameID int64) (providerSavePlan, error) {
+	preparedProviders := append([]Provider(nil), providers...)
 	nameByID := make(map[int64]string, len(existingProviders))
-	for _, p := range existingProviders {
-		nameByID[p.ID] = p.Name
+	for _, provider := range existingProviders {
+		nameByID[provider.ID] = provider.Name
 	}
 
-	// 解析 platform(alias 校验需要)。失败时跳过 alias 校验(比如 gemini/unknown kind)
 	aliasPlatform, aliasErr := resolvePlatform(kind)
-	deletedProviders := []deletedProvider{}
-	if aliasErr == nil {
-		deletedProviders = diffDeletedProviders(existingProviders, providers)
+	plan := providerSavePlan{
+		providers:     preparedProviders,
+		aliasPlatform: aliasPlatform,
+		aliasEnabled:  aliasErr == nil,
+	}
+	if plan.aliasEnabled {
+		plan.deletedProviders = diffDeletedProviders(existingProviders, preparedProviders)
 	}
 
-	// 验证每个 provider 的配置，并清除旧字段
 	validationErrors := make([]string, 0)
-	for i := range providers {
-		p := &providers[i]
+	for i := range preparedProviders {
+		p := &preparedProviders[i]
 		if strings.EqualFold(strings.TrimSpace(kind), "pi") &&
 			(strings.TrimSpace(p.Name) == "" || strings.Contains(p.Name, "/")) {
 			validationErrors = append(validationErrors, fmt.Sprintf("[%s] Pi Provider 名称不能为空且不能包含 '/'", p.Name))
@@ -260,15 +316,15 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 		}
 
 		// 规则：name 不可修改（走独立 RenameProvider 路径,SaveProviders 只允许既有 name）
-		if oldName, ok := nameByID[p.ID]; ok && oldName != p.Name {
-			return fmt.Errorf("provider id %d 的 name 不可修改(请使用 RenameProvider)", p.ID)
+		if oldName, ok := nameByID[p.ID]; ok && oldName != p.Name && p.ID != allowedRenameID {
+			return providerSavePlan{}, fmt.Errorf("provider id %d 的 name 不可修改(请使用 RenameProvider)", p.ID)
 		}
 
 		// 规则:名字不得占用其他 provider 的 48h 活动 alias
 		// 防止 "A→B 后新建同名 A" 被 alias resolver 静默归并到 B 的历史里
-		if aliasErr == nil {
-			if err := checkNameNotOccupiedByAlias(aliasPlatform, p.ID, p.Name); err != nil {
-				return err
+		if plan.aliasEnabled {
+			if err := checkNameNotOccupiedByAlias(plan.aliasPlatform, p.ID, p.Name); err != nil {
+				return providerSavePlan{}, err
 			}
 		}
 
@@ -282,46 +338,64 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 		// 清除旧连通性字段，确保保存时不再写入
 		p.clearLegacyFields()
 	}
+	if strings.EqualFold(strings.TrimSpace(kind), "pi") {
+		validationErrors = append(validationErrors, validatePiSupplierURLUniqueness(preparedProviders)...)
+	}
 
 	// 如果有验证错误，返回汇总错误
 	if len(validationErrors) > 0 {
-		return fmt.Errorf("配置验证失败：\n  - %s", strings.Join(validationErrors, "\n  - "))
+		return providerSavePlan{}, fmt.Errorf("配置验证失败：\n  - %s", strings.Join(validationErrors, "\n  - "))
 	}
-	for i := range providers {
-		if err := canonicalizeProviderHeaderMaps(&providers[i]); err != nil {
-			return fmt.Errorf("[%s] Header 规范化失败: %w", providers[i].Name, err)
+	for i := range preparedProviders {
+		if err := canonicalizeProviderHeaderMaps(&preparedProviders[i]); err != nil {
+			return providerSavePlan{}, fmt.Errorf("[%s] Header 规范化失败: %w", preparedProviders[i].Name, err)
 		}
 	}
 
-	data, err := json.MarshalIndent(providerEnvelope{Providers: providers}, "", "  ")
+	data, err := json.MarshalIndent(providerEnvelope{Providers: preparedProviders}, "", "  ")
 	if err != nil {
-		return err
+		return providerSavePlan{}, err
 	}
+	plan.data = data
+	return plan, nil
+}
 
-	if err := atomicWriteFile(path, data, 0o644); err != nil {
-		return err
-	}
-
-	piSynced := false
-	if strings.EqualFold(strings.TrimSpace(kind), "pi") && ps.piGatewaySync != nil {
-		if err := ps.piGatewaySync(providers); err != nil {
-			return rollbackProviderFile(path, existingProviders, fmt.Errorf("同步 Pi models.json 失败: %w", err))
+func validatePiSupplierURLUniqueness(providers []Provider) []string {
+	seen := make(map[string]string, len(providers))
+	errors := make([]string, 0)
+	for _, provider := range providers {
+		canonicalURL, err := canonicalPiSupplierURL(provider.APIURL)
+		if err != nil || canonicalURL == "" {
+			continue
 		}
-		piSynced = true
-	}
-
-	if len(deletedProviders) == 0 {
-		return nil
-	}
-	if err := cleanupDeletedProviders(aliasPlatform, deletedProviders); err != nil {
-		if piSynced {
-			if syncErr := ps.piGatewaySync(existingProviders); syncErr != nil {
-				err = fmt.Errorf("%w; Pi gateway 回滚失败: %v", err, syncErr)
-			}
+		platformID := strings.ToLower(provider.piPlatformKey())
+		if platformID == "" {
+			platformID = string(resolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions")))
 		}
-		return rollbackProviderFile(path, existingProviders, err)
+		key := platformID + "\x00" + canonicalURL
+		if existingName, exists := seen[key]; exists {
+			errors = append(errors, fmt.Sprintf("[%s] 与供应商 %q 使用相同协议模板和 API URL，请合并为一个供应商", provider.Name, existingName))
+			continue
+		}
+		seen[key] = provider.Name
 	}
-	return nil
+	return errors
+}
+
+func canonicalPiSupplierURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("无效 URL")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Fragment = ""
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
 func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
@@ -454,6 +528,10 @@ func (p *Provider) clearLegacyFields() {
 	p.ConnectivityCheck = false
 	p.ConnectivityTestModel = ""
 	p.ConnectivityTestEndpoint = ""
+	if strings.TrimSpace(p.PiPlatform) == "" {
+		p.PiPlatform = strings.TrimSpace(p.PiTemplate)
+	}
+	p.PiTemplate = ""
 	// 注意：ConnectivityAuthType 现在是活跃字段，不再清除
 }
 
@@ -504,6 +582,7 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		Tint:                 source.Tint,
 		Accent:               source.Accent,
 		Enabled:              false, // 默认禁用，避免与源供应商冲突
+		ProxyEnabled:         source.ProxyEnabled,
 		Level:                source.Level,
 		APIEndpoint:          source.APIEndpoint,          // 复制端点配置
 		UpstreamProtocol:     source.UpstreamProtocol,     // 复制上游协议配置
@@ -513,6 +592,7 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		UserAgentPreset:      source.UserAgentPreset,
 		CustomUserAgent:      source.CustomUserAgent,
 		ModelsEndpoint:       source.ModelsEndpoint,
+		PiPlatform:           source.piPlatformKey(),
 		MetadataUserID:       source.MetadataUserID,
 		// 可用性监控配置
 		AvailabilityMonitorEnabled: source.AvailabilityMonitorEnabled,
@@ -657,6 +737,8 @@ const (
 	UpstreamProtocolOpenAIChat UpstreamProtocolType = "openai_chat"
 	// UpstreamProtocolOpenAIResponses OpenAI Responses API
 	UpstreamProtocolOpenAIResponses UpstreamProtocolType = "openai_responses"
+	// UpstreamProtocolGoogle Google Generative AI 原生协议
+	UpstreamProtocolGoogle UpstreamProtocolType = "google"
 	// UpstreamProtocolAuto 自动检测
 	UpstreamProtocolAuto UpstreamProtocolType = "auto"
 )
@@ -670,6 +752,8 @@ func (p *Provider) GetUpstreamProtocol() UpstreamProtocolType {
 		return UpstreamProtocolOpenAIChat
 	case "openai_responses", "openai-responses", "responses":
 		return UpstreamProtocolOpenAIResponses
+	case "google", "google-generative-ai", "gemini", "gemini_native":
+		return UpstreamProtocolGoogle
 	case "auto":
 		return UpstreamProtocolAuto
 	default:
