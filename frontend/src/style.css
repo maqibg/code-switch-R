@@ -77,6 +77,9 @@ body {
 .base-input,
 .base-textarea {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   border-radius: 12px;
   border: 1px solid var(--mac-border);
   background: var(--mac-surface-strong); /* fallback for old WebKit */
@@ -1385,6 +1388,7 @@ html.dark .ghost-icon:hover {
   min-height: 100vh;
   width: 100%;
   padding: 24px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1392,6 +1396,9 @@ html.dark .ghost-icon:hover {
 
 .modal {
   width: min(720px, 95vw);
+  min-width: 0;
+  max-width: calc(100vw - 48px);
+  box-sizing: border-box;
   max-height: 90vh;
   background: var(--mac-surface);
   border-radius: 24px;
@@ -1412,10 +1419,12 @@ html.dark .ghost-icon:hover {
 
 .modal-body {
   padding: 0 24px 24px;
+  min-width: 0;
 }
 
 .modal-scrollable {
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .modal-title {
@@ -1423,6 +1432,21 @@ html.dark .ghost-icon:hover {
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--mac-text);
+}
+
+.wide-modal {
+  width: min(960px, 95vw);
+  border-radius: 14px;
+}
+
+@media (max-width: 640px) {
+  .modal-wrapper {
+    padding: 16px;
+  }
+
+  .modal {
+    max-width: calc(100vw - 32px);
+  }
 }
 
 .vendor-form {

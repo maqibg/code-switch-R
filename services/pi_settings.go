@@ -73,6 +73,7 @@ type PiSettingsService struct {
 	configDir         string
 	statePath         string
 	platformStatePath string
+	uiStatePath       string
 	providerService   *ProviderService
 	providerLoader    func() ([]Provider, error)
 }
@@ -81,15 +82,23 @@ func NewPiSettingsService(relayAddr string, providerService *ProviderService) *P
 	home, _ := os.UserHomeDir()
 	statePath, _ := GetProxyStatePath("pi")
 	platformStatePath, _ := GetProxyStatePath("pi-platforms")
+	uiStatePath := ""
+	if appConfigDir, err := getAppConfigDir(); err == nil {
+		uiStatePath = filepath.Join(appConfigDir, "pi-ui.json")
+	}
 	service := &PiSettingsService{
 		relayAddr:         relayAddr,
 		configDir:         filepath.Join(home, ".pi", "agent"),
 		statePath:         statePath,
 		platformStatePath: platformStatePath,
+		uiStatePath:       uiStatePath,
 		providerService:   providerService,
 	}
 	if providerService != nil {
 		service.providerLoader = func() ([]Provider, error) { return providerService.LoadProviders("pi") }
+	}
+	if state, err := service.loadUIState(); err == nil {
+		setPiDebugLogging(state.DebugLogging)
 	}
 	return service
 }

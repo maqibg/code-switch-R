@@ -9,6 +9,8 @@ function getContainer() {
 
   toastContainer = document.createElement('div')
   toastContainer.className = 'mac-toast-container'
+  toastContainer.setAttribute('aria-live', 'polite')
+  toastContainer.setAttribute('aria-atomic', 'false')
   document.body.appendChild(toastContainer)
   return toastContainer
 }
@@ -19,6 +21,7 @@ export function showToast(message: string, type: ToastType = 'success') {
   const container = getContainer()
   const toast = document.createElement('div')
   toast.className = `mac-toast mac-toast-${type}`
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status')
   toast.textContent = message
 
   container.appendChild(toast)

@@ -1,7 +1,10 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -56,5 +59,21 @@ func TestParseDeepLinkURLSupportsPi(t *testing.T) {
 	}
 	if request.App != "pi" || request.Name != "primary" {
 		t.Fatalf("Pi 深链解析错误: %#v", request)
+	}
+}
+
+func TestPiIsExcludedFromBackgroundChecks(t *testing.T) {
+	platforms := providerBackgroundCheckPlatformIDs()
+	if slices.Contains(platforms, "pi") {
+		t.Fatalf("Pi 不应进入后台检查平台列表: %#v", platforms)
+	}
+	if !slices.Contains(platforms, "claude") || !slices.Contains(platforms, "codex") {
+		t.Fatalf("后台检查平台列表丢失现有平台: %#v", platforms)
+	}
+
+	connectivity := NewConnectivityTestService(nil, nil, nil, nil)
+	result := connectivity.TestProvider(context.Background(), Provider{Name: "pi-upstream"}, "pi")
+	if result == nil || !strings.Contains(result.Message, "不支持连通性测试") {
+		t.Fatalf("Pi 直接连通性测试应被拒绝: %#v", result)
 	}
 }

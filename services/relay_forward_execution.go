@@ -52,7 +52,7 @@ func (prs *ProviderRelayService) newRelayForwardExecution(
 		IsStream:         isStream,
 		Model:            model,
 	}
-	if shouldUseCodexContinue(provider, endpoint, bodyBytes, isStream) {
+	if !strings.EqualFold(strings.TrimSpace(kind), "pi") && shouldUseCodexContinue(provider, endpoint, bodyBytes, isStream) {
 		execution.UseCodexContinue = true
 		return execution, nil
 	}

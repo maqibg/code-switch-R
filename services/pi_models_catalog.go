@@ -14,6 +14,7 @@ type PiModelsCatalogModel struct {
 	ID            string `json:"id"`
 	Name          string `json:"name,omitempty"`
 	API           string `json:"api,omitempty"`
+	BaseURL       string `json:"baseUrl,omitempty"`
 	Reasoning     *bool  `json:"reasoning,omitempty"`
 	ContextWindow *int   `json:"contextWindow,omitempty"`
 	MaxTokens     *int   `json:"maxTokens,omitempty"`
@@ -54,26 +55,19 @@ type piModelsCatalogProviderFile struct {
 }
 
 func (s *PiSettingsService) ModelsCatalog() (PiModelsCatalogSnapshot, error) {
-	if _, err := os.Stat(s.statePath); err == nil {
-		if disableErr := s.DisableProxy(); disableErr != nil {
-			return piCatalogErrorSnapshot(s.configDir, s.modelsPath(), true, fmt.Errorf("迁移旧 Pi 网关配置失败: %w", disableErr)), nil
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return piCatalogErrorSnapshot(s.configDir, s.modelsPath(), true, fmt.Errorf("检查旧 Pi 网关状态失败: %w", err)), nil
-	}
-	s.modelsMu.Lock()
-	detected, initialized, initErr := s.ensurePiModelsInitialized()
-	if initErr != nil {
-		snapshot := piCatalogErrorSnapshot(s.configDir, s.modelsPath(), detected, initErr)
-		s.modelsMu.Unlock()
-		return snapshot, nil
-	}
-	if !detected {
-		s.modelsMu.Unlock()
+	info, statErr := os.Stat(s.configDir)
+	if errors.Is(statErr, os.ErrNotExist) {
 		return PiModelsCatalogSnapshot{
 			Path: s.modelsPath(), ConfigDir: s.configDir, Templates: []PiModelsCatalogTemplate{},
 		}, nil
 	}
+	if statErr != nil {
+		return piCatalogErrorSnapshot(s.configDir, s.modelsPath(), false, fmt.Errorf("检查 Pi 配置目录失败: %w", statErr)), nil
+	}
+	if !info.IsDir() {
+		return piCatalogErrorSnapshot(s.configDir, s.modelsPath(), false, fmt.Errorf("Pi 配置路径不是目录: %s", s.configDir)), nil
+	}
+	s.modelsMu.Lock()
 	snapshot, err := readPiModelsCatalog(s.modelsPath())
 	s.modelsMu.Unlock()
 	if err != nil {
@@ -81,7 +75,7 @@ func (s *PiSettingsService) ModelsCatalog() (PiModelsCatalogSnapshot, error) {
 	}
 	snapshot.ConfigDir = s.configDir
 	snapshot.Detected = true
-	snapshot.Initialized = initialized
+	snapshot.Initialized = snapshot.Exists && len(snapshot.Templates) > 0
 	state, stateErr := s.loadPlatformState()
 	if stateErr != nil {
 		snapshot.Error = stateErr.Error()
@@ -110,10 +104,10 @@ func (s *PiSettingsService) ModelsCatalog() (PiModelsCatalogSnapshot, error) {
 		if !tracked {
 			continue
 		}
-		platform.Managed = canonicalJSONHash(rawPlatforms[platform.ProviderID]) == entry.InjectedProviderHash
+		current, exists := rawPlatforms[platform.ProviderID]
+		platform.Managed = exists && piManagedProviderConnectionMatches(current, s.platformBaseURL(platform.ProviderID))
 		if platform.Managed && entry.InjectedAuthHash != "" {
-			currentAuth, authExists := authRoot[platform.ProviderID]
-			platform.Managed = authExists && canonicalJSONHash(currentAuth) == entry.InjectedAuthHash
+			platform.Managed = piManagedAuthMatches(authRoot, platform.ProviderID, entry)
 		}
 		platform.Conflict = !platform.Managed
 	}
@@ -191,6 +185,7 @@ func readPiModelsCatalog(path string) (PiModelsCatalogSnapshot, error) {
 			}
 			modelsByID[modelID] = PiModelsCatalogModel{
 				ID: modelID, Name: strings.TrimSpace(model.Name), API: api,
+				BaseURL:   strings.TrimSpace(model.BaseURL),
 				Reasoning: model.Reasoning, ContextWindow: model.ContextWindow, MaxTokens: model.MaxTokens,
 			}
 		}

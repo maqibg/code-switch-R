@@ -25,6 +25,7 @@ func newPiPlatformTestService(t *testing.T, models string) (*PiSettingsService, 
 		configDir: configDir, relayAddr: "127.0.0.1:18100", providerService: providerService,
 		providerLoader: func() ([]Provider, error) { return providerService.LoadProviders("pi") },
 		statePath:      filepath.Join(t.TempDir(), "legacy.json"), platformStatePath: filepath.Join(t.TempDir(), "platforms.json"),
+		uiStatePath: filepath.Join(t.TempDir(), "pi-ui.json"),
 	}
 	return service, providerService
 }
@@ -47,14 +48,31 @@ func TestPiModelsCatalogDoesNotCreateMissingAgentDirectory(t *testing.T) {
 	}
 }
 
-func TestPiModelsCatalogInitializesSanitizedDefaultTemplate(t *testing.T) {
+func TestPiModelsCatalogRequiresExplicitSanitizedDefaultInitialization(t *testing.T) {
 	service, _ := newPiPlatformTestService(t, "")
 	snapshot, err := service.ModelsCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !snapshot.Detected || !snapshot.Initialized || len(snapshot.Templates) != 7 {
-		t.Fatalf("默认模板初始化结果错误: detected=%v initialized=%v platforms=%d", snapshot.Detected, snapshot.Initialized, len(snapshot.Templates))
+	if !snapshot.Detected || snapshot.Initialized || len(snapshot.Templates) != 0 {
+		t.Fatalf("只读目录不应隐式初始化: detected=%v initialized=%v platforms=%d", snapshot.Detected, snapshot.Initialized, len(snapshot.Templates))
+	}
+	if _, err := os.Stat(service.modelsPath()); !os.IsNotExist(err) {
+		t.Fatalf("读取 Pi 页面不应创建 models.json: %v", err)
+	}
+	runtime, err := service.RuntimeSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.InitializeDefaultModels(runtime.Revision); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = service.ModelsCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Initialized || len(snapshot.Templates) != 7 {
+		t.Fatalf("显式初始化结果错误: initialized=%v platforms=%d", snapshot.Initialized, len(snapshot.Templates))
 	}
 	data, err := os.ReadFile(service.modelsPath())
 	if err != nil {
@@ -135,6 +153,41 @@ func TestPiPlatformProxyRejectsExternalManagedEdit(t *testing.T) {
 	}
 	if err := service.DisablePlatformProxy("anthropic"); err == nil || !strings.Contains(err.Error(), "外部修改") {
 		t.Fatalf("外部修改后应拒绝恢复，实际: %v", err)
+	}
+}
+
+func TestPiPlatformProxyAllowsManagedMetadataEditAndRestoresOnlyConnection(t *testing.T) {
+	service, _ := newPiPlatformTestService(t, `{"providers":{"anthropic":{"baseUrl":"https://api.anthropic.com","apiKey":"original-key","api":"anthropic-messages","name":"Original","headers":{"X-Tenant":"old"},"models":[{"id":"claude-test"}]}}}`)
+	if err := service.EnablePlatformProxy("anthropic"); err != nil {
+		t.Fatal(err)
+	}
+	template, err := service.GetModelsProvider("anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if template.BaseURL != "https://api.anthropic.com" || template.APIKey != "original-key" {
+		t.Fatalf("托管编辑器应显示原始连接字段: %#v", template)
+	}
+	template.Name = "Updated"
+	template.Headers["X-Tenant"] = "new"
+	template.Models = append(template.Models, PiModelEntry{ID: "claude-new", Input: []string{"text"}})
+	if err := service.UpdateModelsProvider(template); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.PlatformProxyStatus("anthropic")
+	if err != nil || !status.Enabled || status.Conflict {
+		t.Fatalf("托管期间编辑非连接字段不应造成冲突: %#v err=%v", status, err)
+	}
+	managedTemplate, err := service.GetModelsProvider("anthropic")
+	if err != nil || managedTemplate.Name != "Updated" || managedTemplate.Headers["X-Tenant"] != "new" || len(managedTemplate.Models) != 2 {
+		t.Fatalf("托管期间应读取最新非连接字段: %#v err=%v", managedTemplate, err)
+	}
+	if err := service.DisablePlatformProxy("anthropic"); err != nil {
+		t.Fatal(err)
+	}
+	finalTemplate, err := service.GetModelsProvider("anthropic")
+	if err != nil || finalTemplate.BaseURL != "https://api.anthropic.com" || finalTemplate.APIKey != "original-key" || finalTemplate.Name != "Updated" || finalTemplate.Headers["X-Tenant"] != "new" || len(finalTemplate.Models) != 2 {
+		t.Fatalf("关闭托管只应恢复连接字段: %#v err=%v", finalTemplate, err)
 	}
 }
 

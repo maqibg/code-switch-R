@@ -15,7 +15,7 @@
           <DialogPanel :class="['modal', variantClass]">
             <header class="modal-header">
               <DialogTitle class="modal-title">{{ title }}</DialogTitle>
-              <button class="ghost-icon" aria-label="Close" @click="$emit('close')">✕</button>
+              <button class="ghost-icon" type="button" aria-label="Close" @click="$emit('close')"><X :size="17" /></button>
             </header>
             <div class="modal-body modal-scrollable">
               <slot />
@@ -30,8 +30,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import { X } from 'lucide-vue-next'
 
-type Variant = 'default' | 'confirm'
+type Variant = 'default' | 'confirm' | 'wide'
 
 const props = withDefaults(
   defineProps<{
@@ -44,5 +45,5 @@ const props = withDefaults(
 
 defineEmits<{ (e: 'close'): void }>()
 
-const variantClass = computed(() => (props.variant === 'confirm' ? 'confirm-modal' : ''))
+const variantClass = computed(() => props.variant === 'confirm' ? 'confirm-modal' : props.variant === 'wide' ? 'wide-modal' : '')
 </script>

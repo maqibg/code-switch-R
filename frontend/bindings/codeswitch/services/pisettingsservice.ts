@@ -9,6 +9,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function ApplyPlatformModeChange(plan: $models.PiPlatformChangePlan): $CancellablePromise<void> {
+    return $Call.ByID(4089509040, plan);
+}
+
 export function CreateModelsProvider(input: $models.PiModelsProviderTemplate): $CancellablePromise<void> {
     return $Call.ByID(3033850315, input);
 }
@@ -39,28 +43,85 @@ export function GetModelsProvider(id: string): $CancellablePromise<$models.PiMod
     });
 }
 
+export function GetPlatformConflict(providerID: string): $CancellablePromise<$models.PiPlatformConflictDetail> {
+    return $Call.ByID(3901885365, providerID).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function GetSupplier(providerID: number): $CancellablePromise<$models.Provider> {
+    return $Call.ByID(2510573228, providerID).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+export function InitializeDefaultModels(expectedRevision: string): $CancellablePromise<void> {
+    return $Call.ByID(1542517177, expectedRevision);
+}
+
+export function MigrateLegacyGateway(expectedRevision: string): $CancellablePromise<void> {
+    return $Call.ByID(948378112, expectedRevision);
+}
+
 export function ModelsCatalog(): $CancellablePromise<$models.PiModelsCatalogSnapshot> {
     return $Call.ByID(1386777041).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType3($result);
     });
 }
 
 export function PlatformProxyStatus(providerID: string): $CancellablePromise<$models.PiPlatformProxyStatus> {
     return $Call.ByID(762802391, providerID).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
 export function PreviewModelsJSON(input: $models.PiModelsPreviewRequest): $CancellablePromise<$models.PiModelsPreviewResult> {
     return $Call.ByID(3412279864, input).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
+    });
+}
+
+export function PreviewPlatformModeChange(providerID: string, targetMode: string): $CancellablePromise<$models.PiPlatformChangePlan> {
+    return $Call.ByID(4273163056, providerID, targetMode).then(($result: any) => {
+        return $$createType6($result);
     });
 }
 
 export function ProxyStatus(): $CancellablePromise<$models.ClaudeProxyStatus> {
     return $Call.ByID(2361587658).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType7($result);
     });
+}
+
+export function ResolvePlatformConflict(providerID: string, action: string, expectedRevision: string): $CancellablePromise<void> {
+    return $Call.ByID(1644568645, providerID, action, expectedRevision);
+}
+
+export function RuntimeSnapshot(): $CancellablePromise<$models.PiRuntimeSnapshot> {
+    return $Call.ByID(2024724712).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+export function SavePlatformOrder(providerIDs: string[], expectedRevision: string): $CancellablePromise<void> {
+    return $Call.ByID(1648375802, providerIDs, expectedRevision);
+}
+
+export function SaveSupplierMutation(input: $models.PiSupplierMutationRequest): $CancellablePromise<$models.PiSupplierMutationResult> {
+    return $Call.ByID(1690937910, input).then(($result: any) => {
+        return $$createType9($result);
+    });
+}
+
+export function SaveSupplierOrder(platformID: string, providerIDs: number[], expectedRevision: string): $CancellablePromise<void> {
+    return $Call.ByID(2572777003, platformID, providerIDs, expectedRevision);
+}
+
+/**
+ * SetDebugLogging persists the Pi page switch and updates the relay hot path.
+ */
+export function SetDebugLogging(enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(4480512, enabled);
 }
 
 export function SyncGateway(): $CancellablePromise<void> {
@@ -77,7 +138,12 @@ export function UpdateModelsProvider(input: $models.PiModelsProviderTemplate): $
 
 // Private type creation functions
 const $$createType0 = $models.PiModelsProviderTemplate.createFrom;
-const $$createType1 = $models.PiModelsCatalogSnapshot.createFrom;
-const $$createType2 = $models.PiPlatformProxyStatus.createFrom;
-const $$createType3 = $models.PiModelsPreviewResult.createFrom;
-const $$createType4 = $models.ClaudeProxyStatus.createFrom;
+const $$createType1 = $models.PiPlatformConflictDetail.createFrom;
+const $$createType2 = $models.Provider.createFrom;
+const $$createType3 = $models.PiModelsCatalogSnapshot.createFrom;
+const $$createType4 = $models.PiPlatformProxyStatus.createFrom;
+const $$createType5 = $models.PiModelsPreviewResult.createFrom;
+const $$createType6 = $models.PiPlatformChangePlan.createFrom;
+const $$createType7 = $models.ClaudeProxyStatus.createFrom;
+const $$createType8 = $models.PiRuntimeSnapshot.createFrom;
+const $$createType9 = $models.PiSupplierMutationResult.createFrom;

@@ -183,7 +183,7 @@ func (hcs *HealthCheckService) GetLatestResults() (map[string][]ProviderTimeline
 	results := make(map[string][]ProviderTimeline)
 
 	// 遍历所有平台
-	for _, platform := range providerPlatformIDs() {
+	for _, platform := range providerBackgroundCheckPlatformIDs() {
 		providers, err := hcs.providerService.LoadProviders(platform)
 		if err != nil {
 			log.Printf("[HealthCheck] 加载 %s 供应商失败: %v", platform, err)
@@ -404,6 +404,9 @@ func (hcs *HealthCheckService) GetHistory(platform, providerName string, limit i
 
 // RunSingleCheck 手动触发单个 Provider 检测
 func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64) (*HealthCheckResult, error) {
+	if strings.EqualFold(strings.TrimSpace(platform), "pi") {
+		return nil, fmt.Errorf("Pi 平台不支持可用性检查")
+	}
 	providers, err := hcs.providerService.LoadProviders(platform)
 	if err != nil {
 		return nil, fmt.Errorf("加载供应商失败: %w", err)
@@ -446,7 +449,7 @@ func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64)
 func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, error) {
 	results := make(map[string][]HealthCheckResult)
 
-	for _, platform := range providerPlatformIDs() {
+	for _, platform := range providerBackgroundCheckPlatformIDs() {
 		platformResults := hcs.checkAllProviders(platform)
 		results[platform] = platformResults
 	}
@@ -456,6 +459,9 @@ func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, e
 
 // checkAllProviders 检测指定平台的所有启用监控的供应商
 func (hcs *HealthCheckService) checkAllProviders(platform string) []HealthCheckResult {
+	if strings.EqualFold(strings.TrimSpace(platform), "pi") {
+		return nil
+	}
 	providers, err := hcs.providerService.LoadProviders(platform)
 	if err != nil {
 		log.Printf("[HealthCheck] 加载 %s 供应商失败: %v", platform, err)
@@ -898,13 +904,16 @@ func (hcs *HealthCheckService) SetAutoAvailabilityPolling(enabled bool) {
 
 // runAllPlatformChecks 执行所有平台的检测
 func (hcs *HealthCheckService) runAllPlatformChecks() {
-	for _, platform := range providerPlatformIDs() {
+	for _, platform := range providerBackgroundCheckPlatformIDs() {
 		hcs.checkAllProviders(platform)
 	}
 }
 
 // SetAvailabilityMonitorEnabled 启用/禁用指定 Provider 的可用性监控
 func (hcs *HealthCheckService) SetAvailabilityMonitorEnabled(platform string, providerID int64, enabled bool) error {
+	if strings.EqualFold(strings.TrimSpace(platform), "pi") {
+		return fmt.Errorf("Pi 平台不支持可用性监控")
+	}
 	providers, err := hcs.providerService.LoadProviders(platform)
 	if err != nil {
 		return fmt.Errorf("加载供应商失败: %w", err)
@@ -933,6 +942,9 @@ func (hcs *HealthCheckService) SetAvailabilityMonitorEnabled(platform string, pr
 
 // SetConnectivityAutoBlacklist 启用/禁用指定 Provider 的连通性自动拉黑
 func (hcs *HealthCheckService) SetConnectivityAutoBlacklist(platform string, providerID int64, enabled bool) error {
+	if strings.EqualFold(strings.TrimSpace(platform), "pi") {
+		return fmt.Errorf("Pi 平台不支持可用性监控")
+	}
 	providers, err := hcs.providerService.LoadProviders(platform)
 	if err != nil {
 		return fmt.Errorf("加载供应商失败: %w", err)

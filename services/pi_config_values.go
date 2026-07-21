@@ -45,19 +45,47 @@ func resolvePiProviderConfigValues(provider Provider, platform string) (Provider
 		}
 		provider.APIKey = resolved
 	}
-	if len(provider.Headers) == 0 {
-		return provider, nil
+	resolvedHeaders, err := resolvePiHeaderValues(provider.Headers, "Header")
+	if err != nil {
+		return Provider{}, err
 	}
-	resolvedHeaders := make(map[string]string, len(provider.Headers))
-	for key, value := range provider.Headers {
-		resolved, err := resolvePiConfigValue(value, fmt.Sprintf("Header %q", key))
+	provider.Headers = resolvedHeaders
+	if provider.RequestIdentity != nil {
+		identity := cloneProviderRequestIdentity(*provider.RequestIdentity)
+		identity.Headers, err = resolvePiHeaderValues(identity.Headers, "请求身份 Header")
 		if err != nil {
 			return Provider{}, err
 		}
+		provider.RequestIdentity = &identity
+	}
+	if len(provider.ModelRequestIdentities) > 0 {
+		resolvedIdentities := make(map[string]ProviderRequestIdentity, len(provider.ModelRequestIdentities))
+		for model, source := range provider.ModelRequestIdentities {
+			identity := cloneProviderRequestIdentity(source)
+			identity.Headers, err = resolvePiHeaderValues(identity.Headers, fmt.Sprintf("模型 %q 请求身份 Header", model))
+			if err != nil {
+				return Provider{}, err
+			}
+			resolvedIdentities[model] = identity
+		}
+		provider.ModelRequestIdentities = resolvedIdentities
+	}
+	return provider, nil
+}
+
+func resolvePiHeaderValues(headers map[string]string, description string) (map[string]string, error) {
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	resolvedHeaders := make(map[string]string, len(headers))
+	for key, value := range headers {
+		resolved, err := resolvePiConfigValue(value, fmt.Sprintf("%s %q", description, key))
+		if err != nil {
+			return nil, err
+		}
 		resolvedHeaders[key] = resolved
 	}
-	provider.Headers = resolvedHeaders
-	return provider, nil
+	return resolvedHeaders, nil
 }
 
 func resolvePiConfigValue(config, description string) (string, error) {

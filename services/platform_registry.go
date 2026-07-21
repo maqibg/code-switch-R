@@ -29,6 +29,16 @@ func providerPlatformIDs() []string {
 	return ids
 }
 
+func providerBackgroundCheckPlatformIDs() []string {
+	ids := make([]string, 0, len(providerPlatformDefinitions)-1)
+	for _, definition := range providerPlatformDefinitions {
+		if definition.ID != "pi" {
+			ids = append(ids, definition.ID)
+		}
+	}
+	return ids
+}
+
 func platformDefinition(id string) (PlatformDefinition, bool) {
 	for _, definition := range providerPlatformDefinitions {
 		if definition.ID == id {

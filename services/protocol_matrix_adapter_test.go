@@ -131,6 +131,21 @@ func TestResponsesCompactRequiresNativeResponsesUpstream(t *testing.T) {
 	}
 }
 
+func TestPiExecutionNeverEnablesCodexReasoningContinue(t *testing.T) {
+	service := &ProviderRelayService{codexChatHistory: NewCodexChatBridgeHistoryStore(8)}
+	execution, err := service.newRelayForwardExecution(
+		"pi", relayprotocol.OpenAIResponses,
+		Provider{Name: "responses", UpstreamProtocol: "openai_responses", CodexReasoningContinueEnabled: true},
+		"/v1/responses", []byte(`{"model":"m","stream":true,"reasoning":{"effort":"high"},"input":"hi"}`), true, "m",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if execution.UseCodexContinue {
+		t.Fatal("Pi 请求不得启用 Codex reasoning 自动续写")
+	}
+}
+
 func TestCodexChatSSEConverterRejectsUnexpectedReasoningContent(t *testing.T) {
 	converter := NewCodexChatSSEConverter("m")
 	output := converter.ProcessLine(`data: {"choices":[{"delta":{"reasoning_content":"hidden"}}]}`)

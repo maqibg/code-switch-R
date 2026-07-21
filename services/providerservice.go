@@ -85,6 +85,10 @@ type Provider struct {
 	// an empty value keeps the inbound runtime User-Agent.
 	UserAgentPreset string `json:"userAgentPreset,omitempty"`
 	CustomUserAgent string `json:"customUserAgent,omitempty"`
+	// RequestIdentity is the post-Pi relay identity applied to the real upstream.
+	// ModelRequestIdentities may replace it for an individual mapped upstream model.
+	RequestIdentity        *ProviderRequestIdentity           `json:"requestIdentity,omitempty"`
+	ModelRequestIdentities map[string]ProviderRequestIdentity `json:"modelRequestIdentities,omitempty"`
 
 	// ModelsEndpoint overrides model discovery only and does not affect inference requests.
 	ModelsEndpoint string `json:"modelsEndpoint,omitempty"`
@@ -591,6 +595,7 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		AuthHeader:           source.AuthHeader,
 		UserAgentPreset:      source.UserAgentPreset,
 		CustomUserAgent:      source.CustomUserAgent,
+		RequestIdentity:      nil,
 		ModelsEndpoint:       source.ModelsEndpoint,
 		PiPlatform:           source.piPlatformKey(),
 		MetadataUserID:       source.MetadataUserID,
@@ -628,6 +633,11 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 			cloned.Headers[k] = v
 		}
 	}
+	if source.RequestIdentity != nil {
+		identity := cloneProviderRequestIdentity(*source.RequestIdentity)
+		cloned.RequestIdentity = &identity
+	}
+	cloned.ModelRequestIdentities = cloneProviderRequestIdentityMap(source.ModelRequestIdentities)
 	cloned.PiModels = clonePiModelEntries(source.PiModels)
 	cloned.PiModelOverrides = clonePiModelOverrides(source.PiModelOverrides)
 
@@ -870,6 +880,22 @@ func (p *Provider) ValidateConfiguration() []string {
 	if err := applyUserAgentPolicy(map[string]string{}, *p); err != nil {
 		errors = append(errors, err.Error())
 	}
+	actualProtocol := string(resolveProviderUpstreamProtocol("pi", *p, p.GetEffectiveEndpoint("/v1/messages")))
+	if p.RequestIdentity != nil {
+		for _, message := range validateProviderRequestIdentity(*p.RequestIdentity, actualProtocol) {
+			errors = append(errors, "requestIdentity: "+message)
+		}
+	}
+	for model, identity := range p.ModelRequestIdentities {
+		trimmedModel := strings.TrimSpace(model)
+		if trimmedModel == "" || strings.Contains(trimmedModel, "*") {
+			errors = append(errors, fmt.Sprintf("modelRequestIdentities.%s 的模型 ID 不能为空且不能包含 '*'", model))
+			continue
+		}
+		for _, message := range validateProviderRequestIdentity(identity, actualProtocol) {
+			errors = append(errors, fmt.Sprintf("modelRequestIdentities.%s: %s", model, message))
+		}
+	}
 
 	p.configErrors = errors
 	return errors
@@ -883,6 +909,15 @@ func canonicalizeProviderHeaderMaps(provider *Provider) error {
 	provider.Headers, err = canonicalizeHeaderMap(provider.Headers)
 	if err != nil {
 		return err
+	}
+	if err := canonicalizeProviderRequestIdentity(provider.RequestIdentity); err != nil {
+		return fmt.Errorf("requestIdentity.headers: %w", err)
+	}
+	for model, identity := range provider.ModelRequestIdentities {
+		if err := canonicalizeProviderRequestIdentity(&identity); err != nil {
+			return fmt.Errorf("modelRequestIdentities.%s.headers: %w", model, err)
+		}
+		provider.ModelRequestIdentities[model] = identity
 	}
 	for index := range provider.PiModels {
 		provider.PiModels[index].Headers, err = canonicalizeHeaderMap(provider.PiModels[index].Headers)

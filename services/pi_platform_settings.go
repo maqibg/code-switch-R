@@ -112,7 +112,7 @@ func (s *PiSettingsService) PlatformProxyStatus(providerID string) (PiPlatformPr
 		return status, err
 	}
 	current, exists := providers[providerID]
-	if !exists || canonicalJSONHash(current) != entry.InjectedProviderHash {
+	if !exists || !piManagedProviderConnectionMatches(current, s.platformBaseURL(providerID)) {
 		status.Conflict = true
 		return status, nil
 	}
@@ -121,8 +121,7 @@ func (s *PiSettingsService) PlatformProxyStatus(providerID string) (PiPlatformPr
 		if authErr != nil {
 			return status, fmt.Errorf("读取 Pi auth.json 失败: %w", authErr)
 		}
-		currentAuth, authExists := authRoot[providerID]
-		if !authExists || canonicalJSONHash(currentAuth) != entry.InjectedAuthHash {
+		if !piManagedAuthMatches(authRoot, providerID, entry) {
 			status.Conflict = true
 			return status, nil
 		}
@@ -181,10 +180,10 @@ func (s *PiSettingsService) EnablePlatformProxy(providerID string) error {
 		return err
 	}
 	if existing, managed := state.Platforms[providerID]; managed {
-		if canonicalJSONHash(original) != existing.InjectedProviderHash {
+		if !piManagedProviderConnectionMatches(original, s.platformBaseURL(providerID)) {
 			return fmt.Errorf("Pi 平台 %q 已被外部修改，拒绝覆盖", providerID)
 		}
-		if existing.InjectedAuthHash != "" && (!originalAuthExisted || canonicalJSONHash(originalAuth) != existing.InjectedAuthHash) {
+		if !piManagedAuthMatches(authRoot, providerID, existing) {
 			return fmt.Errorf("Pi 平台 %q 的 auth.json 认证已被外部修改，拒绝覆盖", providerID)
 		}
 		return nil
@@ -214,9 +213,13 @@ func (s *PiSettingsService) EnablePlatformProxy(providerID string) error {
 		state.AuthFileExisted = authFileExisted
 		state.AuthExistenceSet = true
 	}
+	connectionSnapshot, snapshotErr := piProviderConnectionSnapshot(original)
+	if snapshotErr != nil {
+		return fmt.Errorf("保存 Pi 平台 %q 连接快照失败: %w", providerID, snapshotErr)
+	}
 	state.Platforms[providerID] = PiPlatformProxyState{
 		CreatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
-		OriginalProvider:     cloneRawMessage(original),
+		OriginalProvider:     connectionSnapshot,
 		InjectedProviderHash: canonicalJSONHash(managedRaw),
 		OriginalAuthExisted:  originalAuthExisted,
 		OriginalAuth:         cloneRawMessage(originalAuth),
@@ -275,7 +278,7 @@ func (s *PiSettingsService) DisablePlatformProxy(providerID string) error {
 		return err
 	}
 	current, exists := platforms[providerID]
-	if !exists || canonicalJSONHash(current) != entry.InjectedProviderHash {
+	if !exists || !piManagedProviderConnectionMatches(current, s.platformBaseURL(providerID)) {
 		return fmt.Errorf("Pi 平台 %q 已被外部修改，拒绝覆盖；请先处理冲突", providerID)
 	}
 	authRoot, authFileExisted, err := readJSONObjectOrDefault(s.authPath(), map[string]json.RawMessage{})
@@ -283,8 +286,7 @@ func (s *PiSettingsService) DisablePlatformProxy(providerID string) error {
 		return fmt.Errorf("读取 Pi auth.json 失败: %w", err)
 	}
 	if entry.InjectedAuthHash != "" {
-		currentAuth, authExists := authRoot[providerID]
-		if !authExists || canonicalJSONHash(currentAuth) != entry.InjectedAuthHash {
+		if !piManagedAuthMatches(authRoot, providerID, entry) {
 			return fmt.Errorf("Pi 平台 %q 的 auth.json 认证已被外部修改，拒绝覆盖；请先处理冲突", providerID)
 		}
 	}
@@ -296,7 +298,10 @@ func (s *PiSettingsService) DisablePlatformProxy(providerID string) error {
 	if err != nil {
 		return fmt.Errorf("备份 Pi auth.json 失败: %w", err)
 	}
-	platforms[providerID] = cloneRawMessage(entry.OriginalProvider)
+	platforms[providerID], err = restorePiProviderConnection(current, entry.OriginalProvider)
+	if err != nil {
+		return fmt.Errorf("恢复 Pi 平台 %q 连接配置失败: %w", providerID, err)
+	}
 	providersRaw, err := json.Marshal(platforms)
 	if err != nil {
 		return fmt.Errorf("序列化 Pi 平台失败: %w", err)
@@ -563,6 +568,78 @@ func (s *PiSettingsService) relayRootURL() string {
 		addr = "127.0.0.1:18100"
 	}
 	return "http://" + strings.TrimSuffix(addr, "/")
+}
+
+func piManagedProviderConnectionMatches(raw json.RawMessage, managedBaseURL string) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return false
+	}
+	var baseURL, apiKey string
+	_ = json.Unmarshal(fields["baseUrl"], &baseURL)
+	_ = json.Unmarshal(fields["apiKey"], &apiKey)
+	return sameURL(baseURL, managedBaseURL) && apiKey == piGatewayToken && piManagedProviderRoutingCompatible(raw)
+}
+
+func piManagedProviderRoutingCompatible(raw json.RawMessage) bool {
+	var source piModelsProviderFile
+	if err := json.Unmarshal(raw, &source); err != nil {
+		return false
+	}
+	if _, supported := piManagedAPIs[strings.TrimSpace(source.API)]; !supported {
+		return false
+	}
+	for _, model := range source.Models {
+		if strings.TrimSpace(model.BaseURL) != "" {
+			return false
+		}
+		if api := strings.TrimSpace(model.API); api != "" {
+			if _, supported := piManagedAPIs[api]; !supported {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func piManagedAuthMatches(authRoot map[string]json.RawMessage, providerID string, entry PiPlatformProxyState) bool {
+	if entry.InjectedAuthHash == "" {
+		return true
+	}
+	raw, exists := authRoot[providerID]
+	return exists && canonicalJSONHash(raw) == entry.InjectedAuthHash
+}
+
+func piProviderConnectionSnapshot(raw json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	snapshot := make(map[string]json.RawMessage, 2)
+	for _, key := range []string{"baseUrl", "apiKey"} {
+		if value, exists := fields[key]; exists {
+			snapshot[key] = cloneRawMessage(value)
+		}
+	}
+	return marshalOrderedPiProvider(snapshot)
+}
+
+func restorePiProviderConnection(current, original json.RawMessage) (json.RawMessage, error) {
+	var currentFields, originalFields map[string]json.RawMessage
+	if err := json.Unmarshal(current, &currentFields); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(original, &originalFields); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"baseUrl", "apiKey"} {
+		if value, exists := originalFields[key]; exists {
+			currentFields[key] = cloneRawMessage(value)
+		} else {
+			delete(currentFields, key)
+		}
+	}
+	return marshalOrderedPiProvider(currentFields)
 }
 
 func readOptionalFile(path string) ([]byte, bool, error) {

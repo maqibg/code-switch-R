@@ -3,7 +3,10 @@
     <div class="pi-model-selection">
       <div class="selection-toolbar">
         <BaseInput v-model="query" :placeholder="t('piPage.modelSelection.searchPlaceholder')" />
-        <span class="selection-count">{{ selectedIds.size }} / {{ filteredModels.length }}</span>
+        <BaseButton type="button" variant="outline" :disabled="!filteredModels.length" @click="toggleFiltered">
+          {{ allFilteredSelected ? t('piPage.modelSelection.clearFiltered') : t('piPage.modelSelection.selectFiltered') }}
+        </BaseButton>
+        <span class="selection-count">{{ t('piPage.modelSelection.selectedSummary', { selected: selectedIds.size, total: models.length }) }}</span>
       </div>
 
       <p v-if="loading" class="selection-state">{{ t('piPage.modelSelection.loading') }}</p>
@@ -67,6 +70,7 @@ const filteredModels = computed(() => {
   if (!normalized) return props.models
   return props.models.filter((model) => `${model.id} ${model.name || ''}`.toLowerCase().includes(normalized))
 })
+const allFilteredSelected = computed(() => filteredModels.value.length > 0 && filteredModels.value.every((model) => selectedIds.value.has(model.id)))
 
 watch(() => props.open, (open) => {
   if (!open) return
@@ -81,6 +85,13 @@ const toggle = (id: string) => {
   selectedIds.value = next
 }
 
+const toggleFiltered = () => {
+  const next = new Set(selectedIds.value)
+  if (allFilteredSelected.value) filteredModels.value.forEach((model) => next.delete(model.id))
+  else filteredModels.value.forEach((model) => next.add(model.id))
+  selectedIds.value = next
+}
+
 const close = () => emit('close')
 
 const confirmSelection = () => {
@@ -91,8 +102,8 @@ const confirmSelection = () => {
 
 <style scoped>
 .pi-model-selection { display: grid; gap: 14px; }
-.selection-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-.selection-count { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 999px; background: color-mix(in srgb, var(--mac-accent) 9%, var(--mac-surface-strong)); color: var(--mac-accent); font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+.selection-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.selection-count { display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: 999px; background: color-mix(in srgb, var(--mac-accent) 9%, var(--mac-surface-strong)); color: var(--mac-accent); font-size: 0.8125rem; font-weight: 600; white-space: nowrap; }
 .selection-list { display: grid; max-height: 430px; overflow: auto; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); }
 .selection-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 52px; padding: 9px 12px; border-bottom: 1px solid var(--mac-border); cursor: pointer; transition: background .16s ease; }
 .selection-row:last-child { border-bottom: 0; }
@@ -100,10 +111,10 @@ const confirmSelection = () => {
 .selection-row input { width: 16px; height: 16px; accent-color: var(--mac-accent); }
 .selection-copy { display: grid; gap: 3px; min-width: 0; }
 .selection-copy strong, .selection-copy code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.selection-copy strong { color: var(--mac-text); font-size: 0.8rem; font-weight: 600; }
-.selection-copy code { color: var(--mac-text-secondary); font-size: 0.69rem; }
-.selection-badge { display: inline-flex; align-items: center; min-height: 21px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--mac-text-secondary) 10%, transparent); color: var(--mac-text-secondary); font-size: 0.66rem; }
-.selection-state { margin: 0; padding: 24px; border: 1px dashed var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); font-size: 0.76rem; text-align: center; }
+.selection-copy strong { color: var(--mac-text); font-size: 0.875rem; font-weight: 600; }
+.selection-copy code { color: var(--mac-text-secondary); font-size: 0.8125rem; }
+.selection-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--mac-text-secondary) 10%, transparent); color: var(--mac-text-secondary); font-size: 0.74rem; }
+.selection-state { margin: 0; padding: 24px; border: 1px dashed var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); font-size: 0.875rem; text-align: center; }
 .selection-state.error { color: var(--error); }
 .selection-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
 @media (max-width: 560px) {

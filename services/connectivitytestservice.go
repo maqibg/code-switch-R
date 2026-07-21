@@ -98,6 +98,10 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 		SubStatus:    SubStatusNone,
 		LastChecked:  time.Now(),
 	}
+	if strings.EqualFold(strings.TrimSpace(platform), "pi") {
+		result.Message = "Pi 平台不支持连通性测试"
+		return result
+	}
 
 	// 构建测试请求
 	reqBody, contentField := cts.buildTestRequest(platform, &provider)
@@ -361,6 +365,9 @@ func isTimeoutError(err error) bool {
 
 // TestAll 测试指定平台的所有启用检测的供应商
 func (cts *ConnectivityTestService) TestAll(platform string) []ConnectivityResult {
+	if strings.EqualFold(strings.TrimSpace(platform), "pi") {
+		return nil
+	}
 	providers, err := cts.providerService.LoadProviders(platform)
 	if err != nil {
 		log.Printf("[ConnectivityTest] 加载 %s 供应商失败: %v", platform, err)
@@ -575,7 +582,7 @@ func (cts *ConnectivityTestService) stopAutoTest() {
 func (cts *ConnectivityTestService) runAllPlatformTests() {
 	// 仅轮询 ProviderService 支持的平台，避免无意义的错误日志
 	// Gemini 使用独立的 GeminiService，暂未接入
-	for _, platform := range providerPlatformIDs() {
+	for _, platform := range providerBackgroundCheckPlatformIDs() {
 		cts.TestAll(platform)
 	}
 }
@@ -714,6 +721,9 @@ func (cts *ConnectivityTestService) TestProviderManual(
 	// 平台参数校验
 	if platform == "" {
 		platform = "claude"
+	}
+	if strings.EqualFold(strings.TrimSpace(platform), "pi") {
+		return ManualTestResult{Message: "Pi 平台不支持连通性测试"}
 	}
 
 	// 构建临时 Provider

@@ -30,3 +30,28 @@ func TestApplyProviderRequestBodyPolicyRejectsNonAnthropicProtocol(t *testing.T)
 		t.Fatalf("非 Anthropic metadataUserId 应显式拒绝: %v", err)
 	}
 }
+
+func TestApplyProviderRequestBodyPolicyMigratesLegacyGeneratedIdentityToPreserve(t *testing.T) {
+	provider := Provider{RequestIdentity: requestIdentityPointer(ProviderRequestIdentity{
+		TargetCLI: "claude-code", MetadataMode: ProviderMetadataModeGenerated,
+	})}
+	original := []byte(`{"model":"claude","metadata":{"user_id":"pi-user"},"messages":[]}`)
+	body, err := applyProviderRequestBodyPolicyForModel(original, provider, "claude", UpstreamProtocolAnthropic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != string(original) {
+		t.Fatalf("旧 generated 配置应迁移为 preserve: %s", body)
+	}
+}
+
+func TestApplyProviderRequestBodyPolicyOmitsUserIDOnly(t *testing.T) {
+	provider := Provider{RequestIdentity: requestIdentityPointer(ProviderRequestIdentity{MetadataMode: ProviderMetadataModeOmit})}
+	body, err := applyProviderRequestBodyPolicyForModel([]byte(`{"metadata":{"user_id":"private","tenant":"keep"},"messages":[]}`), provider, "claude", UpstreamProtocolAnthropic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gjson.GetBytes(body, "metadata.user_id").Exists() || gjson.GetBytes(body, "metadata.tenant").String() != "keep" {
+		t.Fatalf("metadata.user_id 删除策略错误: %s", body)
+	}
+}

@@ -161,3 +161,18 @@ func TestPiModelsProviderDeleteCascadesPlatformSuppliers(t *testing.T) {
 		t.Fatalf("平台供应商未清理: providers=%#v err=%v", providers, err)
 	}
 }
+
+func TestPiManagedProviderRejectsUnsupportedModelAPI(t *testing.T) {
+	service, _ := newPiPlatformTestService(t, `{"providers":{"custom":{"baseUrl":"https://direct.example/v1","apiKey":"key","api":"openai-completions","models":[{"id":"model-a"}]}}}`)
+	if err := service.EnablePlatformProxy("custom"); err != nil {
+		t.Fatal(err)
+	}
+	template, err := service.GetModelsProvider("custom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	template.Models[0].API = "bedrock-converse-stream"
+	if err := service.UpdateModelsProvider(template); err == nil || !strings.Contains(err.Error(), "不受网关支持") {
+		t.Fatalf("托管平台应拒绝不受网关支持的模型 API: %v", err)
+	}
+}

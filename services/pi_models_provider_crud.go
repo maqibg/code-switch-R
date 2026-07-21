@@ -59,10 +59,23 @@ func (s *PiSettingsService) GetModelsProvider(id string) (PiModelsProviderTempla
 		return PiModelsProviderTemplate{}, stateErr
 	}
 	if managed, ok := state.Platforms[id]; ok {
-		if canonicalJSONHash(raw) != managed.InjectedProviderHash {
+		if !piManagedProviderConnectionMatches(raw, s.platformBaseURL(id)) {
 			return PiModelsProviderTemplate{}, fmt.Errorf("Pi 平台 %q 托管配置已被外部修改，请先处理冲突", id)
 		}
-		raw = managed.OriginalProvider
+		if managed.InjectedAuthHash != "" {
+			authRoot, _, authErr := readJSONObjectOrDefault(s.authPath(), map[string]json.RawMessage{})
+			if authErr != nil {
+				return PiModelsProviderTemplate{}, fmt.Errorf("读取 Pi auth.json 失败: %w", authErr)
+			}
+			if !piManagedAuthMatches(authRoot, id, managed) {
+				return PiModelsProviderTemplate{}, fmt.Errorf("Pi 平台 %q 的 auth.json 认证已被外部修改，请先处理冲突", id)
+			}
+		}
+		var editorRawErr error
+		raw, editorRawErr = restorePiProviderConnection(raw, managed.OriginalProvider)
+		if editorRawErr != nil {
+			return PiModelsProviderTemplate{}, fmt.Errorf("准备 Pi 平台 %q 编辑配置失败: %w", id, editorRawErr)
+		}
 	}
 	var source piModelsProviderFile
 	if err := json.Unmarshal(raw, &source); err != nil {
@@ -109,9 +122,6 @@ func (s *PiSettingsService) UpdateModelsProvider(input PiModelsProviderTemplate)
 	if stateErr != nil {
 		return stateErr
 	}
-	if _, managed := state.Platforms[input.ID]; managed {
-		return fmt.Errorf("Pi 平台 %q 正在托管，请先关闭该平台托管再编辑", input.ID)
-	}
 	root, providers, fingerprint, err := readPiModelsProviderDocument(s.modelsPath())
 	if err != nil {
 		return err
@@ -121,6 +131,36 @@ func (s *PiSettingsService) UpdateModelsProvider(input PiModelsProviderTemplate)
 	}
 	if _, exists := providers[input.ID]; !exists {
 		return fmt.Errorf("Pi models.json Provider 不存在: %s", input.ID)
+	}
+	if managed, isManaged := state.Platforms[input.ID]; isManaged {
+		current := providers[input.ID]
+		if !piManagedProviderConnectionMatches(current, s.platformBaseURL(input.ID)) {
+			return fmt.Errorf("Pi 平台 %q 托管配置已被外部修改，请先处理冲突", input.ID)
+		}
+		if _, supported := piManagedAPIs[input.API]; !supported {
+			return fmt.Errorf("Pi 平台 %q 的 api=%q 暂不支持托管", input.ID, input.API)
+		}
+		for _, model := range input.Models {
+			if strings.TrimSpace(model.BaseURL) != "" {
+				return fmt.Errorf("Pi 平台 %q 的模型 %q 配置了独立 baseUrl，会绕过平台网关", input.ID, model.ID)
+			}
+			if api := strings.TrimSpace(model.API); api != "" {
+				if _, supported := piManagedAPIs[api]; !supported {
+					return fmt.Errorf("Pi 平台 %q 的模型 %q 使用了不受网关支持的 api=%q", input.ID, model.ID, api)
+				}
+			}
+		}
+		if managed.InjectedAuthHash != "" {
+			authRoot, _, authErr := readJSONObjectOrDefault(s.authPath(), map[string]json.RawMessage{})
+			if authErr != nil {
+				return fmt.Errorf("读取 Pi auth.json 失败: %w", authErr)
+			}
+			if !piManagedAuthMatches(authRoot, input.ID, managed) {
+				return fmt.Errorf("Pi 平台 %q 的 auth.json 认证已被外部修改，请先处理冲突", input.ID)
+			}
+		}
+		input.BaseURL = s.platformBaseURL(input.ID)
+		input.APIKey = piGatewayToken
 	}
 	return writePiModelsProviderDocument(s.modelsPath(), root, providers, input)
 }
@@ -264,10 +304,8 @@ func normalizePiModelsProviderTemplate(input PiModelsProviderTemplate) (PiModels
 	if input.ID == "" || len(input.ID) > 64 || !piModelsProviderIDPattern.MatchString(input.ID) {
 		return PiModelsProviderTemplate{}, fmt.Errorf("Provider ID 只能包含字母、数字、点、下划线和连字符，且不能超过 64 个字符")
 	}
-	if input.API != "" {
-		if _, supported := piSupportedAPIs[input.API]; !supported {
-			return PiModelsProviderTemplate{}, fmt.Errorf("Provider API %q 不是当前 Pi 版本支持的 API", input.API)
-		}
+	if input.API != "" && !isSupportedPiAPI(input.API) {
+		return PiModelsProviderTemplate{}, fmt.Errorf("Provider API 端点类型必须是 Pi 内置支持的 9 种类型之一")
 	}
 	if input.BaseURL != "" {
 		parsed, err := url.Parse(input.BaseURL)
@@ -333,14 +371,20 @@ func validateNativePiModelEntry(path string, model PiModelEntry, fallbackAPI str
 		api = fallbackAPI
 	}
 	errors := make([]string, 0)
-	if _, supported := piSupportedAPIs[api]; !supported {
-		errors = append(errors, fmt.Sprintf("%s.api=%q 不是当前 Pi 版本支持的 API", path, api))
+	if !isSupportedPiAPI(api) {
+		errors = append(errors, fmt.Sprintf("%s.api=%q 不是 Pi 内置支持的 API 端点类型", path, api))
 	}
 	errors = append(errors, validatePiModelBasics(path, model.Input, model.ContextWindow, model.MaxTokens, model.ThinkingLevelMap, model.Headers)...)
 	if model.Cost != nil {
 		errors = append(errors, validatePiModelCost(path+".cost", *model.Cost)...)
 	}
 	return errors
+}
+
+func isSupportedPiAPI(value string) bool {
+	value = strings.TrimSpace(value)
+	_, ok := piSupportedAPIs[value]
+	return ok
 }
 
 func validateNativePiModelOverride(path string, override PiModelOverride) []string {

@@ -2500,6 +2500,7 @@ export class PiModelsCatalogModel {
     "id": string;
     "name"?: string;
     "api"?: string;
+    "baseUrl"?: string;
     "reasoning"?: boolean | null;
     "contextWindow"?: number | null;
     "maxTokens"?: number | null;
@@ -2736,6 +2737,112 @@ export class PiModelsProviderTemplate {
     }
 }
 
+export class PiPlatformChangePlan {
+    "providerId": string;
+    "currentMode": string;
+    "targetMode": string;
+    "revision": string;
+    "changes": string[];
+    "blockers": string[];
+
+    /** Creates a new PiPlatformChangePlan instance. */
+    constructor($$source: Partial<PiPlatformChangePlan> = {}) {
+        if (!("providerId" in $$source)) {
+            this["providerId"] = "";
+        }
+        if (!("currentMode" in $$source)) {
+            this["currentMode"] = "";
+        }
+        if (!("targetMode" in $$source)) {
+            this["targetMode"] = "";
+        }
+        if (!("revision" in $$source)) {
+            this["revision"] = "";
+        }
+        if (!("changes" in $$source)) {
+            this["changes"] = [];
+        }
+        if (!("blockers" in $$source)) {
+            this["blockers"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiPlatformChangePlan instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiPlatformChangePlan {
+        const $$createField4_0 = $$createType20;
+        const $$createField5_0 = $$createType20;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("changes" in $$parsedSource) {
+            $$parsedSource["changes"] = $$createField4_0($$parsedSource["changes"]);
+        }
+        if ("blockers" in $$parsedSource) {
+            $$parsedSource["blockers"] = $$createField5_0($$parsedSource["blockers"]);
+        }
+        return new PiPlatformChangePlan($$parsedSource as Partial<PiPlatformChangePlan>);
+    }
+}
+
+export class PiPlatformConflictDetail {
+    "providerId": string;
+    "revision": string;
+    "tracked": boolean;
+    "providerExists": boolean;
+    "providerChanged": boolean;
+    "authExists": boolean;
+    "authChanged": boolean;
+    "canKeepExternal": boolean;
+    "canRestore": boolean;
+    "canRebaseline": boolean;
+
+    /** Creates a new PiPlatformConflictDetail instance. */
+    constructor($$source: Partial<PiPlatformConflictDetail> = {}) {
+        if (!("providerId" in $$source)) {
+            this["providerId"] = "";
+        }
+        if (!("revision" in $$source)) {
+            this["revision"] = "";
+        }
+        if (!("tracked" in $$source)) {
+            this["tracked"] = false;
+        }
+        if (!("providerExists" in $$source)) {
+            this["providerExists"] = false;
+        }
+        if (!("providerChanged" in $$source)) {
+            this["providerChanged"] = false;
+        }
+        if (!("authExists" in $$source)) {
+            this["authExists"] = false;
+        }
+        if (!("authChanged" in $$source)) {
+            this["authChanged"] = false;
+        }
+        if (!("canKeepExternal" in $$source)) {
+            this["canKeepExternal"] = false;
+        }
+        if (!("canRestore" in $$source)) {
+            this["canRestore"] = false;
+        }
+        if (!("canRebaseline" in $$source)) {
+            this["canRebaseline"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiPlatformConflictDetail instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiPlatformConflictDetail {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PiPlatformConflictDetail($$parsedSource as Partial<PiPlatformConflictDetail>);
+    }
+}
+
 export class PiPlatformProxyStatus {
     "providerId": string;
     "enabled": boolean;
@@ -2820,6 +2927,404 @@ export class PiProviderTemplate {
             $$parsedSource["knownModels"] = $$createField7_0($$parsedSource["knownModels"]);
         }
         return new PiProviderTemplate($$parsedSource as Partial<PiProviderTemplate>);
+    }
+}
+
+export class PiRuntimeAuthStatus {
+    "providerId": string;
+    "type": string;
+    "configured": boolean;
+
+    /** Creates a new PiRuntimeAuthStatus instance. */
+    constructor($$source: Partial<PiRuntimeAuthStatus> = {}) {
+        if (!("providerId" in $$source)) {
+            this["providerId"] = "";
+        }
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("configured" in $$source)) {
+            this["configured"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiRuntimeAuthStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiRuntimeAuthStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PiRuntimeAuthStatus($$parsedSource as Partial<PiRuntimeAuthStatus>);
+    }
+}
+
+export class PiRuntimeFileStatus {
+    "path": string;
+    "exists": boolean;
+    "modifiedAt"?: string;
+    "fingerprint"?: string;
+    "error"?: string;
+    "errorLine"?: number;
+    "errorColumn"?: number;
+
+    /** Creates a new PiRuntimeFileStatus instance. */
+    constructor($$source: Partial<PiRuntimeFileStatus> = {}) {
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("exists" in $$source)) {
+            this["exists"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiRuntimeFileStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiRuntimeFileStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PiRuntimeFileStatus($$parsedSource as Partial<PiRuntimeFileStatus>);
+    }
+}
+
+export class PiRuntimePlatform {
+    "providerId": string;
+    "name"?: string;
+    "api"?: string;
+    "baseUrlConfigured": boolean;
+    "apiKeyConfigured": boolean;
+    "credentialSource"?: string;
+    "gatewayUrl"?: string;
+    "headerCount": number;
+    "builtin": boolean;
+    "managed": boolean;
+    "conflict": boolean;
+    "manageable": boolean;
+    "managementBlockers": string[];
+    "models": PiModelsCatalogModel[];
+
+    /** Creates a new PiRuntimePlatform instance. */
+    constructor($$source: Partial<PiRuntimePlatform> = {}) {
+        if (!("providerId" in $$source)) {
+            this["providerId"] = "";
+        }
+        if (!("baseUrlConfigured" in $$source)) {
+            this["baseUrlConfigured"] = false;
+        }
+        if (!("apiKeyConfigured" in $$source)) {
+            this["apiKeyConfigured"] = false;
+        }
+        if (!("headerCount" in $$source)) {
+            this["headerCount"] = 0;
+        }
+        if (!("builtin" in $$source)) {
+            this["builtin"] = false;
+        }
+        if (!("managed" in $$source)) {
+            this["managed"] = false;
+        }
+        if (!("conflict" in $$source)) {
+            this["conflict"] = false;
+        }
+        if (!("manageable" in $$source)) {
+            this["manageable"] = false;
+        }
+        if (!("managementBlockers" in $$source)) {
+            this["managementBlockers"] = [];
+        }
+        if (!("models" in $$source)) {
+            this["models"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiRuntimePlatform instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiRuntimePlatform {
+        const $$createField12_0 = $$createType20;
+        const $$createField13_0 = $$createType39;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("managementBlockers" in $$parsedSource) {
+            $$parsedSource["managementBlockers"] = $$createField12_0($$parsedSource["managementBlockers"]);
+        }
+        if ("models" in $$parsedSource) {
+            $$parsedSource["models"] = $$createField13_0($$parsedSource["models"]);
+        }
+        return new PiRuntimePlatform($$parsedSource as Partial<PiRuntimePlatform>);
+    }
+}
+
+export class PiRuntimeSettings {
+    "defaultProvider"?: string;
+    "defaultModel"?: string;
+    "enabledModels": string[];
+
+    /** Creates a new PiRuntimeSettings instance. */
+    constructor($$source: Partial<PiRuntimeSettings> = {}) {
+        if (!("enabledModels" in $$source)) {
+            this["enabledModels"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiRuntimeSettings instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiRuntimeSettings {
+        const $$createField2_0 = $$createType20;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("enabledModels" in $$parsedSource) {
+            $$parsedSource["enabledModels"] = $$createField2_0($$parsedSource["enabledModels"]);
+        }
+        return new PiRuntimeSettings($$parsedSource as Partial<PiRuntimeSettings>);
+    }
+}
+
+export class PiRuntimeSnapshot {
+    "configDir": string;
+    "detected": boolean;
+    "initialized": boolean;
+    "revision": string;
+    "legacyGatewayTracked": boolean;
+    "modelsFile": PiRuntimeFileStatus;
+    "authFile": PiRuntimeFileStatus;
+    "settingsFile": PiRuntimeFileStatus;
+    "settings": PiRuntimeSettings;
+    "auth": PiRuntimeAuthStatus[];
+    "builtinProviders": string[];
+    "platforms": PiRuntimePlatform[];
+    "suppliers": PiRuntimeSupplier[];
+    "debugLogging": boolean;
+
+    /** Creates a new PiRuntimeSnapshot instance. */
+    constructor($$source: Partial<PiRuntimeSnapshot> = {}) {
+        if (!("configDir" in $$source)) {
+            this["configDir"] = "";
+        }
+        if (!("detected" in $$source)) {
+            this["detected"] = false;
+        }
+        if (!("initialized" in $$source)) {
+            this["initialized"] = false;
+        }
+        if (!("revision" in $$source)) {
+            this["revision"] = "";
+        }
+        if (!("legacyGatewayTracked" in $$source)) {
+            this["legacyGatewayTracked"] = false;
+        }
+        if (!("modelsFile" in $$source)) {
+            this["modelsFile"] = (new PiRuntimeFileStatus());
+        }
+        if (!("authFile" in $$source)) {
+            this["authFile"] = (new PiRuntimeFileStatus());
+        }
+        if (!("settingsFile" in $$source)) {
+            this["settingsFile"] = (new PiRuntimeFileStatus());
+        }
+        if (!("settings" in $$source)) {
+            this["settings"] = (new PiRuntimeSettings());
+        }
+        if (!("auth" in $$source)) {
+            this["auth"] = [];
+        }
+        if (!("builtinProviders" in $$source)) {
+            this["builtinProviders"] = [];
+        }
+        if (!("platforms" in $$source)) {
+            this["platforms"] = [];
+        }
+        if (!("suppliers" in $$source)) {
+            this["suppliers"] = [];
+        }
+        if (!("debugLogging" in $$source)) {
+            this["debugLogging"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiRuntimeSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiRuntimeSnapshot {
+        const $$createField5_0 = $$createType49;
+        const $$createField6_0 = $$createType49;
+        const $$createField7_0 = $$createType49;
+        const $$createField8_0 = $$createType50;
+        const $$createField9_0 = $$createType52;
+        const $$createField10_0 = $$createType20;
+        const $$createField11_0 = $$createType54;
+        const $$createField12_0 = $$createType56;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("modelsFile" in $$parsedSource) {
+            $$parsedSource["modelsFile"] = $$createField5_0($$parsedSource["modelsFile"]);
+        }
+        if ("authFile" in $$parsedSource) {
+            $$parsedSource["authFile"] = $$createField6_0($$parsedSource["authFile"]);
+        }
+        if ("settingsFile" in $$parsedSource) {
+            $$parsedSource["settingsFile"] = $$createField7_0($$parsedSource["settingsFile"]);
+        }
+        if ("settings" in $$parsedSource) {
+            $$parsedSource["settings"] = $$createField8_0($$parsedSource["settings"]);
+        }
+        if ("auth" in $$parsedSource) {
+            $$parsedSource["auth"] = $$createField9_0($$parsedSource["auth"]);
+        }
+        if ("builtinProviders" in $$parsedSource) {
+            $$parsedSource["builtinProviders"] = $$createField10_0($$parsedSource["builtinProviders"]);
+        }
+        if ("platforms" in $$parsedSource) {
+            $$parsedSource["platforms"] = $$createField11_0($$parsedSource["platforms"]);
+        }
+        if ("suppliers" in $$parsedSource) {
+            $$parsedSource["suppliers"] = $$createField12_0($$parsedSource["suppliers"]);
+        }
+        return new PiRuntimeSnapshot($$parsedSource as Partial<PiRuntimeSnapshot>);
+    }
+}
+
+export class PiRuntimeSupplier {
+    "id": number;
+    "name": string;
+    "platformId": string;
+    "enabled": boolean;
+    "level": number;
+    "modelCount": number;
+    "urlConfigured": boolean;
+    "keyConfigured": boolean;
+    "urlHost"?: string;
+    "protocol"?: string;
+    "identityTemplateId"?: string;
+    "identityName"?: string;
+    "identityMode"?: string;
+    "targetCli"?: string;
+    "userAgent"?: string;
+    "identityHeaderNames": string[];
+    "metadataMode"?: string;
+    "authScheme"?: string;
+    "modelIdentityCount": number;
+
+    /** Creates a new PiRuntimeSupplier instance. */
+    constructor($$source: Partial<PiRuntimeSupplier> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("platformId" in $$source)) {
+            this["platformId"] = "";
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("level" in $$source)) {
+            this["level"] = 0;
+        }
+        if (!("modelCount" in $$source)) {
+            this["modelCount"] = 0;
+        }
+        if (!("urlConfigured" in $$source)) {
+            this["urlConfigured"] = false;
+        }
+        if (!("keyConfigured" in $$source)) {
+            this["keyConfigured"] = false;
+        }
+        if (!("identityHeaderNames" in $$source)) {
+            this["identityHeaderNames"] = [];
+        }
+        if (!("modelIdentityCount" in $$source)) {
+            this["modelIdentityCount"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiRuntimeSupplier instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiRuntimeSupplier {
+        const $$createField15_0 = $$createType20;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("identityHeaderNames" in $$parsedSource) {
+            $$parsedSource["identityHeaderNames"] = $$createField15_0($$parsedSource["identityHeaderNames"]);
+        }
+        return new PiRuntimeSupplier($$parsedSource as Partial<PiRuntimeSupplier>);
+    }
+}
+
+export class PiSupplierMutationRequest {
+    "action": string;
+    "expectedRevision": string;
+    "providerId"?: number;
+    "provider": Provider;
+    "newPlatformModels"?: PiModelEntry[];
+
+    /** Creates a new PiSupplierMutationRequest instance. */
+    constructor($$source: Partial<PiSupplierMutationRequest> = {}) {
+        if (!("action" in $$source)) {
+            this["action"] = "";
+        }
+        if (!("expectedRevision" in $$source)) {
+            this["expectedRevision"] = "";
+        }
+        if (!("provider" in $$source)) {
+            this["provider"] = (new Provider());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiSupplierMutationRequest instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiSupplierMutationRequest {
+        const $$createField3_0 = $$createType40;
+        const $$createField4_0 = $$createType45;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("provider" in $$parsedSource) {
+            $$parsedSource["provider"] = $$createField3_0($$parsedSource["provider"]);
+        }
+        if ("newPlatformModels" in $$parsedSource) {
+            $$parsedSource["newPlatformModels"] = $$createField4_0($$parsedSource["newPlatformModels"]);
+        }
+        return new PiSupplierMutationRequest($$parsedSource as Partial<PiSupplierMutationRequest>);
+    }
+}
+
+export class PiSupplierMutationResult {
+    "provider": Provider;
+    "revision": string;
+
+    /** Creates a new PiSupplierMutationResult instance. */
+    constructor($$source: Partial<PiSupplierMutationResult> = {}) {
+        if (!("provider" in $$source)) {
+            this["provider"] = (new Provider());
+        }
+        if (!("revision" in $$source)) {
+            this["revision"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiSupplierMutationResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiSupplierMutationResult {
+        const $$createField0_0 = $$createType40;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("provider" in $$parsedSource) {
+            $$parsedSource["provider"] = $$createField0_0($$parsedSource["provider"]);
+        }
+        return new PiSupplierMutationResult($$parsedSource as Partial<PiSupplierMutationResult>);
     }
 }
 
@@ -3041,6 +3546,13 @@ export class Provider {
     "customUserAgent"?: string;
 
     /**
+     * RequestIdentity is the post-Pi relay identity applied to the real upstream.
+     * ModelRequestIdentities may replace it for an individual mapped upstream model.
+     */
+    "requestIdentity"?: ProviderRequestIdentity | null;
+    "modelRequestIdentities"?: { [_ in string]?: ProviderRequestIdentity };
+
+    /**
      * ModelsEndpoint overrides model discovery only and does not affect inference requests.
      */
     "modelsEndpoint"?: string;
@@ -3131,12 +3643,14 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField11_0 = $$createType49;
+        const $$createField11_0 = $$createType57;
         const $$createField12_0 = $$createType4;
-        const $$createField16_0 = $$createType51;
+        const $$createField16_0 = $$createType59;
         const $$createField21_0 = $$createType4;
-        const $$createField25_0 = $$createType45;
-        const $$createField26_0 = $$createType47;
+        const $$createField24_0 = $$createType61;
+        const $$createField25_0 = $$createType62;
+        const $$createField27_0 = $$createType45;
+        const $$createField28_0 = $$createType47;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("supportedModels" in $$parsedSource) {
             $$parsedSource["supportedModels"] = $$createField11_0($$parsedSource["supportedModels"]);
@@ -3150,11 +3664,17 @@ export class Provider {
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField21_0($$parsedSource["headers"]);
         }
+        if ("requestIdentity" in $$parsedSource) {
+            $$parsedSource["requestIdentity"] = $$createField24_0($$parsedSource["requestIdentity"]);
+        }
+        if ("modelRequestIdentities" in $$parsedSource) {
+            $$parsedSource["modelRequestIdentities"] = $$createField25_0($$parsedSource["modelRequestIdentities"]);
+        }
         if ("piModels" in $$parsedSource) {
-            $$parsedSource["piModels"] = $$createField25_0($$parsedSource["piModels"]);
+            $$parsedSource["piModels"] = $$createField27_0($$parsedSource["piModels"]);
         }
         if ("piModelOverrides" in $$parsedSource) {
-            $$parsedSource["piModelOverrides"] = $$createField26_0($$parsedSource["piModelOverrides"]);
+            $$parsedSource["piModelOverrides"] = $$createField28_0($$parsedSource["piModelOverrides"]);
         }
         return new Provider($$parsedSource as Partial<Provider>);
     }
@@ -3270,7 +3790,7 @@ export class ProviderModelDiscoveryResult {
      * Creates a new ProviderModelDiscoveryResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryResult {
-        const $$createField0_0 = $$createType53;
+        const $$createField0_0 = $$createType64;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField0_0($$parsedSource["models"]);
@@ -3279,11 +3799,44 @@ export class ProviderModelDiscoveryResult {
     }
 }
 
+export class ProviderRequestIdentity {
+    "templateId"?: string;
+    "name"?: string;
+    "targetCli"?: string;
+    "customCliName"?: string;
+    "targetProtocol"?: string;
+    "mode"?: string;
+    "headers"?: { [_ in string]?: string };
+    "userAgentPreset"?: string;
+    "customUserAgent"?: string;
+    "metadataMode"?: string;
+    "metadataUserId"?: string;
+
+    /** Creates a new ProviderRequestIdentity instance. */
+    constructor($$source: Partial<ProviderRequestIdentity> = {}) {
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProviderRequestIdentity instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProviderRequestIdentity {
+        const $$createField6_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField6_0($$parsedSource["headers"]);
+        }
+        return new ProviderRequestIdentity($$parsedSource as Partial<ProviderRequestIdentity>);
+    }
+}
+
 export class ProviderRequestTemplate {
     "id": string;
     "name": string;
     "headers": { [_ in string]?: string };
     "metadataUserId"?: string;
+    "identity"?: ProviderRequestIdentity | null;
     "builtIn"?: boolean;
 
     /** Creates a new ProviderRequestTemplate instance. */
@@ -3306,9 +3859,13 @@ export class ProviderRequestTemplate {
      */
     static createFrom($$source: any = {}): ProviderRequestTemplate {
         const $$createField2_0 = $$createType4;
+        const $$createField4_0 = $$createType61;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
+        }
+        if ("identity" in $$parsedSource) {
+            $$parsedSource["identity"] = $$createField4_0($$parsedSource["identity"]);
         }
         return new ProviderRequestTemplate($$parsedSource as Partial<ProviderRequestTemplate>);
     }
@@ -3386,7 +3943,7 @@ export class ProviderTimeline {
      * Creates a new ProviderTimeline instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderTimeline {
-        const $$createField5_0 = $$createType51;
+        const $$createField5_0 = $$createType59;
         const $$createField6_0 = $$createType22;
         const $$createField7_0 = $$createType23;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
@@ -3550,7 +4107,7 @@ export class RecordCleanupResult {
      * Creates a new RecordCleanupResult instance from a string or object.
      */
     static createFrom($$source: any = {}): RecordCleanupResult {
-        const $$createField3_0 = $$createType54;
+        const $$createField3_0 = $$createType65;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storage" in $$parsedSource) {
             $$parsedSource["storage"] = $$createField3_0($$parsedSource["storage"]);
@@ -4208,9 +4765,20 @@ const $$createType45 = $Create.Array($$createType44);
 const $$createType46 = PiModelOverride.createFrom;
 const $$createType47 = $Create.Map($Create.Any, $$createType46);
 const $$createType48 = $Create.Map($Create.Any, $$createType44);
-const $$createType49 = $Create.Map($Create.Any, $Create.Any);
-const $$createType50 = AvailabilityConfig.createFrom;
-const $$createType51 = $Create.Nullable($$createType50);
-const $$createType52 = DiscoveredModel.createFrom;
-const $$createType53 = $Create.Array($$createType52);
-const $$createType54 = RecordStorageInfo.createFrom;
+const $$createType49 = PiRuntimeFileStatus.createFrom;
+const $$createType50 = PiRuntimeSettings.createFrom;
+const $$createType51 = PiRuntimeAuthStatus.createFrom;
+const $$createType52 = $Create.Array($$createType51);
+const $$createType53 = PiRuntimePlatform.createFrom;
+const $$createType54 = $Create.Array($$createType53);
+const $$createType55 = PiRuntimeSupplier.createFrom;
+const $$createType56 = $Create.Array($$createType55);
+const $$createType57 = $Create.Map($Create.Any, $Create.Any);
+const $$createType58 = AvailabilityConfig.createFrom;
+const $$createType59 = $Create.Nullable($$createType58);
+const $$createType60 = ProviderRequestIdentity.createFrom;
+const $$createType61 = $Create.Nullable($$createType60);
+const $$createType62 = $Create.Map($Create.Any, $$createType60);
+const $$createType63 = DiscoveredModel.createFrom;
+const $$createType64 = $Create.Array($$createType63);
+const $$createType65 = RecordStorageInfo.createFrom;

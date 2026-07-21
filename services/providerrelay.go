@@ -393,6 +393,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			bodyBytes = data
 			c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
+		if kind == "pi" {
+			logPiDebugInbound(c.GetString(piPlatformContextKey), endpoint, flattenQuery(c.Request.URL.Query()), cloneHeaders(c.Request.Header), bodyBytes)
+		}
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
@@ -479,6 +482,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				c.JSON(http.StatusNotFound, gin.H{"error": "no providers available"})
 			}
 			return
+		}
+		if kind == "pi" {
+			logPiDebugRoute(piPlatform, requestedModel, endpoint, active)
 		}
 
 		fmt.Printf("[INFO] 找到 %d 个可用的 provider（已过滤 %d 个）：", len(active), skippedCount)
@@ -858,19 +864,25 @@ func (prs *ProviderRelayService) forwardRequest(
 	if forwardErr != nil {
 		return false, forwardErr
 	}
-	execution.BodyBytes, forwardErr = applyProviderRequestBodyPolicy(execution.BodyBytes, provider, execution.UpstreamProtocol)
+	execution.BodyBytes, forwardErr = applyProviderRequestBodyPolicyForModel(execution.BodyBytes, provider, model, execution.UpstreamProtocol)
 	if forwardErr != nil {
 		return false, forwardErr
 	}
 	if execution.UseCodexContinue {
 		return prs.forwardCodexResponsesWithContinue(c, execution, endpoint, query, clientHeaders, bodyBytes, model, &requestLog)
 	}
-	headers, forwardErr := buildUpstreamHeaders(provider, kind, clientHeaders, execution.UpstreamProtocol)
+	headers, forwardErr := buildUpstreamHeadersForModel(provider, kind, model, clientHeaders, execution.UpstreamProtocol)
 	if forwardErr != nil {
 		return false, forwardErr
 	}
 	bodyBytes = execution.BodyBytes
+	if forwardErr = applyBodyAwareRequestIdentityHeaders(headers, provider, model, bodyBytes, execution.UpstreamProtocol); forwardErr != nil {
+		return false, forwardErr
+	}
 	targetURL := joinURL(provider.APIURL, execution.TargetEndpoint)
+	if kind == "pi" {
+		logPiDebugUpstream(provider.piPlatformKey(), provider, targetURL, query, headers, bodyBytes)
+	}
 
 	req := xrequest.New().
 		SetHeaders(headers).
@@ -900,6 +912,9 @@ func (prs *ProviderRelayService) forwardRequest(
 	// 无论成功失败，先尝试记录 HttpCode
 	if resp != nil {
 		requestLog.HttpCode = resp.StatusCode()
+		if kind == "pi" {
+			logPiDebugResponse(provider.Name, requestLog.HttpCode)
+		}
 	}
 
 	if err != nil {
