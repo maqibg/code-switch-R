@@ -28,7 +28,6 @@ export class AppSettings {
     "budget_forecast_method_codex": string;
     "auto_start": boolean;
     "auto_update": boolean;
-    "auto_connectivity_test": boolean;
 
     /**
      * 供应商切换通知开关
@@ -112,9 +111,6 @@ export class AppSettings {
         if (!("auto_update" in $$source)) {
             this["auto_update"] = false;
         }
-        if (!("auto_connectivity_test" in $$source)) {
-            this["auto_connectivity_test"] = false;
-        }
         if (!("enable_switch_notify" in $$source)) {
             this["enable_switch_notify"] = false;
         }
@@ -147,23 +143,11 @@ export class AppSettings {
 }
 
 /**
- * AvailabilityConfig 可用性监控高级配置
- * 在可用性页面的"高级配置"弹窗中设置，可选
+ * AvailabilityConfig 仅用于兼容读取已删除的可用性配置。
  */
 export class AvailabilityConfig {
-    /**
-     * 覆盖默认测试模型
-     */
     "testModel"?: string;
-
-    /**
-     * 覆盖默认测试端点
-     */
     "testEndpoint"?: string;
-
-    /**
-     * 覆盖默认超时（毫秒）
-     */
     "timeout"?: number;
 
     /** Creates a new AvailabilityConfig instance. */
@@ -835,56 +819,6 @@ export class ConfigureResult {
 }
 
 /**
- * ConnectivityResult 连通性测试结果
- */
-export class ConnectivityResult {
-    "providerId": number;
-    "providerName": string;
-    "platform": string;
-    "status": number;
-    "subStatus": string;
-    "latencyMs": number;
-    "lastChecked": string;
-    "message"?: string;
-    "httpCode"?: number;
-
-    /** Creates a new ConnectivityResult instance. */
-    constructor($$source: Partial<ConnectivityResult> = {}) {
-        if (!("providerId" in $$source)) {
-            this["providerId"] = 0;
-        }
-        if (!("providerName" in $$source)) {
-            this["providerName"] = "";
-        }
-        if (!("platform" in $$source)) {
-            this["platform"] = "";
-        }
-        if (!("status" in $$source)) {
-            this["status"] = 0;
-        }
-        if (!("subStatus" in $$source)) {
-            this["subStatus"] = "";
-        }
-        if (!("latencyMs" in $$source)) {
-            this["latencyMs"] = 0;
-        }
-        if (!("lastChecked" in $$source)) {
-            this["lastChecked"] = "0001-01-01T00:00:00.000Z";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ConnectivityResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ConnectivityResult {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ConnectivityResult($$parsedSource as Partial<ConnectivityResult>);
-    }
-}
-
-/**
  * ConsoleLog 控制台日志条目
  */
 export class ConsoleLog {
@@ -1286,51 +1220,6 @@ export class DiscoveredModel {
 }
 
 /**
- * EndpointLatency 端点延迟测试结果
- */
-export class EndpointLatency {
-    /**
-     * 端点 URL
-     */
-    "url": string;
-
-    /**
-     * 延迟（毫秒），nil 表示失败
-     */
-    "latency": number | null;
-
-    /**
-     * HTTP 状态码
-     */
-    "status"?: number | null;
-
-    /**
-     * 错误信息
-     */
-    "error"?: string | null;
-
-    /** Creates a new EndpointLatency instance. */
-    constructor($$source: Partial<EndpointLatency> = {}) {
-        if (!("url" in $$source)) {
-            this["url"] = "";
-        }
-        if (!("latency" in $$source)) {
-            this["latency"] = null;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new EndpointLatency instance from a string or object.
-     */
-    static createFrom($$source: any = {}): EndpointLatency {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new EndpointLatency($$parsedSource as Partial<EndpointLatency>);
-    }
-}
-
-/**
  * EnvConflict 环境变量冲突
  */
 export class EnvConflict {
@@ -1648,148 +1537,6 @@ export class GeminiStatus {
     }
 }
 
-/**
- * HealthCheckHistory 健康检查历史（单个 Provider 的时间线）
- */
-export class HealthCheckHistory {
-    "providerId": number;
-    "providerName": string;
-    "platform": string;
-
-    /**
-     * 历史记录（最近 N 条）
-     */
-    "items": HealthCheckResult[];
-
-    /**
-     * 最新一条
-     */
-    "latest": HealthCheckResult | null;
-
-    /**
-     * 可用率（%）
-     */
-    "uptime": number;
-
-    /**
-     * 平均延迟
-     */
-    "avgLatencyMs": number;
-
-    /** Creates a new HealthCheckHistory instance. */
-    constructor($$source: Partial<HealthCheckHistory> = {}) {
-        if (!("providerId" in $$source)) {
-            this["providerId"] = 0;
-        }
-        if (!("providerName" in $$source)) {
-            this["providerName"] = "";
-        }
-        if (!("platform" in $$source)) {
-            this["platform"] = "";
-        }
-        if (!("items" in $$source)) {
-            this["items"] = [];
-        }
-        if (!("latest" in $$source)) {
-            this["latest"] = null;
-        }
-        if (!("uptime" in $$source)) {
-            this["uptime"] = 0;
-        }
-        if (!("avgLatencyMs" in $$source)) {
-            this["avgLatencyMs"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new HealthCheckHistory instance from a string or object.
-     */
-    static createFrom($$source: any = {}): HealthCheckHistory {
-        const $$createField3_0 = $$createType22;
-        const $$createField4_0 = $$createType23;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("items" in $$parsedSource) {
-            $$parsedSource["items"] = $$createField3_0($$parsedSource["items"]);
-        }
-        if ("latest" in $$parsedSource) {
-            $$parsedSource["latest"] = $$createField4_0($$parsedSource["latest"]);
-        }
-        return new HealthCheckHistory($$parsedSource as Partial<HealthCheckHistory>);
-    }
-}
-
-/**
- * HealthCheckResult 健康检查结果
- */
-export class HealthCheckResult {
-    "id": number;
-    "providerId": number;
-    "providerName": string;
-    "platform": string;
-    "model"?: string;
-    "endpoint"?: string;
-
-    /**
-     * operational/degraded/failed/validation_failed
-     */
-    "status": string;
-
-    /**
-     * 响应延迟（毫秒）
-     */
-    "latencyMs": number;
-
-    /**
-     * 错误消息
-     */
-    "errorMessage": string;
-
-    /**
-     * 检测时间
-     */
-    "checkedAt": string;
-
-    /** Creates a new HealthCheckResult instance. */
-    constructor($$source: Partial<HealthCheckResult> = {}) {
-        if (!("id" in $$source)) {
-            this["id"] = 0;
-        }
-        if (!("providerId" in $$source)) {
-            this["providerId"] = 0;
-        }
-        if (!("providerName" in $$source)) {
-            this["providerName"] = "";
-        }
-        if (!("platform" in $$source)) {
-            this["platform"] = "";
-        }
-        if (!("status" in $$source)) {
-            this["status"] = "";
-        }
-        if (!("latencyMs" in $$source)) {
-            this["latencyMs"] = 0;
-        }
-        if (!("errorMessage" in $$source)) {
-            this["errorMessage"] = "";
-        }
-        if (!("checkedAt" in $$source)) {
-            this["checkedAt"] = "0001-01-01T00:00:00.000Z";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new HealthCheckResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): HealthCheckResult {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new HealthCheckResult($$parsedSource as Partial<HealthCheckResult>);
-    }
-}
-
 export class HeatmapStat {
     "day": string;
     "total_requests": number;
@@ -1950,7 +1697,7 @@ export class LogStats {
      * Creates a new LogStats instance from a string or object.
      */
     static createFrom($$source: any = {}): LogStats {
-        const $$createField12_0 = $$createType25;
+        const $$createField12_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("series" in $$parsedSource) {
             $$parsedSource["series"] = $$createField12_0($$parsedSource["series"]);
@@ -2035,7 +1782,7 @@ export class MCPParseResult {
      * Creates a new MCPParseResult instance from a string or object.
      */
     static createFrom($$source: any = {}): MCPParseResult {
-        const $$createField0_0 = $$createType27;
+        const $$createField0_0 = $$createType24;
         const $$createField1_0 = $$createType20;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("servers" in $$parsedSource) {
@@ -2253,7 +2000,7 @@ export class NetworkSettings {
      * Creates a new NetworkSettings instance from a string or object.
      */
     static createFrom($$source: any = {}): NetworkSettings {
-        const $$createField4_0 = $$createType28;
+        const $$createField4_0 = $$createType25;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("targetCli" in $$parsedSource) {
             $$parsedSource["targetCli"] = $$createField4_0($$parsedSource["targetCli"]);
@@ -2322,7 +2069,7 @@ export class PiModelCost {
      * Creates a new PiModelCost instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelCost {
-        const $$createField4_0 = $$createType30;
+        const $$createField4_0 = $$createType27;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("tiers" in $$parsedSource) {
             $$parsedSource["tiers"] = $$createField4_0($$parsedSource["tiers"]);
@@ -2399,9 +2146,9 @@ export class PiModelEntry {
      * Creates a new PiModelEntry instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelEntry {
-        const $$createField5_0 = $$createType31;
+        const $$createField5_0 = $$createType28;
         const $$createField6_0 = $$createType20;
-        const $$createField9_0 = $$createType33;
+        const $$createField9_0 = $$createType30;
         const $$createField10_0 = $$createType4;
         const $$createField11_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
@@ -2445,9 +2192,9 @@ export class PiModelOverride {
      * Creates a new PiModelOverride instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelOverride {
-        const $$createField2_0 = $$createType31;
+        const $$createField2_0 = $$createType28;
         const $$createField3_0 = $$createType20;
-        const $$createField6_0 = $$createType35;
+        const $$createField6_0 = $$createType32;
         const $$createField7_0 = $$createType4;
         const $$createField8_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
@@ -2487,7 +2234,7 @@ export class PiModelOverrideCost {
      * Creates a new PiModelOverrideCost instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelOverrideCost {
-        const $$createField4_0 = $$createType30;
+        const $$createField4_0 = $$createType27;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("tiers" in $$parsedSource) {
             $$parsedSource["tiers"] = $$createField4_0($$parsedSource["tiers"]);
@@ -2565,7 +2312,7 @@ export class PiModelsCatalogSnapshot {
      * Creates a new PiModelsCatalogSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsCatalogSnapshot {
-        const $$createField10_0 = $$createType37;
+        const $$createField10_0 = $$createType34;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("templates" in $$parsedSource) {
             $$parsedSource["templates"] = $$createField10_0($$parsedSource["templates"]);
@@ -2606,7 +2353,7 @@ export class PiModelsCatalogTemplate {
      * Creates a new PiModelsCatalogTemplate instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsCatalogTemplate {
-        const $$createField7_0 = $$createType39;
+        const $$createField7_0 = $$createType36;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField7_0($$parsedSource["models"]);
@@ -2630,7 +2377,7 @@ export class PiModelsPreviewRequest {
      * Creates a new PiModelsPreviewRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsPreviewRequest {
-        const $$createField0_0 = $$createType41;
+        const $$createField0_0 = $$createType38;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("providers" in $$parsedSource) {
             $$parsedSource["providers"] = $$createField0_0($$parsedSource["providers"]);
@@ -2665,7 +2412,7 @@ export class PiModelsPreviewResult {
      */
     static createFrom($$source: any = {}): PiModelsPreviewResult {
         const $$createField1_0 = $$createType20;
-        const $$createField3_0 = $$createType43;
+        const $$createField3_0 = $$createType40;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("currentModelIds" in $$parsedSource) {
             $$parsedSource["currentModelIds"] = $$createField1_0($$parsedSource["currentModelIds"]);
@@ -2718,8 +2465,8 @@ export class PiModelsProviderTemplate {
     static createFrom($$source: any = {}): PiModelsProviderTemplate {
         const $$createField6_0 = $$createType4;
         const $$createField8_0 = $$createType5;
-        const $$createField9_0 = $$createType45;
-        const $$createField10_0 = $$createType47;
+        const $$createField9_0 = $$createType42;
+        const $$createField10_0 = $$createType44;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField6_0($$parsedSource["headers"]);
@@ -2921,7 +2668,7 @@ export class PiProviderTemplate {
      * Creates a new PiProviderTemplate instance from a string or object.
      */
     static createFrom($$source: any = {}): PiProviderTemplate {
-        const $$createField7_0 = $$createType48;
+        const $$createField7_0 = $$createType45;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("knownModels" in $$parsedSource) {
             $$parsedSource["knownModels"] = $$createField7_0($$parsedSource["knownModels"]);
@@ -3046,7 +2793,7 @@ export class PiRuntimePlatform {
      */
     static createFrom($$source: any = {}): PiRuntimePlatform {
         const $$createField12_0 = $$createType20;
-        const $$createField13_0 = $$createType39;
+        const $$createField13_0 = $$createType36;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("managementBlockers" in $$parsedSource) {
             $$parsedSource["managementBlockers"] = $$createField12_0($$parsedSource["managementBlockers"]);
@@ -3153,14 +2900,14 @@ export class PiRuntimeSnapshot {
      * Creates a new PiRuntimeSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PiRuntimeSnapshot {
-        const $$createField5_0 = $$createType49;
-        const $$createField6_0 = $$createType49;
-        const $$createField7_0 = $$createType49;
-        const $$createField8_0 = $$createType50;
-        const $$createField9_0 = $$createType52;
+        const $$createField5_0 = $$createType46;
+        const $$createField6_0 = $$createType46;
+        const $$createField7_0 = $$createType46;
+        const $$createField8_0 = $$createType47;
+        const $$createField9_0 = $$createType49;
         const $$createField10_0 = $$createType20;
-        const $$createField11_0 = $$createType54;
-        const $$createField12_0 = $$createType56;
+        const $$createField11_0 = $$createType51;
+        const $$createField12_0 = $$createType53;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("modelsFile" in $$parsedSource) {
             $$parsedSource["modelsFile"] = $$createField5_0($$parsedSource["modelsFile"]);
@@ -3286,8 +3033,8 @@ export class PiSupplierMutationRequest {
      * Creates a new PiSupplierMutationRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): PiSupplierMutationRequest {
-        const $$createField3_0 = $$createType40;
-        const $$createField4_0 = $$createType45;
+        const $$createField3_0 = $$createType37;
+        const $$createField4_0 = $$createType42;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField3_0($$parsedSource["provider"]);
@@ -3319,7 +3066,7 @@ export class PiSupplierMutationResult {
      * Creates a new PiSupplierMutationResult instance from a string or object.
      */
     static createFrom($$source: any = {}): PiSupplierMutationResult {
-        const $$createField0_0 = $$createType40;
+        const $$createField0_0 = $$createType37;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField0_0($$parsedSource["provider"]);
@@ -3494,21 +3241,10 @@ export class Provider {
     "level"?: number;
 
     /**
-     * 可用性监控开关 - 在可用性页面配置
-     * 启用后才会执行后台健康检查
+     * 已删除的可用性功能字段，仅用于兼容旧 Provider JSON，不再影响运行时。
      */
     "availabilityMonitorEnabled"?: boolean;
-
-    /**
-     * 连通性自动拉黑开关 - 在 Provider 编辑页面配置
-     * 前置条件：AvailabilityMonitorEnabled 必须为 true
-     * 启用后，当健康检查连续失败达到阈值时自动拉黑
-     */
     "connectivityAutoBlacklist"?: boolean;
-
-    /**
-     * 可用性高级配置 - 可选，在可用性页面的"高级配置"中设置
-     */
     "availabilityConfig"?: AvailabilityConfig | null;
 
     /**
@@ -3592,18 +3328,10 @@ export class Provider {
     "codexReasoningContinueLogEnabled"?: boolean | null;
 
     /**
-     * [已废弃] 连通性检测开关 - 迁移到 AvailabilityMonitorEnabled
+     * 已删除的旧连通性功能字段，仅用于兼容旧 Provider JSON。
      */
     "connectivityCheck"?: boolean;
-
-    /**
-     * [已废弃] 连通性检测模型 - 迁移到 AvailabilityConfig.TestModel
-     */
     "connectivityTestModel"?: string;
-
-    /**
-     * [已废弃] 连通性检测端点 - 迁移到 AvailabilityConfig.TestEndpoint
-     */
     "connectivityTestEndpoint"?: string;
 
     /** Creates a new Provider instance. */
@@ -3643,14 +3371,14 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField11_0 = $$createType57;
+        const $$createField11_0 = $$createType54;
         const $$createField12_0 = $$createType4;
-        const $$createField16_0 = $$createType59;
+        const $$createField16_0 = $$createType56;
         const $$createField21_0 = $$createType4;
-        const $$createField24_0 = $$createType61;
-        const $$createField25_0 = $$createType62;
-        const $$createField27_0 = $$createType45;
-        const $$createField28_0 = $$createType47;
+        const $$createField24_0 = $$createType58;
+        const $$createField25_0 = $$createType59;
+        const $$createField27_0 = $$createType42;
+        const $$createField28_0 = $$createType44;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("supportedModels" in $$parsedSource) {
             $$parsedSource["supportedModels"] = $$createField11_0($$parsedSource["supportedModels"]);
@@ -3761,7 +3489,7 @@ export class ProviderModelDiscoveryRequest {
      * Creates a new ProviderModelDiscoveryRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryRequest {
-        const $$createField1_0 = $$createType40;
+        const $$createField1_0 = $$createType37;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField1_0($$parsedSource["provider"]);
@@ -3790,7 +3518,7 @@ export class ProviderModelDiscoveryResult {
      * Creates a new ProviderModelDiscoveryResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryResult {
-        const $$createField0_0 = $$createType64;
+        const $$createField0_0 = $$createType61;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField0_0($$parsedSource["models"]);
@@ -3859,7 +3587,7 @@ export class ProviderRequestTemplate {
      */
     static createFrom($$source: any = {}): ProviderRequestTemplate {
         const $$createField2_0 = $$createType4;
-        const $$createField4_0 = $$createType61;
+        const $$createField4_0 = $$createType58;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
@@ -3868,95 +3596,6 @@ export class ProviderRequestTemplate {
             $$parsedSource["identity"] = $$createField4_0($$parsedSource["identity"]);
         }
         return new ProviderRequestTemplate($$parsedSource as Partial<ProviderRequestTemplate>);
-    }
-}
-
-/**
- * ProviderTimeline Provider 时间线（用于前端展示）
- */
-export class ProviderTimeline {
-    "providerId": number;
-    "providerName": string;
-    "platform": string;
-    "availabilityMonitorEnabled": boolean;
-    "connectivityAutoBlacklist": boolean;
-
-    /**
-     * 高级配置
-     */
-    "availabilityConfig"?: AvailabilityConfig | null;
-
-    /**
-     * 历史记录
-     */
-    "items": HealthCheckResult[];
-
-    /**
-     * 最新一条
-     */
-    "latest": HealthCheckResult | null;
-
-    /**
-     * 可用率
-     */
-    "uptime": number;
-
-    /**
-     * 平均延迟
-     */
-    "avgLatencyMs": number;
-
-    /** Creates a new ProviderTimeline instance. */
-    constructor($$source: Partial<ProviderTimeline> = {}) {
-        if (!("providerId" in $$source)) {
-            this["providerId"] = 0;
-        }
-        if (!("providerName" in $$source)) {
-            this["providerName"] = "";
-        }
-        if (!("platform" in $$source)) {
-            this["platform"] = "";
-        }
-        if (!("availabilityMonitorEnabled" in $$source)) {
-            this["availabilityMonitorEnabled"] = false;
-        }
-        if (!("connectivityAutoBlacklist" in $$source)) {
-            this["connectivityAutoBlacklist"] = false;
-        }
-        if (!("items" in $$source)) {
-            this["items"] = [];
-        }
-        if (!("latest" in $$source)) {
-            this["latest"] = null;
-        }
-        if (!("uptime" in $$source)) {
-            this["uptime"] = 0;
-        }
-        if (!("avgLatencyMs" in $$source)) {
-            this["avgLatencyMs"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ProviderTimeline instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ProviderTimeline {
-        const $$createField5_0 = $$createType59;
-        const $$createField6_0 = $$createType22;
-        const $$createField7_0 = $$createType23;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("availabilityConfig" in $$parsedSource) {
-            $$parsedSource["availabilityConfig"] = $$createField5_0($$parsedSource["availabilityConfig"]);
-        }
-        if ("items" in $$parsedSource) {
-            $$parsedSource["items"] = $$createField6_0($$parsedSource["items"]);
-        }
-        if ("latest" in $$parsedSource) {
-            $$parsedSource["latest"] = $$createField7_0($$parsedSource["latest"]);
-        }
-        return new ProviderTimeline($$parsedSource as Partial<ProviderTimeline>);
     }
 }
 
@@ -4107,7 +3746,7 @@ export class RecordCleanupResult {
      * Creates a new RecordCleanupResult instance from a string or object.
      */
     static createFrom($$source: any = {}): RecordCleanupResult {
-        const $$createField3_0 = $$createType65;
+        const $$createField3_0 = $$createType62;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storage" in $$parsedSource) {
             $$parsedSource["storage"] = $$createField3_0($$parsedSource["storage"]);
@@ -4737,48 +4376,45 @@ const $$createType17 = $Create.Array($$createType16);
 const $$createType18 = ReqeustLog.createFrom;
 const $$createType19 = $Create.Array($$createType18);
 const $$createType20 = $Create.Array($Create.Any);
-const $$createType21 = HealthCheckResult.createFrom;
+const $$createType21 = LogStatsSeries.createFrom;
 const $$createType22 = $Create.Array($$createType21);
-const $$createType23 = $Create.Nullable($$createType21);
-const $$createType24 = LogStatsSeries.createFrom;
-const $$createType25 = $Create.Array($$createType24);
-const $$createType26 = MCPServer.createFrom;
+const $$createType23 = MCPServer.createFrom;
+const $$createType24 = $Create.Array($$createType23);
+const $$createType25 = TargetCli.createFrom;
+const $$createType26 = PiModelCostTier.createFrom;
 const $$createType27 = $Create.Array($$createType26);
-const $$createType28 = TargetCli.createFrom;
-const $$createType29 = PiModelCostTier.createFrom;
-const $$createType30 = $Create.Array($$createType29);
-const $$createType31 = $Create.Map($Create.Any, $Create.Any);
-const $$createType32 = PiModelCost.createFrom;
-const $$createType33 = $Create.Nullable($$createType32);
-const $$createType34 = PiModelOverrideCost.createFrom;
-const $$createType35 = $Create.Nullable($$createType34);
-const $$createType36 = PiModelsCatalogTemplate.createFrom;
-const $$createType37 = $Create.Array($$createType36);
-const $$createType38 = PiModelsCatalogModel.createFrom;
-const $$createType39 = $Create.Array($$createType38);
-const $$createType40 = Provider.createFrom;
-const $$createType41 = $Create.Array($$createType40);
-const $$createType42 = PiConfigDiagnostic.createFrom;
-const $$createType43 = $Create.Array($$createType42);
-const $$createType44 = PiModelEntry.createFrom;
-const $$createType45 = $Create.Array($$createType44);
-const $$createType46 = PiModelOverride.createFrom;
-const $$createType47 = $Create.Map($Create.Any, $$createType46);
-const $$createType48 = $Create.Map($Create.Any, $$createType44);
-const $$createType49 = PiRuntimeFileStatus.createFrom;
-const $$createType50 = PiRuntimeSettings.createFrom;
-const $$createType51 = PiRuntimeAuthStatus.createFrom;
-const $$createType52 = $Create.Array($$createType51);
-const $$createType53 = PiRuntimePlatform.createFrom;
-const $$createType54 = $Create.Array($$createType53);
-const $$createType55 = PiRuntimeSupplier.createFrom;
-const $$createType56 = $Create.Array($$createType55);
-const $$createType57 = $Create.Map($Create.Any, $Create.Any);
-const $$createType58 = AvailabilityConfig.createFrom;
-const $$createType59 = $Create.Nullable($$createType58);
-const $$createType60 = ProviderRequestIdentity.createFrom;
-const $$createType61 = $Create.Nullable($$createType60);
-const $$createType62 = $Create.Map($Create.Any, $$createType60);
-const $$createType63 = DiscoveredModel.createFrom;
-const $$createType64 = $Create.Array($$createType63);
-const $$createType65 = RecordStorageInfo.createFrom;
+const $$createType28 = $Create.Map($Create.Any, $Create.Any);
+const $$createType29 = PiModelCost.createFrom;
+const $$createType30 = $Create.Nullable($$createType29);
+const $$createType31 = PiModelOverrideCost.createFrom;
+const $$createType32 = $Create.Nullable($$createType31);
+const $$createType33 = PiModelsCatalogTemplate.createFrom;
+const $$createType34 = $Create.Array($$createType33);
+const $$createType35 = PiModelsCatalogModel.createFrom;
+const $$createType36 = $Create.Array($$createType35);
+const $$createType37 = Provider.createFrom;
+const $$createType38 = $Create.Array($$createType37);
+const $$createType39 = PiConfigDiagnostic.createFrom;
+const $$createType40 = $Create.Array($$createType39);
+const $$createType41 = PiModelEntry.createFrom;
+const $$createType42 = $Create.Array($$createType41);
+const $$createType43 = PiModelOverride.createFrom;
+const $$createType44 = $Create.Map($Create.Any, $$createType43);
+const $$createType45 = $Create.Map($Create.Any, $$createType41);
+const $$createType46 = PiRuntimeFileStatus.createFrom;
+const $$createType47 = PiRuntimeSettings.createFrom;
+const $$createType48 = PiRuntimeAuthStatus.createFrom;
+const $$createType49 = $Create.Array($$createType48);
+const $$createType50 = PiRuntimePlatform.createFrom;
+const $$createType51 = $Create.Array($$createType50);
+const $$createType52 = PiRuntimeSupplier.createFrom;
+const $$createType53 = $Create.Array($$createType52);
+const $$createType54 = $Create.Map($Create.Any, $Create.Any);
+const $$createType55 = AvailabilityConfig.createFrom;
+const $$createType56 = $Create.Nullable($$createType55);
+const $$createType57 = ProviderRequestIdentity.createFrom;
+const $$createType58 = $Create.Nullable($$createType57);
+const $$createType59 = $Create.Map($Create.Any, $$createType57);
+const $$createType60 = DiscoveredModel.createFrom;
+const $$createType61 = $Create.Array($$createType60);
+const $$createType62 = RecordStorageInfo.createFrom;

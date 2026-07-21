@@ -8,7 +8,6 @@ import {
   type LogStats,
   type StatsRange,
 } from '../services/logs'
-import { getLatestResults, HealthStatus, type ProviderTimeline } from '../services/healthcheck'
 import { formatBeijingDateTime } from '../utils/beijingTime'
 
 const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode', 'reasonix', 'pi', 'custom']
@@ -16,16 +15,6 @@ const REFRESH_INTERVAL = 60
 const RANGE_CACHE_TTL_MS = 45_000
 
 type StatusTone = 'good' | 'warn' | 'critical' | 'neutral'
-
-type StatusRow = {
-  key: string
-  name: string
-  platform: string
-  status: string
-  latency: string
-  uptime: string
-  tone: StatusTone
-}
 
 type MetricCard = {
   key: string
@@ -35,7 +24,6 @@ type MetricCard = {
   delta: string
   tone: StatusTone
 }
-
 type CacheEntry = {
   bundle: DashboardBundle
   fetchedAt: number
@@ -71,7 +59,6 @@ export function useStatsDashboard() {
   const providerRanks = ref<DashboardBundle['provider_ranks']>([])
   const modelRanks = ref<DashboardBundle['model_ranks']>([])
   const recentLogs = ref<DashboardBundle['recent_logs']>([])
-  const timelines = ref<Record<string, ProviderTimeline[]>>({})
   const platformStats = reactive<Record<LogPlatform, LogStats>>({
     claude: emptyStats(),
     codex: emptyStats(),
@@ -84,7 +71,6 @@ export function useStatsDashboard() {
 
   const rangeCache = new Map<StatsRange, CacheEntry>()
   let bundleRequestId = 0
-  let statusRequestId = 0
   let timer: number | undefined
 
   const rangeOptions = computed(() => ([
@@ -137,21 +123,6 @@ export function useStatsDashboard() {
     })
   }
 
-  const statusSummary = computed(() => {
-    const summary = { monitored: 0, operational: 0, degraded: 0, failed: 0, disabled: 0 }
-    Object.values(timelines.value).flat().forEach((timeline) => {
-      if (!timeline.availabilityMonitorEnabled) {
-        summary.disabled++
-        return
-      }
-      summary.monitored++
-      if (timeline.latest?.status === HealthStatus.OPERATIONAL) summary.operational++
-      else if (timeline.latest?.status === HealthStatus.DEGRADED) summary.degraded++
-      else summary.failed++
-    })
-    return summary
-  })
-
   const platformSummaries = computed(() => {
     const totalRequests = overview.value?.current_requests ?? 0
     return PLATFORM_ORDER.map((platform) => {
@@ -168,28 +139,8 @@ export function useStatsDashboard() {
     })
   })
 
-  const statusRows = computed<StatusRow[]>(() => {
-    return Object.entries(timelines.value)
-      .flatMap(([platform, rows]) => rows.map((row) => ({ ...row, platform })))
-      .filter((row) => row.availabilityMonitorEnabled)
-      .sort((left, right) => {
-        return severity(right.latest?.status) - severity(left.latest?.status) || right.avgLatencyMs - left.avgLatencyMs
-      })
-      .slice(0, 6)
-      .map((row) => ({
-        key: `${row.platform}-${row.providerId}`,
-        name: row.providerName,
-        platform: t(`stats.platforms.${row.platform}`),
-        status: t(`stats.status.${normalizeStatus(row.latest?.status)}`),
-        latency: row.latest?.latencyMs ? `${row.latest.latencyMs}ms` : '-',
-        uptime: row.uptime > 0 ? formatPercent(row.uptime / 100) : '-',
-        tone: toneForStatus(row.latest?.status),
-      }))
-  })
-
   const metricCards = computed<MetricCard[]>(() => {
     const snapshot = overview.value
-    const summary = statusSummary.value
     if (!snapshot) return []
     return [
       {
@@ -204,7 +155,7 @@ export function useStatsDashboard() {
         key: 'tokens',
         label: t('stats.cards.tokens'),
         value: formatTokenNumber(snapshot.current_tokens),
-        detail: t('stats.cards.monitoredProviders', { value: formatNumber(summary.monitored) }),
+        detail: t('stats.cards.currentPeriod'),
         delta: describeDelta(snapshot.current_tokens, snapshot.previous_tokens, snapshot.has_previous_comparison),
         tone: toneForDelta(snapshot.current_tokens, snapshot.previous_tokens, false, snapshot.has_previous_comparison),
       },
@@ -212,7 +163,7 @@ export function useStatsDashboard() {
         key: 'cost',
         label: t('stats.cards.cost'),
         value: formatCurrency(snapshot.current_cost),
-        detail: t('stats.cards.failedProviders', { value: formatNumber(summary.failed) }),
+        detail: t('stats.cards.currentPeriod'),
         delta: describeDelta(snapshot.current_cost, snapshot.previous_cost, snapshot.has_previous_comparison),
         tone: toneForDelta(snapshot.current_cost, snapshot.previous_cost, false, snapshot.has_previous_comparison),
       },
@@ -220,7 +171,7 @@ export function useStatsDashboard() {
         key: 'latency',
         label: t('stats.cards.latency'),
         value: formatDuration(snapshot.current_avg_duration_sec),
-        detail: t('stats.cards.degradedProviders', { value: formatNumber(summary.degraded) }),
+        detail: t('stats.cards.currentPeriod'),
         delta: describeDelta(snapshot.current_avg_duration_sec, snapshot.previous_avg_duration_sec, snapshot.has_previous_comparison),
         tone: toneForDelta(snapshot.current_avg_duration_sec, snapshot.previous_avg_duration_sec, true, snapshot.has_previous_comparison),
       },
@@ -273,26 +224,12 @@ export function useStatsDashboard() {
     }
   }
 
-  const loadStatuses = async () => {
-    const requestId = ++statusRequestId
-    try {
-      const statusData = await getLatestResults()
-      if (requestId !== statusRequestId) return
-      timelines.value = statusData
-    } catch (error) {
-      console.error('Failed to load dashboard statuses', error)
-    }
-  }
-
   const refreshNow = async () => {
     if (refreshing.value) return
     refreshing.value = true
     countdown.value = REFRESH_INTERVAL
     try {
-      await Promise.all([
-        loadBundle(selectedRange.value, true),
-        loadStatuses(),
-      ])
+      await loadBundle(selectedRange.value, true)
     } finally {
       refreshing.value = false
     }
@@ -326,10 +263,7 @@ export function useStatsDashboard() {
   }
 
   onMounted(async () => {
-    await Promise.all([
-      loadBundle(selectedRange.value, true),
-      loadStatuses(),
-    ])
+    await loadBundle(selectedRange.value, true)
     startTimer()
   })
 
@@ -359,8 +293,6 @@ export function useStatsDashboard() {
     refreshing,
     selectedRange,
     setRange,
-    statusRows,
-    statusSummary,
     trendSeries: computed(() => trendStats.value.series),
   }
 
@@ -379,24 +311,4 @@ export function useStatsDashboard() {
     if (inverse) return rising ? 'critical' : 'good'
     return rising ? 'good' : 'warn'
   }
-}
-
-function normalizeStatus(status?: string) {
-  if (status === HealthStatus.OPERATIONAL) return 'operational'
-  if (status === HealthStatus.DEGRADED) return 'degraded'
-  return 'failed'
-}
-
-function severity(status?: string) {
-  if (status === HealthStatus.FAILED || status === HealthStatus.VALIDATION_ERROR) return 3
-  if (status === HealthStatus.DEGRADED) return 2
-  if (status === HealthStatus.OPERATIONAL) return 1
-  return 0
-}
-
-function toneForStatus(status?: string): StatusTone {
-  if (status === HealthStatus.OPERATIONAL) return 'good'
-  if (status === HealthStatus.DEGRADED) return 'warn'
-  if (status === HealthStatus.FAILED || status === HealthStatus.VALIDATION_ERROR) return 'critical'
-  return 'neutral'
 }

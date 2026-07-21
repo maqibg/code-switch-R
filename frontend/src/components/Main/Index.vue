@@ -312,13 +312,6 @@
                 >
                   {{ t('components.main.directApply.currentBadge') }}
                 </span>
-                <!-- 连通性状态指示器 -->
-                <span
-                  v-if="card.availabilityMonitorEnabled"
-                  class="connectivity-dot"
-                  :class="getConnectivityIndicatorClass(card.id)"
-                  :title="getConnectivityTooltip(card.id)"
-                ></span>
                 <span v-if="card.level" class="level-badge scheduling-level" :class="`level-${card.level}`">
                   L{{ card.level }}
                 </span>
@@ -923,43 +916,6 @@
                   </div>
                 </div>
 
-                <!-- 可用性监控配置 -->
-                <div class="form-field switch-field">
-                  <span>{{ t('components.main.form.labels.availabilityMonitor') }}</span>
-                  <div class="switch-inline">
-                    <label class="mac-switch">
-                      <input type="checkbox" v-model="modalState.form.availabilityMonitorEnabled" />
-                      <span></span>
-                    </label>
-                    <span class="switch-text">
-                      {{ modalState.form.availabilityMonitorEnabled ? t('components.main.form.switch.on') : t('components.main.form.switch.off') }}
-                    </span>
-                  </div>
-                  <span class="field-hint">{{ t('components.main.form.hints.availabilityMonitor') }}</span>
-                </div>
-
-                <!-- 连通性自动拉黑 -->
-                <div v-if="modalState.form.availabilityMonitorEnabled" class="form-field switch-field">
-                  <span>{{ t('components.main.form.labels.connectivityAutoBlacklist') }}</span>
-                  <div class="switch-inline">
-                    <label class="mac-switch">
-                      <input type="checkbox" v-model="modalState.form.connectivityAutoBlacklist" />
-                      <span></span>
-                    </label>
-                    <span class="switch-text">
-                      {{ modalState.form.connectivityAutoBlacklist ? t('components.main.form.switch.on') : t('components.main.form.switch.off') }}
-                    </span>
-                  </div>
-                  <span class="field-hint">{{ t('components.main.form.hints.connectivityAutoBlacklist') }}</span>
-                </div>
-
-                <!-- 高级配置提示 -->
-                <div v-if="modalState.form.availabilityMonitorEnabled" class="form-field">
-                  <span class="field-hint" style="color: #6b7280;">
-                    💡 {{ t('components.main.form.hints.availabilityAdvancedConfig') }}
-                  </span>
-                </div>
-
                 <footer class="form-actions">
                   <BaseButton variant="outline" type="button" @click="closeModal">
                     {{ t('components.main.form.actions.cancel') }}
@@ -1215,20 +1171,6 @@ import {
   type ConfigFile,
   type ProxyInjection,
 } from '../../services/customCliService'
-import {
-  getConnectivityResults,
-  StatusAvailable,
-  StatusDegraded,
-  StatusUnavailable,
-  StatusMissing,
-  getStatusColorClass,
-  type ConnectivityResult,
-} from '../../services/connectivity'
-import {
-  getLatestResults,
-  HealthStatus,
-  type ProviderTimeline,
-} from '../../services/healthcheck'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -1408,28 +1350,6 @@ const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, Blacklist
   others: {},
 })
 let blacklistTimer: number | undefined
-
-// 连通性状态（已废弃，保留用于兼容）
-const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, ConnectivityResult>>>({
-  claude: {},
-  codex: {},
-  gemini: {},
-  deepseekcode: {},
-  reasonix: {},
-  pi: {},
-  others: {},
-})
-
-// 可用性监控状态（新）
-const availabilityResultsMap = reactive<Record<ProviderTab, Record<number, ProviderTimeline>>>({
-  claude: {},
-  codex: {},
-  gemini: {},
-  deepseekcode: {},
-  reasonix: {},
-  pi: {},
-  others: {},
-})
 
 // 最后使用的供应商（用于高亮显示）
 // @author sm
@@ -1781,10 +1701,6 @@ const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard =
   enabled: provider.enabled,
   proxyEnabled: !!provider.proxyEnabled,
   level: provider.level || 1,
-  // 可用性监控配置（Gemini 暂不支持，使用默认值）
-  availabilityMonitorEnabled: false,
-  connectivityAutoBlacklist: false,
-  availabilityConfig: undefined,
 })
 
 // AutomationCard 到 Gemini Provider 的转换
@@ -1797,27 +1713,12 @@ const cardToGemini = (card: AutomationCard, original: GeminiProvider): GeminiPro
   enabled: card.enabled,
   proxyEnabled: !!card.proxyEnabled,
   level: card.level || 1,
-  // 注意：Gemini 不支持可用性监控配置，这些字段不会保存
 })
 
 const serializeProviders = (providers: AutomationCard[]) =>
   providers.map((provider) => ({
     ...provider,
-    // 确保可用性配置正确序列化
-    availabilityMonitorEnabled: !!provider.availabilityMonitorEnabled,
-    connectivityAutoBlacklist: !!provider.connectivityAutoBlacklist,
     proxyEnabled: !!provider.proxyEnabled,
-    availabilityConfig: provider.availabilityConfig
-      ? {
-          testModel: provider.availabilityConfig.testModel || '',
-          testEndpoint: provider.availabilityConfig.testEndpoint || '',
-          timeout: provider.availabilityConfig.timeout || 15000,
-        }
-      : undefined,
-    // 清除旧连通性字段（避免再次写入配置文件）
-    connectivityCheck: false,
-    connectivityTestModel: '',
-    connectivityTestEndpoint: '',
     // 保留认证方式配置（已从废弃字段升级为活跃字段）
     connectivityAuthType: provider.connectivityAuthType || '',
     codexReasoningContinueEnabled: !!provider.codexReasoningContinueEnabled,
@@ -2147,99 +2048,6 @@ const getProviderBlacklistStatus = (providerName: string): BlacklistStatus | nul
   return blacklistStatusMap[activeTab.value][providerName] || null
 }
 
-// 加载连通性测试结果（已废弃，保留兼容）
-const loadConnectivityResults = async (tab: ProviderTab) => {
-  // 'others' Tab 暂不加载连通性结果
-  if (tab === 'others') {
-    return
-  }
-
-  try {
-    const results = await getConnectivityResults(tab)
-    const map: Record<number, ConnectivityResult> = {}
-    results.forEach((result) => {
-      map[result.providerId] = result
-    })
-    connectivityResultsMap[tab] = map
-  } catch (err) {
-    console.error(`加载 ${tab} 连通性结果失败:`, err)
-  }
-}
-
-// 加载可用性监控结果（新）
-const loadAvailabilityResults = async () => {
-  try {
-    const allResults = await getLatestResults()
-
-    // 转换为按平台和 ID 索引的格式
-    for (const platform of Object.keys(allResults)) {
-      const timelines = allResults[platform] || []
-      const map: Record<number, ProviderTimeline> = {}
-      timelines.forEach((timeline) => {
-        map[timeline.providerId] = timeline
-      })
-      availabilityResultsMap[platform as ProviderTab] = map
-    }
-  } catch (err) {
-    console.error('加载可用性监控结果失败:', err)
-  }
-}
-
-// 获取 provider 连通性状态（已废弃）
-const getProviderConnectivityResult = (providerId: number): ConnectivityResult | null => {
-  return connectivityResultsMap[activeTab.value][providerId] || null
-}
-
-// 获取 provider 可用性状态（新）
-const getProviderAvailabilityResult = (providerId: number): ProviderTimeline | null => {
-  return availabilityResultsMap[activeTab.value][providerId] || null
-}
-
-// 获取连通性状态指示器样式（改用可用性监控结果）
-const getConnectivityIndicatorClass = (providerId: number): string => {
-  const result = getProviderAvailabilityResult(providerId)
-  if (!result || !result.latest) return 'connectivity-gray'
-
-  // 根据可用性监控状态返回样式
-  switch (result.latest.status) {
-    case HealthStatus.OPERATIONAL:
-      return 'connectivity-green'
-    case HealthStatus.DEGRADED:
-      return 'connectivity-yellow'
-    case HealthStatus.FAILED:
-    case HealthStatus.VALIDATION_ERROR:
-      return 'connectivity-red'
-    default:
-      return 'connectivity-gray'
-  }
-}
-
-// 获取连通性状态提示文本（改用可用性监控结果）
-const getConnectivityTooltip = (providerId: number): string => {
-  const result = getProviderAvailabilityResult(providerId)
-  if (!result || !result.latest) return t('components.main.connectivity.noData')
-
-  let statusText = ''
-  switch (result.latest.status) {
-    case HealthStatus.OPERATIONAL:
-      statusText = t('components.main.connectivity.available')
-      break
-    case HealthStatus.DEGRADED:
-      statusText = t('components.main.connectivity.degraded')
-      break
-    case HealthStatus.FAILED:
-    case HealthStatus.VALIDATION_ERROR:
-      statusText = t('components.main.connectivity.unavailable')
-      break
-    default:
-      statusText = t('components.main.connectivity.noData')
-  }
-
-  const latencyText = result.latest.latencyMs > 0 ? ` (${result.latest.latencyMs}ms)` : ''
-  const uptimeText = result.uptime > 0 ? ` - ${result.uptime.toFixed(1)}%` : ''
-  return statusText + latencyText + uptimeText
-}
-
 // 刷新所有数据
 const refreshing = ref(false)
 const refreshAllData = async () => {
@@ -2252,8 +2060,7 @@ const refreshAllData = async () => {
       ...providerTabIds.map(refreshProxyState),
       ...providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)),
       ...providerTabIds.map((tab) => loadProviderStats(tab)),
-      ...providerTabIds.map((tab) => loadBlacklistStatus(tab)), // 同步刷新黑名单状态
-      loadAvailabilityResults(), // 同步刷新可用性监控状态（改用新服务）
+      ...providerTabIds.map((tab) => loadBlacklistStatus(tab)),
     ])
   } catch (error) {
     console.error('Failed to refresh data', error)
@@ -2352,7 +2159,6 @@ const startProviderStatsTimer = () => {
     providerTabIds.forEach((tab) => {
       void loadProviderStats(tab)
     })
-    void loadAvailabilityResults() // 同步刷新可用性监控状态（改用新服务）
   }, 60_000)
 }
 
@@ -2472,9 +2278,6 @@ onMounted(async () => {
   // 加载初始黑名单状态
   await Promise.all(providerTabIds.map((tab) => loadBlacklistStatus(tab)))
 
-  // 加载初始可用性监控结果（改用新服务）
-  await loadAvailabilityResults()
-
   // 每秒更新黑名单倒计时
   blacklistTimer = window.setInterval(() => {
     const tab = activeTab.value
@@ -2506,7 +2309,7 @@ onMounted(async () => {
 
   window.addEventListener('app-settings-updated', handleAppSettingsUpdated)
 
-  // 监听可用性页面的 Provider 更新事件
+  // 监听导入等外部流程触发的 Provider 更新事件
   const handleProvidersUpdated = () => {
     void loadProvidersFromDisk()
   }
@@ -2560,26 +2363,6 @@ const selectedIndex = ref(0)
 const activeTab = computed<ProviderTab>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
 const activeCards = computed(() => cards[activeTab.value] ?? [])
 
-// 连通性测试模型选项（根据平台）
-const connectivityTestModelOptions = computed(() => {
-  const options: Record<string, string[]> = {
-    claude: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
-    codex: ['gpt-5.1', 'gpt-5.1-codex'],
-    gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
-    deepseekcode: ['deepseek-chat', 'deepseek-reasoner'],
-    reasonix: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-    pi: ['gpt-5', 'claude-sonnet-4-5'],
-  }
-  return options[modalState.tabId] || options.claude
-})
-
-// 连通性测试端点选项
-const connectivityEndpointOptions = [
-  { value: '/v1/messages', label: '/v1/messages (Anthropic)' },
-  { value: '/v1/chat/completions', label: '/v1/chat/completions (OpenAI)' },
-  { value: '/responses', label: '/responses (Codex)' },
-]
-
 // 连通性测试状态
 const testingConnectivity = ref(false)
 const connectivityTestResult = ref<{ success: boolean; message: string } | null>(null)
@@ -2604,23 +2387,8 @@ const getDefaultAuthType = (platform: string) => {
   return 'bearer'
 }
 
-const getEffectiveConnectivityModel = (platform: string) => {
-  const explicitModel = (
-    modalState.form.availabilityConfig?.testModel ||
-    modalState.form.connectivityTestModel ||
-    ''
-  ).trim()
-  if (explicitModel) return explicitModel
-  if (platform === 'claude') return 'claude-haiku-4-5-20251001'
-  return connectivityTestModelOptions.value[0] || ''
-}
-
 const getEffectiveConnectivityEndpoint = (platform: string) => {
-  return (
-    modalState.form.availabilityConfig?.testEndpoint ||
-    modalState.form.connectivityTestEndpoint ||
-    getDefaultEndpoint(platform)
-  )
+  return modalState.form.apiEndpoint?.trim() || getDefaultEndpoint(platform)
 }
 
 // 手动测试连通性
@@ -2635,7 +2403,6 @@ const handleTestConnectivity = async () => {
       platform,
       modalState.form.apiUrl,
       modalState.form.apiKey,
-      getEffectiveConnectivityModel(platform),
       getEffectiveConnectivityEndpoint(platform),
       resolveEffectiveAuthType(),
       !!modalState.form.proxyEnabled
@@ -2659,10 +2426,9 @@ const handleTestConnectivity = async () => {
   }
 }
 
-// 监听 tab 切换，立即刷新黑名单和可用性状态
+// 监听 tab 切换，立即刷新黑名单状态
 watch(activeTab, (newTab) => {
   void loadBlacklistStatus(newTab)
-  // 可用性结果是全局的，不需要按 tab 刷新
 })
 const currentProxyLabel = computed(() => {
   const tab = activeTab.value
@@ -2734,22 +2500,6 @@ type VendorForm = {
   level?: number
   apiEndpoint?: string
   cliConfig?: Record<string, any>
-  // === 可用性监控配置（新） ===
-  availabilityMonitorEnabled?: boolean
-  connectivityAutoBlacklist?: boolean
-  availabilityConfig?: {
-    testModel?: string
-    testEndpoint?: string
-    timeout?: number
-  }
-  // === 旧连通性字段（已废弃） ===
-  /** @deprecated */
-  connectivityCheck?: boolean
-  /** @deprecated */
-  connectivityTestModel?: string
-  /** @deprecated */
-  connectivityTestEndpoint?: string
-  /** @deprecated */
   connectivityAuthType?: string
   authScheme?: string
   authHeader?: string
@@ -2793,18 +2543,6 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   upstreamProtocol: 'auto', // 上游协议类型（anthropic/openai_chat/auto）
   codexReasoningContinueEnabled: false,
   codexReasoningContinueLogEnabled: true,
-  // 可用性监控配置（新）
-  availabilityMonitorEnabled: false,
-  connectivityAutoBlacklist: false,
-  availabilityConfig: {
-    testModel: '',
-    testEndpoint: getDefaultEndpoint(platform || 'claude'),
-    timeout: 15000,
-  },
-  // 旧连通性字段（已废弃，置空）
-  connectivityCheck: false,
-  connectivityTestModel: '',
-  connectivityTestEndpoint: '',
   connectivityAuthType: '',
   authScheme: '',
   authHeader: '',
@@ -3098,23 +2836,6 @@ const openEditModal = (card: AutomationCard) => {
     codexReasoningContinueEnabled: !!card.codexReasoningContinueEnabled,
     codexReasoningContinueLogEnabled:
       card.codexReasoningContinueLogEnabled ?? true,
-    // 可用性监控配置（新）- 兼容从旧字段迁移
-    availabilityMonitorEnabled:
-      card.availabilityMonitorEnabled ?? card.connectivityCheck ?? false,
-    connectivityAutoBlacklist: card.connectivityAutoBlacklist ?? false,
-    availabilityConfig: {
-      testModel:
-        card.availabilityConfig?.testModel || card.connectivityTestModel || '',
-      testEndpoint:
-        card.availabilityConfig?.testEndpoint ||
-        card.connectivityTestEndpoint ||
-        getDefaultEndpoint(activeTab.value),
-      timeout: card.availabilityConfig?.timeout || 15000,
-    },
-    // 旧连通性字段不再写入表单
-    connectivityCheck: false,
-    connectivityTestModel: '',
-    connectivityTestEndpoint: '',
     connectivityAuthType: card.connectivityAuthType || '',
     authScheme: card.authScheme || '',
     authHeader: card.authHeader || '',
@@ -3234,20 +2955,6 @@ const submitModal = async (): Promise<boolean> => {
         modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueLogEnabled
           : false,
-      // 可用性监控配置（新）
-      availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
-      connectivityAutoBlacklist: !!modalState.form.connectivityAutoBlacklist,
-      availabilityConfig: {
-        testModel: modalState.form.availabilityConfig?.testModel || '',
-        testEndpoint:
-          modalState.form.availabilityConfig?.testEndpoint ||
-          getDefaultEndpoint(modalState.tabId),
-        timeout: modalState.form.availabilityConfig?.timeout || 15000,
-      },
-      // 旧连通性字段清空（避免再次写入）
-      connectivityCheck: false,
-      connectivityTestModel: '',
-      connectivityTestEndpoint: '',
       connectivityAuthType: resolveEffectiveAuthType(),
       authScheme: resolveAuthScheme(),
       authHeader: customAuthHeader.value.trim(),
@@ -3293,20 +3000,6 @@ const submitModal = async (): Promise<boolean> => {
         modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
           ? !!modalState.form.codexReasoningContinueLogEnabled
           : false,
-      // 可用性监控配置（新）
-      availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
-      connectivityAutoBlacklist: !!modalState.form.connectivityAutoBlacklist,
-      availabilityConfig: {
-        testModel: modalState.form.availabilityConfig?.testModel || '',
-        testEndpoint:
-          modalState.form.availabilityConfig?.testEndpoint ||
-          getDefaultEndpoint(modalState.tabId),
-        timeout: modalState.form.availabilityConfig?.timeout || 15000,
-      },
-      // 旧连通性字段清空
-      connectivityCheck: false,
-      connectivityTestModel: '',
-      connectivityTestEndpoint: '',
       connectivityAuthType: resolveEffectiveAuthType(),
       authScheme: resolveAuthScheme(),
       authHeader: customAuthHeader.value.trim(),
@@ -3342,7 +3035,7 @@ const submitModal = async (): Promise<boolean> => {
 
   closeModal()
 
-  // 通知可用性页面刷新
+  // 通知其他 Provider 视图刷新
   window.dispatchEvent(new CustomEvent('providers-updated'))
   return true
 }
@@ -4496,55 +4189,6 @@ const confirmDeleteCliTool = async () => {
 
 :global(.dark) .banner-btn.primary {
   background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-}
-
-/* 连通性状态指示器 */
-.connectivity-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-left: 6px;
-  flex-shrink: 0;
-  transition: background-color 0.2s ease;
-}
-
-.connectivity-dot.connectivity-green {
-  background-color: #22c55e;
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);
-}
-
-.connectivity-dot.connectivity-yellow {
-  background-color: #eab308;
-  box-shadow: 0 0 4px rgba(234, 179, 8, 0.5);
-}
-
-.connectivity-dot.connectivity-red {
-  background-color: #ef4444;
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
-}
-
-.connectivity-dot.connectivity-gray {
-  background-color: #9ca3af;
-}
-
-:global(.dark) .connectivity-dot.connectivity-green {
-  background-color: #4ade80;
-  box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
-}
-
-:global(.dark) .connectivity-dot.connectivity-yellow {
-  background-color: #facc15;
-  box-shadow: 0 0 6px rgba(250, 204, 21, 0.6);
-}
-
-:global(.dark) .connectivity-dot.connectivity-red {
-  background-color: #f87171;
-  box-shadow: 0 0 6px rgba(248, 113, 113, 0.6);
-}
-
-:global(.dark) .connectivity-dot.connectivity-gray {
-  background-color: #6b7280;
 }
 
 /* 测试连通性按钮 */

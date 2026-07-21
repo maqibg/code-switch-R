@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-`code-switch-R` 是一个 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP 代理管理 AI CLI 工具的供应商配置。应用启动后在本机 `127.0.0.1:18100` 代理 Claude Code、Codex、Gemini CLI、DeepSeekCode、Reasonix 和自定义 CLI 请求，按供应商优先级、模型白名单、黑名单和可用性状态执行降级转发，并记录请求、Token、成本和健康检查数据。
+`code-switch-R` 是一个 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP 代理管理 AI CLI 工具的供应商配置。应用启动后在本机 `127.0.0.1:18100` 代理 Claude Code、Codex、Gemini CLI、DeepSeekCode、Reasonix 和自定义 CLI 请求，按供应商优先级、模型白名单和黑名单状态执行降级转发，并记录请求、Token 和成本数据。
 
 当前主要技术栈：
 
@@ -35,13 +35,12 @@
 
 1. `services.InitDatabase()`：创建可执行文件同级 `.code-switch-R`，打开 `app.db?cache=shared&mode=rwc`，设置 `PRAGMA busy_timeout = 30000` 和 WAL。
 2. `services.InitGlobalDBQueue()`：初始化双队列数据库写入。
-3. 构造所有服务：Provider、Settings、AppSettings、Blacklist、Gemini、ProviderRelay、CLI 配置、日志、MCP、Skill、Prompt、Import、DeepLink、SpeedTest、Connectivity、HealthCheck、Update、Network、FrontendPreferences 等。
-4. `HealthCheckService.Start()` 初始化健康检查表。
-5. 后台启动 `ProviderRelayService.Start()`，监听代理端口。
-6. 后台启动黑名单过期恢复定时器和自动可用性轮询。
-7. 创建 Wails 应用、主窗口、托盘菜单，注册服务并运行。
+3. 构造所有服务：Provider、Settings、AppSettings、Blacklist、Gemini、ProviderRelay、CLI 配置、日志、MCP、Skill、Prompt、Import、DeepLink、Connectivity、Update、Network、FrontendPreferences 等。
+4. 后台启动 `ProviderRelayService.Start()`，监听代理端口。
+5. 后台启动黑名单过期恢复定时器。
+6. 创建 Wails 应用、主窗口、托盘菜单，注册服务并运行。
 
-关闭时必须停止黑名单定时器、健康检查轮询、代理服务器，并用 10 秒超时关闭全局 DB 写入队列。
+关闭时必须停止黑名单定时器和代理服务器，并用 10 秒超时关闭全局 DB 写入队列。
 
 ## 持久化位置
 
@@ -79,7 +78,7 @@
 - `provider_delete.go`：删除 provider 时清理 `request_log`、`provider_blacklist`、`health_check_history`、`provider_alias`。清理失败会回滚 provider JSON，避免配置和数据库状态分裂。
 - `provider_rename.go`：改名时事务更新历史表，并写入 48 小时 `provider_alias`，用于承接仍使用旧名的 in-flight 请求。禁止 48 小时内链式改名。
 - `Protocol Adapter`：`services/protocol_matrix_adapter.go` 与 `services/protocol_matrix_stream.go` 负责 Anthropic Messages、OpenAI Chat Completions 和 OpenAI Responses 的双向矩阵转换。无法保持 reasoning、工具选择或流式事件语义时必须显式失败；流式响应一旦提交就不得再切换 Provider 或追加 JSON 错误。
-- `BlacklistService` 与 `HealthCheckService`：分别管理请求失败拉黑和后台可用性监控。`auto_connectivity_test` 字段现在复用为自动可用性轮询开关。
+- `BlacklistService`：管理请求失败拉黑和过期自动恢复。
 - `LogService` 与 `resources/model-pricing`：读取请求日志、聚合统计、热力图、成本估算、模型定价匹配。
 - `MCPService`：管理 Claude、Codex、Gemini、DeepSeekCode、Reasonix 的 MCP 配置，并同步到对应平台文件。
 - `SkillService`：扫描、安装、卸载、启停用户级和项目级 Skills，支持 GitHub 仓库来源。
@@ -124,12 +123,10 @@ Provider 自定义 Header 在兼容预设之后应用，可以覆盖 User-Agent 
 |---|---|
 | `/` | Provider 管理主界面，Claude/Codex/Gemini/DeepSeekCode/Reasonix/自定义 CLI |
 | `/pi` | 实时解析 `models.json` 平台和模型，管理平台 CRUD、平台级独立托管、平台下网关供应商、模型抓取/映射及完整 JSON 预览 |
-| `/stats` | 用量统计、趋势和可用性摘要 |
+| `/stats` | 用量统计、趋势和请求排行 |
 | `/logs` | 请求日志、筛选、成本展示 |
 | `/mcp` | MCP Server 管理 |
 | `/skill` | Skill 市场和已安装 Skills |
-| `/availability` | Provider 可用性监控 |
-| `/speedtest` | 端点测速 |
 | `/env` | 环境变量冲突检查 |
 | `/prompts` | 提示词管理 |
 | `/console` | 应用内控制台日志 |

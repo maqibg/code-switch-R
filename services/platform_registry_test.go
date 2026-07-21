@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -71,9 +70,9 @@ func TestPiIsExcludedFromBackgroundChecks(t *testing.T) {
 		t.Fatalf("后台检查平台列表丢失现有平台: %#v", platforms)
 	}
 
-	connectivity := NewConnectivityTestService(nil, nil, nil, nil)
-	result := connectivity.TestProvider(context.Background(), Provider{Name: "pi-upstream"}, "pi")
-	if result == nil || !strings.Contains(result.Message, "不支持连通性测试") {
+	connectivity := NewConnectivityTestService(nil)
+	result := connectivity.TestProviderManual("pi", "", "", "", "", false)
+	if !strings.Contains(result.Message, "不支持连通性测试") {
 		t.Fatalf("Pi 直接连通性测试应被拒绝: %#v", result)
 	}
 }

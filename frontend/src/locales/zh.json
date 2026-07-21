@@ -66,8 +66,6 @@
     "mcp": "MCP",
     "skill": "技能",
     "gemini": "Gemini",
-    "availability": "可用性",
-    "speedtest": "测速",
     "env": "环境",
     "logs": "日志",
     "console": "控制台",
@@ -535,7 +533,7 @@
     "hero": {
       "eyebrow": "运营统计",
       "title": "统一统计面板",
-      "lead": "把请求量、成本、模型分布和实时状态放到一个页面里，直接复用现有日志与监控数据。"
+      "lead": "把请求量、成本和模型分布放到一个页面里，直接复用现有请求日志。"
     },
     "refresh": "刷新",
     "refreshing": "刷新中...",
@@ -574,9 +572,7 @@
       "cost": "今日花费",
       "latency": "平均延迟",
       "successRate": "成功率 {value}",
-      "monitoredProviders": "监控中 {value} 家供应商",
-      "failedProviders": "故障 {value} 家供应商",
-      "degradedProviders": "波动 {value} 家供应商",
+      "currentPeriod": "当前周期",
       "vsYesterday": "较昨日同期 {value}",
       "vsPrevious": "较上一周期 {value}",
       "newValue": "较昨日新增",
@@ -597,77 +593,9 @@
       "title": "模型排行",
       "subtitle": "按今日请求量排序，直接来自真实请求日志。"
     },
-    "status": {
-      "title": "实时状态",
-      "subtitle": "来自可用性监控结果，不额外维护第二份状态数据。",
-      "operational": "正常",
-      "degraded": "波动",
-      "failed": "故障",
-      "disabled": "未监控",
-      "empty": "暂无监控中的供应商"
-    },
     "activity": {
       "title": "最近活动",
       "subtitle": "最近几条真实请求，方便快速查看异常链路。"
-    }
-  },
-  "availability": {
-    "title": "可用性监控",
-    "subtitle": "实时监控 AI 供应商的健康状态",
-    "refreshAll": "全部检测",
-    "refreshing": "检测中...",
-    "check": "检测",
-    "providers": "供应商",
-    "lastUpdate": "最后更新",
-    "nextRefresh": "下次刷新",
-    "notMonitored": "未监控",
-    "noProviders": "暂无供应商，请先添加供应商配置",
-    "stats": {
-      "operational": "正常",
-      "degraded": "延迟",
-      "failed": "故障",
-      "disabled": "未启用"
-    },
-    "settings": {
-      "title": "可用性监控设置",
-      "failureThreshold": "自动拉黑阈值",
-      "failureThresholdHint": "连续检测失败 N 次后触发拉黑",
-      "pollInterval": "检测间隔",
-      "pollIntervalHint": "后台自动检测的时间间隔",
-      "operationalThreshold": "正常状态阈值",
-      "operationalThresholdHint": "响应延迟小于此值判定为正常"
-    },
-    "editConfig": "编辑配置",
-    "enableMonitoring": "启用监控",
-    "enableToMonitor": "请先启用可用性监控",
-    "configTitle": "可用性高级配置",
-    "field": {
-      "testModel": "测试模型",
-      "testEndpoint": "测试端点",
-      "timeout": "超时时间（毫秒）"
-    },
-    "placeholder": {
-      "testModel": "留空使用平台默认模型",
-      "testEndpoint": "留空使用平台默认端点",
-      "timeout": "默认 15000"
-    },
-    "hint": {
-      "timeout": "单位毫秒，留空或 0 将使用默认 15000"
-    },
-    "default": "默认",
-    "currentModel": "当前模型",
-    "currentEndpoint": "当前端点",
-    "currentTimeout": "当前超时",
-    "defaultModel": "平台默认模型",
-    "defaultEndpoint": "平台默认端点",
-    "advancedConfig": {
-      "title": "高级配置",
-      "testModel": "测试模型",
-      "testModelHint": "默认使用低成本模型",
-      "testEndpoint": "测试端点",
-      "testEndpointHint": "留空使用默认端点",
-      "timeout": "超时时间",
-      "timeoutHint": "默认 15 秒"
     }
   },
   "common": {
@@ -703,24 +631,6 @@
       "cancel": "取消",
       "save": "保存"
     }
-  },
-  "speedtest": {
-    "hero": {
-      "eyebrow": "API 速度测试",
-      "title": "测试 API 端点延迟",
-      "lead": "测量各 API 端点的响应速度，帮助选择最优的服务供应商。"
-    },
-    "placeholder": "输入 API 端点 URL",
-    "add": "添加",
-    "endpoints": "端点列表（{count} 个）",
-    "start": "开始测试",
-    "testing": "测试中",
-    "empty": "添加 API 端点开始测试",
-    "failed": "失败",
-    "syncButton": "刷新供应商端点",
-    "syncing": "同步中...",
-    "loadingTip": "正在从首页同步供应商端点...",
-    "syncError": "同步失败，请手动刷新"
   },
   "envcheck": {
     "hero": {
@@ -984,14 +894,6 @@
           "enabled": "启用状态",
           "providerProxy": "使用代理",
           "level": "优先级分组",
-          "availabilityMonitor": "可用性监控",
-          "connectivityAutoBlacklist": "失败自动拉黑",
-          "availabilityTestModel": "测试模型（可选）",
-          "availabilityTestEndpoint": "测试端点（可选）",
-          "availabilityTimeout": "超时时间（毫秒）",
-          "connectivityCheck": "连通性检测（已废弃）",
-          "connectivityTestModel": "测试模型",
-          "connectivityTestEndpoint": "测试端点",
           "connectivityAuthType": "认证方式",
           "modelsEndpoint": "模型列表端点",
           "userAgentPreset": "User-Agent 预设",
@@ -1005,9 +907,6 @@
           "apiEndpoint": "留空使用默认，如 /v1/chat/completions",
           "officialSite": "https://vendor.com",
           "icon": "例如：aicoding、kimi",
-          "availabilityTestModel": "留空则使用平台默认模型",
-          "availabilityTestEndpoint": "例如：/v1/messages",
-          "connectivityTestModel": "选择或使用默认",
           "customModel": "或输入自定义模型",
           "customEndpoint": "或输入自定义端点",
           "customAuthHeader": "自定义 Header 名称（如 Authorization、X-Custom-Key）",
@@ -1021,16 +920,7 @@
           "apiEndpoint": "覆盖平台默认端点。留空使用默认（claude: /v1/messages, codex: /responses）。GLM 模型请使用 /v1/chat/completions",
           "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 openai_chat 时自动转换请求和响应格式",
           "upstreamProtocolCodex": "Codex 默认使用 Responses 原生协议。选择 OpenAI Chat 时会启用 Responses 到 Chat bridge，支持文本、function tool call 与工具结果回传闭环、previous_response_id 历史；reasoning 自动续写仅支持原生 Responses。",
-          "providerProxy": "开启后，此供应商的真实请求、可用性检测和连通性测试都会使用通用设置中的代理配置",
-          "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
-          "connectivityAutoBlacklist": "健康检查失败时自动拉黑该供应商",
-          "availabilityAdvancedConfig": "高级配置（测试模型、端点、超时）可在可用性页面中编辑",
-          "availabilityTestModel": "用于健康检查的模型，留空则使用平台默认模型",
-          "availabilityTestEndpoint": "用于健康检查的 API 端点，留空则使用平台默认端点",
-          "availabilityTimeout": "健康检查请求的超时时间（毫秒），默认 15000",
-          "connectivityCheck": "启用后会定期检测此供应商的连通性，开启该选项可能会消耗少量 tokens",
-          "connectivityTestModel": "选择用于连通性测试的模型，留空则使用平台默认模型",
-          "connectivityTestEndpoint": "选择或输入 API 端点路径",
+          "providerProxy": "开启后，此供应商的真实请求和手动连接测试都会使用通用设置中的代理配置",
           "connectivityAuthType": "默认使用 Bearer。Anthropic 官方 API 请选择 X-API-Key。如需自定义请在下方输入 Header 名称。",
           "codexReasoningContinue": "仅对 Codex 原生 Responses 流式请求生效。启用后检测到 reasoning 截断时会继续请求同一供应商，可能增加 token 消耗。",
           "codexReasoningContinueLog": "开启后在控制台输出自动续写触发、轮次、截断判断和停止原因；不会输出请求体、响应体或 encrypted reasoning 内容。"
@@ -1274,8 +1164,6 @@
         "manualUpdate": "手动更新",
         "automatic_up": "自动检查更新",
         "next_up": "下次启动自动检查更新",
-        "autoConnectivityTest": "自动可用性监控",
-        "autoConnectivityTestHint": "启用后会每分钟自动检测已启用监控的供应商可用性",
         "globalProxyEnabled": "技能页代理开关",
         "globalProxyEnabledHint": "开启后技能页面中需要联网的功能会使用这里的代理配置；供应商请求是否走代理由供应商表单单独控制",
         "globalProxyProtocol": "代理协议",
@@ -1311,10 +1199,8 @@
         "autoCleanupHint": "记录默认长期保留，只有你手动清理时才会删除。",
         "storage": "占用存储",
         "requestLogs": "请求日志条数",
-        "healthHistory": "可用性历史条数",
         "relayAttempts": "上游尝试条数",
         "requestLogsHint": "累计保存的 request_log 记录数量。",
-        "healthHistoryHint": "累计保存的 health_check_history 记录数量。",
         "relayAttemptsHint": "累计保存的 relay_attempt 上游调用记录数量。",
         "actions": "手动清理",
         "loading": "读取中...",
@@ -1323,9 +1209,9 @@
         "clearButton": "清理全部记录",
         "clearing": "清理中...",
         "clearHintTitle": "只清理记录，不动配置",
-        "clearHint": "会清理 request_log、relay_attempt 和 health_check_history，并回收数据库空间；不会删除供应商、MCP 或设置。",
-        "clearConfirm": "确认清理全部记录吗？这会删除请求日志、上游尝试和可用性历史，且不可恢复。",
-        "clearSuccess": "已清理请求日志 {requests} 条，上游尝试 {attempts} 条，可用性历史 {health} 条",
+        "clearHint": "会清理 request_log 和 relay_attempt 并回收数据库空间；不会删除供应商、MCP 或设置。",
+        "clearConfirm": "确认清理全部记录吗？这会删除请求日志和上游尝试，且不可恢复。",
+        "clearSuccess": "已清理请求日志 {requests} 条，上游尝试 {attempts} 条",
         "clearFailed": "清理失败：{error}",
         "warning": "附加提示"
       },
@@ -1361,7 +1247,7 @@
         "exportSuccess": "当前项目数据已导出到 {path}",
         "importFailed": "导入失败：{error}",
         "exportFailed": "导出失败：{error}",
-        "resultSummary": "文件 {files} 个 · 大小 {bytes} · 请求日志 {logs} 条 · 可用性历史 {health} 条 · 黑名单 {blacklist} 条 · 快捷键 {hotkeys} 条",
+        "resultSummary": "文件 {files} 个 · 大小 {bytes} · 请求日志 {logs} 条 · 黑名单 {blacklist} 条 · 快捷键 {hotkeys} 条",
         "warning": "附加提示"
       },
       "subLabel": {

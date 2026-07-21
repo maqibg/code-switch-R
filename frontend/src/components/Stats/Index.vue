@@ -28,8 +28,6 @@ const {
   refreshing,
   selectedRange,
   setRange,
-  statusRows,
-  statusSummary,
   trendSeries,
 } = useStatsDashboard()
 
@@ -181,35 +179,6 @@ const lastUpdatedLabel = computed(() => {
         <article class="stats-panel">
           <div class="panel-head">
             <div>
-              <h2>{{ t('stats.status.title') }}</h2>
-              <p>{{ t('stats.status.subtitle') }}</p>
-            </div>
-          </div>
-          <div class="status-summary">
-            <div class="status-chip tone-good">{{ statusSummary.operational }} {{ t('stats.status.operational') }}</div>
-            <div class="status-chip tone-warn">{{ statusSummary.degraded }} {{ t('stats.status.degraded') }}</div>
-            <div class="status-chip tone-critical">{{ statusSummary.failed }} {{ t('stats.status.failed') }}</div>
-            <div class="status-chip tone-neutral">{{ statusSummary.disabled }} {{ t('stats.status.disabled') }}</div>
-          </div>
-          <div v-if="statusRows.length" class="status-list">
-            <div v-for="row in statusRows" :key="row.key" class="status-row">
-              <div>
-                <strong>{{ row.name }}</strong>
-                <span>{{ row.platform }}</span>
-              </div>
-              <div class="status-row__meta">
-                <span :class="['status-badge', `tone-${row.tone}`]">{{ row.status }}</span>
-                <span>{{ row.latency }}</span>
-                <span>{{ row.uptime }}</span>
-              </div>
-            </div>
-          </div>
-          <p v-else class="panel-empty">{{ t('stats.status.empty') }}</p>
-        </article>
-
-        <article class="stats-panel">
-          <div class="panel-head">
-            <div>
               <h2>{{ t('stats.activity.title') }}</h2>
               <p>{{ t('stats.activity.subtitle') }}</p>
             </div>
@@ -250,7 +219,6 @@ const lastUpdatedLabel = computed(() => {
 .panel-head,
 .platform-card__top,
 .rank-row,
-.status-row,
 .activity-row {
   display: flex;
   justify-content: space-between;
@@ -269,7 +237,6 @@ const lastUpdatedLabel = computed(() => {
 .panel-head p,
 .platform-card__metrics,
 .rank-row span,
-.status-row span,
 .activity-row span,
 .panel-empty,
 .panel-meta {
@@ -332,8 +299,7 @@ const lastUpdatedLabel = computed(() => {
 
 .stats-overview,
 .platform-strip,
-.stats-grid,
-.status-summary {
+.stats-grid {
   display: grid;
   gap: 16px;
 }
@@ -462,9 +428,7 @@ const lastUpdatedLabel = computed(() => {
   font-size: 1.8rem;
 }
 
-.stats-card__delta,
-.status-badge,
-.status-chip {
+.stats-card__delta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -484,8 +448,7 @@ const lastUpdatedLabel = computed(() => {
   gap: 20px;
 }
 
-.platform-strip,
-.status-summary {
+.platform-strip {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
@@ -497,7 +460,6 @@ const lastUpdatedLabel = computed(() => {
 
 .platform-card__metrics,
 .rank-list,
-.status-list,
 .activity-list {
   display: flex;
   flex-direction: column;
@@ -509,7 +471,6 @@ const lastUpdatedLabel = computed(() => {
 }
 
 .rank-row,
-.status-row,
 .activity-row {
   align-items: center;
   padding-bottom: 12px;
@@ -517,14 +478,12 @@ const lastUpdatedLabel = computed(() => {
 }
 
 .rank-row:last-child,
-.status-row:last-child,
 .activity-row:last-child {
   padding-bottom: 0;
   border-bottom: none;
 }
 
 .rank-row > div,
-.status-row > div,
 .activity-row > div {
   display: flex;
   flex-direction: column;
@@ -533,7 +492,6 @@ const lastUpdatedLabel = computed(() => {
 }
 
 .rank-row strong,
-.status-row strong,
 .activity-row strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -541,13 +499,11 @@ const lastUpdatedLabel = computed(() => {
 }
 
 .rank-row__meta,
-.status-row__meta,
 .activity-row__meta {
   align-items: flex-end;
   text-align: right;
 }
 
-.status-row__meta,
 .activity-row__meta {
   gap: 6px;
 }

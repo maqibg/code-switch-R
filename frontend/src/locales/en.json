@@ -66,8 +66,6 @@
     "mcp": "MCP",
     "skill": "Skills",
     "gemini": "Gemini",
-    "availability": "Availability",
-    "speedtest": "Speed Test",
     "env": "Env Check",
     "logs": "Logs",
     "console": "Console",
@@ -535,7 +533,7 @@
     "hero": {
       "eyebrow": "Operations",
       "title": "Unified Statistics",
-      "lead": "Bring requests, spend, model mix, and live status into one page by reusing the existing logs and monitoring data."
+      "lead": "Bring requests, spend, and model mix into one page by reusing the existing request logs."
     },
     "refresh": "Refresh",
     "refreshing": "Refreshing...",
@@ -574,9 +572,7 @@
       "cost": "Today's Cost",
       "latency": "Average Latency",
       "successRate": "Success rate {value}",
-      "monitoredProviders": "{value} providers monitored",
-      "failedProviders": "{value} providers failing",
-      "degradedProviders": "{value} providers degraded",
+      "currentPeriod": "Current period",
       "vsYesterday": "vs yesterday {value}",
       "vsPrevious": "vs previous period {value}",
       "newValue": "new versus yesterday",
@@ -597,77 +593,9 @@
       "title": "Model Ranking",
       "subtitle": "Sorted by today's request volume from the real request logs."
     },
-    "status": {
-      "title": "Live Status",
-      "subtitle": "Powered by availability monitoring without maintaining a second state store.",
-      "operational": "Operational",
-      "degraded": "Degraded",
-      "failed": "Failed",
-      "disabled": "Not monitored",
-      "empty": "No monitored providers yet"
-    },
     "activity": {
       "title": "Recent Activity",
       "subtitle": "Latest real requests for quick anomaly inspection."
-    }
-  },
-  "availability": {
-    "title": "Availability Monitor",
-    "subtitle": "Real-time health monitoring for AI providers",
-    "refreshAll": "Check All",
-    "refreshing": "Checking...",
-    "check": "Check",
-    "providers": "Providers",
-    "lastUpdate": "Last update",
-    "nextRefresh": "Next refresh",
-    "notMonitored": "Not monitored",
-    "noProviders": "No providers yet. Please add provider configuration first.",
-    "stats": {
-      "operational": "Operational",
-      "degraded": "Degraded",
-      "failed": "Failed",
-      "disabled": "Disabled"
-    },
-    "settings": {
-      "title": "Availability Monitor Settings",
-      "failureThreshold": "Auto-blacklist threshold",
-      "failureThresholdHint": "Trigger blacklist after N consecutive failures",
-      "pollInterval": "Poll interval",
-      "pollIntervalHint": "Background check interval",
-      "operationalThreshold": "Operational threshold",
-      "operationalThresholdHint": "Response latency below this is considered operational"
-    },
-    "editConfig": "Edit Config",
-    "enableMonitoring": "Enable Monitoring",
-    "enableToMonitor": "Please enable availability monitoring first",
-    "configTitle": "Advanced Availability Config",
-    "field": {
-      "testModel": "Test Model",
-      "testEndpoint": "Test Endpoint",
-      "timeout": "Timeout (ms)"
-    },
-    "placeholder": {
-      "testModel": "Leave blank to use platform default model",
-      "testEndpoint": "Leave blank to use platform default endpoint",
-      "timeout": "Default 15000"
-    },
-    "hint": {
-      "timeout": "Milliseconds; blank or 0 will use default 15000"
-    },
-    "default": "default",
-    "currentModel": "Current Model",
-    "currentEndpoint": "Current Endpoint",
-    "currentTimeout": "Current Timeout",
-    "defaultModel": "Platform default model",
-    "defaultEndpoint": "Platform default endpoint",
-    "advancedConfig": {
-      "title": "Advanced Config",
-      "testModel": "Test model",
-      "testModelHint": "Uses low-cost model by default",
-      "testEndpoint": "Test endpoint",
-      "testEndpointHint": "Leave empty for default endpoint",
-      "timeout": "Timeout",
-      "timeoutHint": "Default 15 seconds"
     }
   },
   "common": {
@@ -703,24 +631,6 @@
       "cancel": "Cancel",
       "save": "Save"
     }
-  },
-  "speedtest": {
-    "hero": {
-      "eyebrow": "API Speed Test",
-      "title": "Test API Endpoint Latency",
-      "lead": "Measure the response time of various API endpoints to help choose the best provider."
-    },
-    "placeholder": "Enter API endpoint URL",
-    "add": "Add",
-    "endpoints": "Endpoints ({count})",
-    "start": "Start Test",
-    "testing": "Testing",
-    "empty": "Add API endpoints to start testing",
-    "failed": "Failed",
-    "syncButton": "Refresh Provider Endpoints",
-    "syncing": "Syncing...",
-    "loadingTip": "Syncing provider endpoints from home page...",
-    "syncError": "Sync failed, please refresh manually"
   },
   "envcheck": {
     "hero": {
@@ -983,14 +893,6 @@
           "enabled": "Enabled",
           "providerProxy": "Use Proxy",
           "level": "Priority Level",
-          "availabilityMonitor": "Availability Monitoring",
-          "connectivityAutoBlacklist": "Auto-Blacklist on Failure",
-          "availabilityTestModel": "Test Model (optional)",
-          "availabilityTestEndpoint": "Test Endpoint (optional)",
-          "availabilityTimeout": "Timeout (ms)",
-          "connectivityCheck": "Connectivity Check (deprecated)",
-          "connectivityTestModel": "Test Model",
-          "connectivityTestEndpoint": "Test Endpoint",
           "connectivityAuthType": "Auth Method",
           "modelsEndpoint": "Models Endpoint",
           "userAgentPreset": "User-Agent Preset",
@@ -1004,9 +906,6 @@
           "apiEndpoint": "Leave blank for default, e.g. /v1/chat/completions",
           "officialSite": "https://vendor.com",
           "icon": "e.g. aicoding, kimi",
-          "availabilityTestModel": "Leave empty to use platform default",
-          "availabilityTestEndpoint": "e.g., /v1/messages",
-          "connectivityTestModel": "Select or use default",
           "customModel": "Or enter custom model",
           "customEndpoint": "Or enter custom endpoint",
           "customAuthHeader": "Custom header name (e.g. Authorization, X-Custom-Key)",
@@ -1020,16 +919,7 @@
           "apiEndpoint": "Override platform default endpoint. Leave blank for default (claude: /v1/messages, codex: /responses). For GLM models use /v1/chat/completions",
           "upstreamProtocol": "Specify the upstream API protocol type. Auto mode detects based on endpoint; openai_chat mode auto-converts request/response format",
           "upstreamProtocolCodex": "Codex uses native Responses by default. Selecting OpenAI Chat enables the Responses-to-Chat bridge with text, function tool-call and tool-result round trips, plus previous_response_id history; reasoning auto-continue only applies to native Responses.",
-          "providerProxy": "When enabled, this provider's real requests, availability checks, and connectivity tests use the proxy configuration from General Settings.",
-          "availabilityMonitor": "Enable background health checks for this provider. Checks are performed periodically to monitor availability.",
-          "connectivityAutoBlacklist": "Automatically blacklist this provider if health checks fail repeatedly",
-          "availabilityAdvancedConfig": "Advanced configuration (test model, endpoint, timeout) can be edited on the Availability page",
-          "availabilityTestModel": "Model to use for health checks. Leave empty to use platform default.",
-          "availabilityTestEndpoint": "API endpoint for health checks. Leave empty to use platform default.",
-          "availabilityTimeout": "Timeout for health check requests in milliseconds (default: 15000)",
-          "connectivityCheck": "When enabled, connectivity to this provider will be tested periodically; enabling this may consume a small amount of tokens",
-          "connectivityTestModel": "Select a model for connectivity testing, or leave empty to use platform default",
-          "connectivityTestEndpoint": "Select or enter API endpoint path",
+          "providerProxy": "When enabled, this provider's real requests and manual connection test use the proxy configuration from General Settings.",
           "connectivityAuthType": "Default is Bearer. Use X-API-Key for Anthropic-style APIs. Enter custom header name in the text field if needed.",
           "codexReasoningContinue": "Only applies to native Codex Responses streaming requests. When enabled, the proxy continues with the same provider after detecting reasoning truncation, which may increase token usage.",
           "codexReasoningContinueLog": "When enabled, the console shows auto-continue trigger, round, truncation, and stop-reason diagnostics without logging request bodies, response bodies, or encrypted reasoning content."
@@ -1268,8 +1158,6 @@
         "roundRobin": "Same-Level Round Robin",
         "roundRobinHint": "When enabled, providers at the same Level take turns handling requests; when disabled, always starts from the first",
         "autoUpdate": "Automatic update",
-        "autoConnectivityTest": "Auto Availability Monitoring",
-        "autoConnectivityTestHint": "Automatically check availability of monitored providers every minute",
         "globalProxyEnabled": "Skill-page proxy switch",
         "globalProxyEnabledHint": "When enabled, network features on the Skills page use this proxy configuration. Provider traffic is controlled per provider in the provider form.",
         "globalProxyProtocol": "Proxy protocol",
@@ -1310,10 +1198,8 @@
         "autoCleanupHint": "Records stay until you clear them manually.",
         "storage": "Storage used",
         "requestLogs": "Request log rows",
-        "healthHistory": "Health history rows",
         "relayAttempts": "Upstream attempt rows",
         "requestLogsHint": "Total number of saved request_log entries.",
-        "healthHistoryHint": "Total number of saved health_check_history entries.",
         "relayAttemptsHint": "Total number of saved relay_attempt upstream call entries.",
         "actions": "Manual cleanup",
         "loading": "Loading...",
@@ -1322,9 +1208,9 @@
         "clearButton": "Clear all records",
         "clearing": "Clearing...",
         "clearHintTitle": "Records only, config untouched",
-        "clearHint": "Clears request_log, relay_attempt, and health_check_history and reclaims database space. Providers, MCP, and settings stay untouched.",
-        "clearConfirm": "Clear all stored records? This removes request logs, upstream attempts, and health history and cannot be undone.",
-        "clearSuccess": "Cleared {requests} request logs, {attempts} upstream attempts, and {health} health history rows",
+        "clearHint": "Clears request_log and relay_attempt and reclaims database space. Providers, MCP, and settings stay untouched.",
+        "clearConfirm": "Clear all stored records? This removes request logs and upstream attempts and cannot be undone.",
+        "clearSuccess": "Cleared {requests} request logs and {attempts} upstream attempts",
         "clearFailed": "Cleanup failed: {error}",
         "warning": "Warning"
       },
@@ -1360,7 +1246,7 @@
         "exportSuccess": "Current project data exported to {path}",
         "importFailed": "Import failed: {error}",
         "exportFailed": "Export failed: {error}",
-        "resultSummary": "{files} files · {bytes} · {logs} request logs · {health} health history rows · {blacklist} blacklist rows · {hotkeys} hotkeys",
+        "resultSummary": "{files} files · {bytes} · {logs} request logs · {blacklist} blacklist rows · {hotkeys} hotkeys",
         "warning": "Warning"
       },
       "subLabel": {

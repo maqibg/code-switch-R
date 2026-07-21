@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Call } from '@wailsio/runtime'
 import ListItem from '../Setting/ListRow.vue'
 import LanguageSwitcher from '../Setting/LanguageSwitcher.vue'
 import ThemeSetting from '../Setting/ThemeSetting.vue'
@@ -44,7 +43,6 @@ const getCachedString = (key: string, defaultValue: string): string => {
 const heatmapEnabled = ref(getCachedValue('heatmap', true))
 const homeTitleVisible = ref(getCachedValue('homeTitle', true))
 const autoStartEnabled = ref(getCachedValue('autoStart', false))
-const autoConnectivityTestEnabled = ref(getCachedValue('autoConnectivityTest', false))
 const switchNotifyEnabled = ref(getCachedValue('switchNotify', true)) // 切换通知开关
 const roundRobinEnabled = ref(getCachedValue('roundRobin', false))    // 同 Level 轮询开关
 const autoUpdateEnabled = ref(getCachedValue('autoUpdate', true))     // 自动更新开关
@@ -146,7 +144,6 @@ const loadAppSettings = async () => {
     budgetShowCountdownCodex.value = data?.budget_show_countdown_codex ?? false
     budgetShowForecastCodex.value = data?.budget_show_forecast_codex ?? false
     autoStartEnabled.value = data?.auto_start ?? false
-    autoConnectivityTestEnabled.value = data?.auto_connectivity_test ?? false
     switchNotifyEnabled.value = data?.enable_switch_notify ?? true
     roundRobinEnabled.value = data?.enable_round_robin ?? false
     autoUpdateEnabled.value = data?.auto_update ?? true
@@ -177,7 +174,6 @@ const loadAppSettings = async () => {
     localStorage.setItem('app-settings-budgetShowCountdownCodex', String(budgetShowCountdownCodex.value))
     localStorage.setItem('app-settings-budgetShowForecastCodex', String(budgetShowForecastCodex.value))
     localStorage.setItem('app-settings-autoStart', String(autoStartEnabled.value))
-    localStorage.setItem('app-settings-autoConnectivityTest', String(autoConnectivityTestEnabled.value))
     localStorage.setItem('app-settings-switchNotify', String(switchNotifyEnabled.value))
     localStorage.setItem('app-settings-roundRobin', String(roundRobinEnabled.value))
     localStorage.setItem('app-settings-autoUpdate', String(autoUpdateEnabled.value))
@@ -208,7 +204,6 @@ const loadAppSettings = async () => {
     budgetShowCountdownCodex.value = false
     budgetShowForecastCodex.value = false
     autoStartEnabled.value = false
-    autoConnectivityTestEnabled.value = false
     switchNotifyEnabled.value = true
     roundRobinEnabled.value = false
     globalProxyEnabled.value = false
@@ -282,7 +277,6 @@ const persistAppSettings = async () => {
       budget_show_countdown_codex: budgetShowCountdownCodex.value,
       budget_show_forecast_codex: budgetShowForecastCodex.value,
       auto_start: autoStartEnabled.value,
-      auto_connectivity_test: autoConnectivityTestEnabled.value,
       enable_switch_notify: switchNotifyEnabled.value,
       enable_round_robin: roundRobinEnabled.value,
       auto_update: autoUpdateEnabled.value,
@@ -292,12 +286,6 @@ const persistAppSettings = async () => {
       global_proxy_port: normalizedGlobalProxyPort,
     }
     await saveAppSettings(payload)
-
-    // 同步自动可用性监控设置到 HealthCheckService（复用旧字段名）
-    await Call.ByName(
-      'codeswitch/services.HealthCheckService.SetAutoAvailabilityPolling',
-      autoConnectivityTestEnabled.value
-    )
 
     // 更新缓存
     localStorage.setItem('app-settings-heatmap', String(heatmapEnabled.value))
@@ -321,7 +309,6 @@ const persistAppSettings = async () => {
     localStorage.setItem('app-settings-budgetShowCountdownCodex', String(budgetShowCountdownCodex.value))
     localStorage.setItem('app-settings-budgetShowForecastCodex', String(budgetShowForecastCodex.value))
     localStorage.setItem('app-settings-autoStart', String(autoStartEnabled.value))
-    localStorage.setItem('app-settings-autoConnectivityTest', String(autoConnectivityTestEnabled.value))
     localStorage.setItem('app-settings-switchNotify', String(switchNotifyEnabled.value))
     localStorage.setItem('app-settings-roundRobin', String(roundRobinEnabled.value))
     localStorage.setItem('app-settings-autoUpdate', String(autoUpdateEnabled.value))
@@ -457,7 +444,6 @@ const formatTransferResult = (result: ProjectTransferResult) => {
     files: result.copied_file_count,
     bytes: formatBytes(result.copied_bytes),
     logs: result.imported_request_logs,
-    health: result.imported_health_checks,
     blacklist: result.imported_blacklist_rows,
     hotkeys: result.imported_hotkeys,
   })
@@ -557,7 +543,6 @@ const handleClearStoredRecords = async () => {
     alert(t('components.general.records.clearSuccess', {
       requests: result.deleted_request_logs,
       attempts: result.deleted_relay_attempts,
-      health: result.deleted_health_checks,
     }) + warningText)
   } catch (error) {
     console.error('failed to clear stored records', error)
@@ -926,26 +911,6 @@ onMounted(async () => {
       </section>
 
       <section>
-        <h2 class="mac-section-title">{{ $t('components.general.title.connectivity') }}</h2>
-        <div class="mac-panel">
-          <ListItem :label="$t('components.general.label.autoConnectivityTest')">
-            <div class="toggle-with-hint">
-              <label class="mac-switch">
-                <input
-                  type="checkbox"
-                  :disabled="settingsLoading || saveBusy"
-                  v-model="autoConnectivityTestEnabled"
-                  @change="persistAppSettings"
-                />
-                <span></span>
-              </label>
-              <span class="hint-text">{{ $t('components.general.label.autoConnectivityTestHint') }}</span>
-            </div>
-          </ListItem>
-        </div>
-      </section>
-
-      <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.proxy') }}</h2>
         <div class="mac-panel">
           <ListItem :label="$t('components.general.label.globalProxyEnabled')">
@@ -1053,12 +1018,6 @@ onMounted(async () => {
             <span class="records-card-kicker">{{ $t('components.general.records.requestLogs') }}</span>
             <strong class="records-card-value">{{ recordStorageInfo?.request_log_count ?? 0 }}</strong>
             <p class="records-card-copy">{{ $t('components.general.records.requestLogsHint') }}</p>
-          </article>
-
-          <article class="records-card records-card--metric">
-            <span class="records-card-kicker">{{ $t('components.general.records.healthHistory') }}</span>
-            <strong class="records-card-value">{{ recordStorageInfo?.health_check_count ?? 0 }}</strong>
-            <p class="records-card-copy">{{ $t('components.general.records.healthHistoryHint') }}</p>
           </article>
 
           <article class="records-card records-card--metric">

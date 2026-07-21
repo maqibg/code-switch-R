@@ -14,7 +14,6 @@ import * as DeepSeekCodeSettingsService from "./deepseekcodesettingsservice.js";
 import * as EnvCheckService from "./envcheckservice.js";
 import * as FrontendPreferencesService from "./frontendpreferencesservice.js";
 import * as GeminiService from "./geminiservice.js";
-import * as HealthCheckService from "./healthcheckservice.js";
 import * as ImportService from "./importservice.js";
 import * as LogService from "./logservice.js";
 import * as MCPService from "./mcpservice.js";
@@ -26,7 +25,6 @@ import * as ProviderService from "./providerservice.js";
 import * as ReasonixSettingsService from "./reasonixsettingsservice.js";
 import * as SettingsService from "./settingsservice.js";
 import * as SkillService from "./skillservice.js";
-import * as SpeedTestService from "./speedtestservice.js";
 import * as SuiStore from "./suistore.js";
 import * as UpdateService from "./updateservice.js";
 export {
@@ -43,7 +41,6 @@ export {
     EnvCheckService,
     FrontendPreferencesService,
     GeminiService,
-    HealthCheckService,
     ImportService,
     LogService,
     MCPService,
@@ -55,7 +52,6 @@ export {
     ReasonixSettingsService,
     SettingsService,
     SkillService,
-    SpeedTestService,
     SuiStore,
     UpdateService
 };
@@ -77,7 +73,6 @@ export {
     ConfigImportResult,
     ConfigImportStatus,
     ConfigureResult,
-    ConnectivityResult,
     ConsoleLog,
     CustomCliProxyStatus,
     CustomCliTool,
@@ -86,7 +81,6 @@ export {
     DeepLinkImportRequest,
     DeepSeekCodeProxyStatus,
     DiscoveredModel,
-    EndpointLatency,
     EnvConflict,
     FrontendPreferences,
     GeminiAuthType,
@@ -94,8 +88,6 @@ export {
     GeminiProvider,
     GeminiProxyStatus,
     GeminiStatus,
-    HealthCheckHistory,
-    HealthCheckResult,
     HeatmapStat,
     Hotkey,
     ListenMode,
@@ -139,7 +131,6 @@ export {
     ProviderModelDiscoveryResult,
     ProviderRequestIdentity,
     ProviderRequestTemplate,
-    ProviderTimeline,
     ProxyConfig,
     ProxyInjection,
     ProxyTestResult,
