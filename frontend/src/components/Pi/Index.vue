@@ -65,7 +65,13 @@
               @reorder-blocked="showToast(t('piPage.suppliers.reorderLevelHint'), 'error')"
               @enable-management="togglePlatformMode"
             />
-            <PiPlatformModels v-else :models="page.activePlatform.value.models" :api="page.activePlatform.value.api" :managed="page.activePlatform.value.managed" @add="openAddModel" @edit-model="openEditModel" />
+            <PiPlatformModels v-else-if="workspaceTab === 'models'" :models="page.activePlatform.value.models" :api="page.activePlatform.value.api" :managed="page.activePlatform.value.managed" @add="openAddModel" @edit-model="openEditModel" />
+            <PiBuiltinModels
+              v-else
+              :target-platform="page.activePlatform.value"
+              :adding-key="addingBuiltinModelKey"
+              @add-model="addBuiltinModel"
+            />
           </PiPlatformWorkspace>
           <div v-else class="no-platform"><Boxes :size="24" /><strong>{{ t('piPage.catalog.empty') }}</strong><BaseButton @click="openCreatePlatform">{{ t('piPage.actions.addPlatform') }}</BaseButton></div>
         </div>
@@ -123,12 +129,13 @@ import { Boxes, Bug, CircleAlert, FilePlus2, FileWarning, FolderSearch, History,
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { DeleteModelsProvider } from '../../../bindings/codeswitch/services/pisettingsservice'
-import { PiPlatformConflictDetail, PiSupplierMutationRequest, Provider } from '../../../bindings/codeswitch/services/models'
+import { AddBuiltinModelToPlatform, DeleteModelsProvider } from '../../../bindings/codeswitch/services/pisettingsservice'
+import { PiBuiltinModelAddRequest, PiPlatformConflictDetail, PiSupplierMutationRequest, Provider } from '../../../bindings/codeswitch/services/models'
 import BaseButton from '../common/BaseButton.vue'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
 import { showToast } from '../../utils/toast'
 import PiConflictDialog from './PiConflictDialog.vue'
+import PiBuiltinModels from './PiBuiltinModels.vue'
 import PiPlatformEditorModal from './PiPlatformEditorModal.vue'
 import PiPlatformModelModal from './PiPlatformModelModal.vue'
 import PiPlatformModels from './PiPlatformModels.vue'
@@ -146,6 +153,7 @@ const workspaceTab = ref<PiWorkspaceTab>('suppliers')
 const operationBusy = ref(false)
 const debugBusy = ref(false)
 const busySupplierId = ref<number | null>(null)
+const addingBuiltinModelKey = ref('')
 const platformEditorOpen = ref(false)
 const editingPlatformId = ref<string>()
 const editingModelId = ref<string>()
@@ -200,8 +208,9 @@ const closeModelEditor = () => { modelEditorOpen.value = false; editingModelId.v
 const requestPlatformDiscard = async () => {
   if (await askConfirm({ title: t('piPage.unsaved.title'), message: t('piPage.unsaved.message'), confirmLabel: t('piPage.unsaved.discard'), danger: true })) closePlatformEditor()
 }
-const platformSaved = async () => {
+const platformSaved = async (platformId: string) => {
   closePlatformEditor()
+  page.activePlatformId.value = platformId
   await page.refresh()
   showToast(t('piPage.feedback.platformSaved'))
 }
@@ -212,6 +221,42 @@ const modelSaved = async () => {
   closeModelEditor()
   await page.refresh()
   showToast(t('piPage.feedback.modelSaved'))
+}
+const addBuiltinModel = async (sourceProviderId: string, modelId: string) => {
+  const platform = page.activePlatform.value
+  if (!platform || addingBuiltinModelKey.value) return
+  addingBuiltinModelKey.value = `${sourceProviderId}/${modelId}`
+  operationBusy.value = true
+  try {
+    const add = (conflictAction = '') => AddBuiltinModelToPlatform(new PiBuiltinModelAddRequest({
+      sourceProviderId, modelId, targetProviderId: platform.providerId, conflictAction,
+      expectedFingerprint: page.runtime.value.modelsFile.fingerprint || '',
+    }))
+    let result = await add()
+    if (result.status === 'conflict') {
+      const messageKey = result.conflictKind === 'model_override'
+        ? 'piPage.builtinModels.conflictOverride'
+        : result.conflictKind === 'model_and_override'
+          ? 'piPage.builtinModels.conflictBoth'
+          : 'piPage.builtinModels.conflictModel'
+      const confirmed = await askConfirm({
+        title: t('piPage.builtinModels.conflictTitle', { model: modelId }),
+        message: t(messageKey, { model: modelId, platform: platform.providerId }),
+        confirmLabel: t('piPage.builtinModels.confirmReplace'),
+        danger: true,
+      })
+      if (!confirmed) return
+      result = await add('replace')
+    }
+    if (result.status !== 'added' && result.status !== 'replaced') throw new Error(t('piPage.builtinModels.unexpectedResult'))
+    await page.refresh()
+    showToast(t(result.status === 'replaced' ? 'piPage.builtinModels.replaced' : 'piPage.builtinModels.added', { model: modelId, platform: platform.providerId }))
+  } catch (error) {
+    showToast(errorMessage(error), 'error')
+  } finally {
+    addingBuiltinModelKey.value = ''
+    operationBusy.value = false
+  }
 }
 
 const openCreateSupplier = () => { editingSupplierId.value = undefined; supplierEditorOpen.value = true }

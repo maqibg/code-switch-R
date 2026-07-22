@@ -176,32 +176,35 @@ func readPiModelsCatalog(path string) (PiModelsCatalogSnapshot, error) {
 		}
 		providerID := strings.TrimSpace(id)
 		providerAPI := strings.TrimSpace(source.API)
-		modelsByID := make(map[string]PiModelsCatalogModel, len(source.Models))
+		models := make([]PiModelsCatalogModel, 0, len(source.Models)+len(source.ModelOverrides))
+		modelIndexes := make(map[string]int, len(source.Models))
 		for _, model := range source.Models {
 			modelID := strings.TrimSpace(model.ID)
 			api := strings.TrimSpace(model.API)
 			if api == "" {
 				api = providerAPI
 			}
-			modelsByID[modelID] = PiModelsCatalogModel{
+			catalogModel := PiModelsCatalogModel{
 				ID: modelID, Name: strings.TrimSpace(model.Name), API: api,
 				BaseURL:   strings.TrimSpace(model.BaseURL),
 				Reasoning: model.Reasoning, ContextWindow: model.ContextWindow, MaxTokens: model.MaxTokens,
 			}
+			if index, duplicate := modelIndexes[modelID]; duplicate {
+				models[index] = catalogModel
+				continue
+			}
+			modelIndexes[modelID] = len(models)
+			models = append(models, catalogModel)
 		}
-		modelIDs := make([]string, 0, len(modelsByID))
-		for modelID := range modelsByID {
-			modelIDs = append(modelIDs, modelID)
+		overrideIDs := make([]string, 0, len(source.ModelOverrides))
+		for modelID := range source.ModelOverrides {
+			overrideIDs = append(overrideIDs, modelID)
 		}
-		sort.Strings(modelIDs)
-
-		models := make([]PiModelsCatalogModel, 0, len(modelsByID)+len(source.ModelOverrides))
-		for _, modelID := range modelIDs {
-			models = append(models, modelsByID[modelID])
-		}
-		for modelID, override := range source.ModelOverrides {
+		sort.Strings(overrideIDs)
+		for _, modelID := range overrideIDs {
+			override := source.ModelOverrides[modelID]
 			modelID = strings.TrimSpace(modelID)
-			if _, replaced := modelsByID[modelID]; replaced {
+			if _, replaced := modelIndexes[modelID]; replaced {
 				continue
 			}
 			models = append(models, PiModelsCatalogModel{
@@ -209,7 +212,6 @@ func readPiModelsCatalog(path string) (PiModelsCatalogSnapshot, error) {
 				Reasoning: override.Reasoning, ContextWindow: override.ContextWindow, MaxTokens: override.MaxTokens, Override: true,
 			})
 		}
-		sort.SliceStable(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 		snapshot.Templates = append(snapshot.Templates, PiModelsCatalogTemplate{
 			ProviderID: providerID,
 			Name:       strings.TrimSpace(source.Name),

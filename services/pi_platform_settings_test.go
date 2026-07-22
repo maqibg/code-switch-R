@@ -169,6 +169,7 @@ func TestPiPlatformProxyAllowsManagedMetadataEditAndRestoresOnlyConnection(t *te
 		t.Fatalf("托管编辑器应显示原始连接字段: %#v", template)
 	}
 	template.Name = "Updated"
+	template.API = "openai-completions"
 	template.Headers["X-Tenant"] = "new"
 	template.Models = append(template.Models, PiModelEntry{ID: "claude-new", Input: []string{"text"}})
 	if err := service.UpdateModelsProvider(template); err != nil {
@@ -179,14 +180,14 @@ func TestPiPlatformProxyAllowsManagedMetadataEditAndRestoresOnlyConnection(t *te
 		t.Fatalf("托管期间编辑非连接字段不应造成冲突: %#v err=%v", status, err)
 	}
 	managedTemplate, err := service.GetModelsProvider("anthropic")
-	if err != nil || managedTemplate.Name != "Updated" || managedTemplate.Headers["X-Tenant"] != "new" || len(managedTemplate.Models) != 2 {
+	if err != nil || managedTemplate.API != "openai-completions" || managedTemplate.Name != "Updated" || managedTemplate.Headers["X-Tenant"] != "new" || len(managedTemplate.Models) != 2 {
 		t.Fatalf("托管期间应读取最新非连接字段: %#v err=%v", managedTemplate, err)
 	}
 	if err := service.DisablePlatformProxy("anthropic"); err != nil {
 		t.Fatal(err)
 	}
 	finalTemplate, err := service.GetModelsProvider("anthropic")
-	if err != nil || finalTemplate.BaseURL != "https://api.anthropic.com" || finalTemplate.APIKey != "original-key" || finalTemplate.Name != "Updated" || finalTemplate.Headers["X-Tenant"] != "new" || len(finalTemplate.Models) != 2 {
+	if err != nil || finalTemplate.BaseURL != "https://api.anthropic.com" || finalTemplate.APIKey != "original-key" || finalTemplate.API != "openai-completions" || finalTemplate.Name != "Updated" || finalTemplate.Headers["X-Tenant"] != "new" || len(finalTemplate.Models) != 2 {
 		t.Fatalf("关闭托管只应恢复连接字段: %#v err=%v", finalTemplate, err)
 	}
 }

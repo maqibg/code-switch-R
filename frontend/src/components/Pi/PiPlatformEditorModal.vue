@@ -18,11 +18,11 @@
       <section v-if="section === 'definition'" class="form-pane">
         <div class="field-explanation"><strong>{{ t('piPage.platformForm.identity') }}</strong><p>{{ t('piPage.platformForm.identityHint') }}</p></div>
         <div class="field-grid two">
-          <label><span>{{ t('piPage.platformForm.id') }}</span><BaseInput v-model="draft.id" :disabled="editing" required placeholder="my-provider" /></label>
+          <label><span>{{ t('piPage.platformForm.id') }}</span><BaseInput v-model="draft.id" required placeholder="my-provider" /></label>
           <label><span>{{ t('piPage.platformForm.name') }}</span><BaseInput v-model="draft.name" /></label>
         </div>
-        <label><span>{{ t('piPage.platformForm.apiEndpointType') }}</span><select v-model="draft.api"><option v-if="editing" value="">{{ t('piPage.platforms.inherited') }}</option><option v-if="unsupportedAPI" :value="draft.api" disabled>{{ draft.api }} — {{ t('piPage.platformForm.unsupportedApiShort') }}</option><option v-for="api in PI_API_OPTIONS" :key="api.id" :value="api.id">{{ formatPiAPIOption(api) }}</option></select><small>{{ t('piPage.platformForm.apiEndpointHint') }}</small></label>
-        <p v-if="unsupportedAPI" class="form-message error">{{ t('piPage.platformForm.unsupportedApi', { api: draft.api }) }}</p>
+        <label><span>{{ t('piPage.platformForm.apiEndpointType') }}</span><select v-model="draft.api"><option v-if="editing" value="">{{ t('piPage.platforms.inherited') }}</option><option v-if="unsupportedAPI" :value="draft.api" disabled>{{ draft.api }} — {{ t('piPage.platformForm.unsupportedApiShort') }}</option><option v-for="api in apiOptions" :key="api.id" :value="api.id">{{ formatPiAPIOption(api) }}</option></select><small>{{ t('piPage.platformForm.apiEndpointHint') }}</small></label>
+        <p v-if="unsupportedAPI" class="form-message error">{{ t(unsupportedAPIMessage, { api: draft.api }) }}</p>
         <section class="direct-connection">
           <header><div><strong>{{ t('piPage.platformForm.directConnectionTitle') }}</strong><p>{{ t(managed ? 'piPage.platformForm.managedConnectionHint' : 'piPage.platformForm.directConnectionHint') }}</p></div><span v-if="credentialSource" class="source-badge">{{ credentialSource }}</span></header>
           <label><span>{{ t('piPage.platformForm.directBaseUrl') }}</span><BaseInput v-model="draft.baseUrl" :disabled="managed" placeholder="https://api.example.com/v1" /></label>
@@ -51,7 +51,7 @@
 import { CircleAlert } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CreateModelsProvider, GetModelsProvider, UpdateModelsProvider } from '../../../bindings/codeswitch/services/pisettingsservice'
+import { CreateModelsProvider, GetModelsProvider, RenameModelsProvider, UpdateModelsProvider } from '../../../bindings/codeswitch/services/pisettingsservice'
 import { PiModelsProviderTemplate } from '../../../bindings/codeswitch/services/models'
 import BaseButton from '../common/BaseButton.vue'
 import BaseInput from '../common/BaseInput.vue'
@@ -62,7 +62,7 @@ import { formatPiAPIOption, isPiAPIID, PI_API_OPTIONS } from '../../data/piApiOp
 import { usePiFormDraft } from './usePiFormDraft'
 
 const props = withDefaults(defineProps<{ open: boolean; platformId?: string; fingerprint: string; credentialSource?: string; managed?: boolean }>(), { managed: false })
-const emit = defineEmits<{ (event: 'close'): void; (event: 'discard-request'): void; (event: 'saved'): void }>()
+const emit = defineEmits<{ (event: 'close'): void; (event: 'discard-request'): void; (event: 'saved', platformId: string): void }>()
 const { t } = useI18n()
 const editing = computed(() => Boolean(props.platformId))
 type PlatformDraft = {
@@ -94,7 +94,16 @@ const tabs = computed(() => [
   { id: 'definition' as const, label: t('piPage.platformForm.definitionTab') },
   { id: 'advanced' as const, label: t('piPage.platformForm.advancedTab') },
 ])
-const unsupportedAPI = computed(() => Boolean(draft.value.api && !isPiAPIID(draft.value.api)))
+const apiOptions = computed(() => props.managed
+  ? PI_API_OPTIONS.filter((option) => option.gatewaySupported)
+  : PI_API_OPTIONS)
+const unsupportedAPI = computed(() => Boolean(draft.value.api && (
+  !isPiAPIID(draft.value.api)
+  || (props.managed && !apiOptions.value.some((option) => option.id === draft.value.api))
+)))
+const unsupportedAPIMessage = computed(() => props.managed && isPiAPIID(draft.value.api)
+  ? 'piPage.platformForm.managedUnsupportedApi'
+  : 'piPage.platformForm.unsupportedApi')
 const setAuthHeader = (enabled: boolean) => { draft.value.authHeader = enabled ? true : undefined }
 
 const compactHeaders = (headers?: { [key: string]: string | undefined }): Record<string, string> => Object.fromEntries(
@@ -159,17 +168,18 @@ const save = async () => {
     error.value = t('piPage.platformForm.invalidId')
     return
   }
-  if ((!editing.value && !isPiAPIID(draft.value.api)) || (draft.value.api && !isPiAPIID(draft.value.api))) {
-    error.value = t('piPage.platformForm.unsupportedApi', { api: draft.value.api })
+  if ((!editing.value && !isPiAPIID(draft.value.api)) || unsupportedAPI.value) {
+    error.value = t(unsupportedAPIMessage.value, { api: draft.value.api })
     return
   }
   saving.value = true
   try {
     const payload = toTemplate()
-    if (editing.value) await UpdateModelsProvider(payload)
+    if (editing.value && props.platformId !== draft.value.id) await RenameModelsProvider(props.platformId!, payload)
+    else if (editing.value) await UpdateModelsProvider(payload)
     else await CreateModelsProvider(payload)
     commitBaseline()
-    emit('saved')
+    emit('saved', draft.value.id)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {

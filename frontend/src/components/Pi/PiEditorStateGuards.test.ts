@@ -8,6 +8,7 @@ import { PiRuntimePlatform } from '../../../bindings/codeswitch/services/models'
 const serviceMocks = vi.hoisted(() => ({
   createPlatform: vi.fn(),
   getPlatform: vi.fn(),
+  renamePlatform: vi.fn(),
   updatePlatform: vi.fn(),
   listTemplates: vi.fn(),
   saveTemplate: vi.fn(),
@@ -18,6 +19,7 @@ const serviceMocks = vi.hoisted(() => ({
 vi.mock('../../../bindings/codeswitch/services/pisettingsservice', () => ({
   CreateModelsProvider: serviceMocks.createPlatform,
   GetModelsProvider: serviceMocks.getPlatform,
+  RenameModelsProvider: serviceMocks.renamePlatform,
   UpdateModelsProvider: serviceMocks.updatePlatform,
 }))
 
@@ -96,6 +98,50 @@ describe('Pi editor state guards', () => {
     expect(wrapper.text()).not.toContain('继续编辑')
     await wrapper.find('form').trigger('submit')
     expect(serviceMocks.updatePlatform).not.toHaveBeenCalled()
+  })
+
+  it('saves a changed platform protocol and limits managed choices to gateway protocols', async () => {
+    serviceMocks.getPlatform.mockResolvedValue(platformTemplate())
+    serviceMocks.updatePlatform.mockResolvedValue(undefined)
+    const wrapper = mount(PiPlatformEditorModal, {
+      props: { open: false, platformId: 'platform-a', fingerprint: 'fingerprint-1', managed: true },
+      ...mountOptions(),
+    })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+
+    const protocol = wrapper.find('select')
+    expect(protocol.findAll('option').map((option) => option.attributes('value'))).not.toContain('bedrock-converse-stream')
+    await protocol.setValue('anthropic-messages')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(serviceMocks.updatePlatform).toHaveBeenCalledTimes(1)
+    expect(serviceMocks.updatePlatform.mock.calls[0][0]).toMatchObject({
+      id: 'platform-a',
+      api: 'anthropic-messages',
+    })
+  })
+
+  it('renames a platform when the Provider key changes', async () => {
+    serviceMocks.getPlatform.mockResolvedValue(platformTemplate())
+    serviceMocks.renamePlatform.mockResolvedValue(undefined)
+    const wrapper = mount(PiPlatformEditorModal, {
+      props: { open: false, platformId: 'platform-a', fingerprint: 'fingerprint-1' },
+      ...mountOptions(),
+    })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+
+    await wrapper.findAll('.base-input-stub')[0].setValue('platform-renamed')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(serviceMocks.renamePlatform).toHaveBeenCalledTimes(1)
+    expect(serviceMocks.renamePlatform.mock.calls[0][0]).toBe('platform-a')
+    expect(serviceMocks.renamePlatform.mock.calls[0][1]).toMatchObject({ id: 'platform-renamed' })
+    expect(serviceMocks.updatePlatform).not.toHaveBeenCalled()
+    expect(wrapper.emitted('saved')).toEqual([['platform-renamed']])
   })
 
   it('clears a previously loaded model draft when the next load fails', async () => {

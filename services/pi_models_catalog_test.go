@@ -65,8 +65,8 @@ func TestReadPiModelsCatalogReturnsSanitizedTemplatesAndModels(t *testing.T) {
 	if customOpenAI.ProviderID != "custom" || customOpenAI.BaseURL != "https://example.com/v1" || customOpenAI.API != "openai-completions" {
 		t.Fatalf("Provider 模板错误: %#v", customOpenAI)
 	}
-	if len(customOpenAI.Models) != 4 || customOpenAI.Models[0].ID != "builtin-model" || !customOpenAI.Models[0].Override || customOpenAI.Models[1].ID != "model-a" || customOpenAI.Models[2].ID != "model-b" || customOpenAI.Models[2].Override || customOpenAI.Models[3].ID != "model-c" || customOpenAI.Models[3].API != "anthropic-messages" {
-		t.Fatalf("模型未按生效规则去重或排序: %#v", customOpenAI.Models)
+	if len(customOpenAI.Models) != 4 || customOpenAI.Models[0].ID != "model-b" || customOpenAI.Models[0].Override || customOpenAI.Models[1].ID != "model-a" || customOpenAI.Models[2].ID != "model-c" || customOpenAI.Models[2].API != "anthropic-messages" || customOpenAI.Models[3].ID != "builtin-model" || !customOpenAI.Models[3].Override {
+		t.Fatalf("模型未保留 models[] 顺序或按生效规则去重: %#v", customOpenAI.Models)
 	}
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {

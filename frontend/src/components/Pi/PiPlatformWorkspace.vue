@@ -34,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { Boxes, Pencil, Route, ShieldAlert, Trash2 } from 'lucide-vue-next'
+import { Boxes, LibraryBig, Pencil, Route, ShieldAlert, Trash2 } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PiRuntimePlatform, PiWorkspaceTab } from './types'
@@ -51,6 +51,7 @@ const { t } = useI18n()
 const tabs = computed(() => [
   { id: 'suppliers' as const, label: t('piPage.tabs.suppliers'), icon: Route },
   { id: 'models' as const, label: t('piPage.tabs.models'), icon: Boxes },
+  { id: 'builtin-models' as const, label: t('piPage.tabs.builtinModels'), icon: LibraryBig },
 ])
 </script>
 

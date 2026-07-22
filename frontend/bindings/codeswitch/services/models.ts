@@ -2009,6 +2009,200 @@ export class NetworkSettings {
     }
 }
 
+export class PiBuiltinCatalogSnapshot {
+    "piVersion": string;
+    "modelVersion": string;
+    "piPackagePath": string;
+    "modelPackagePath": string;
+    "loadedAt": string;
+    "providerCount": number;
+    "modelCount": number;
+    "providers": PiBuiltinProvider[];
+
+    /** Creates a new PiBuiltinCatalogSnapshot instance. */
+    constructor($$source: Partial<PiBuiltinCatalogSnapshot> = {}) {
+        if (!("piVersion" in $$source)) {
+            this["piVersion"] = "";
+        }
+        if (!("modelVersion" in $$source)) {
+            this["modelVersion"] = "";
+        }
+        if (!("piPackagePath" in $$source)) {
+            this["piPackagePath"] = "";
+        }
+        if (!("modelPackagePath" in $$source)) {
+            this["modelPackagePath"] = "";
+        }
+        if (!("loadedAt" in $$source)) {
+            this["loadedAt"] = "";
+        }
+        if (!("providerCount" in $$source)) {
+            this["providerCount"] = 0;
+        }
+        if (!("modelCount" in $$source)) {
+            this["modelCount"] = 0;
+        }
+        if (!("providers" in $$source)) {
+            this["providers"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiBuiltinCatalogSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiBuiltinCatalogSnapshot {
+        const $$createField7_0 = $$createType27;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("providers" in $$parsedSource) {
+            $$parsedSource["providers"] = $$createField7_0($$parsedSource["providers"]);
+        }
+        return new PiBuiltinCatalogSnapshot($$parsedSource as Partial<PiBuiltinCatalogSnapshot>);
+    }
+}
+
+export class PiBuiltinModel {
+    "id": string;
+    "name"?: string;
+    "api"?: string;
+    "provider": string;
+    "baseUrl"?: string;
+    "reasoning"?: boolean | null;
+    "thinkingLevelMap"?: { [_ in string]?: string | null };
+    "input"?: string[];
+    "cost"?: PiModelCost | null;
+    "contextWindow"?: number | null;
+    "maxTokens"?: number | null;
+    "headers"?: { [_ in string]?: string };
+    "compat"?: { [_ in string]?: any };
+
+    /** Creates a new PiBuiltinModel instance. */
+    constructor($$source: Partial<PiBuiltinModel> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("provider" in $$source)) {
+            this["provider"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiBuiltinModel instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiBuiltinModel {
+        const $$createField6_0 = $$createType28;
+        const $$createField7_0 = $$createType20;
+        const $$createField8_0 = $$createType30;
+        const $$createField11_0 = $$createType4;
+        const $$createField12_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("thinkingLevelMap" in $$parsedSource) {
+            $$parsedSource["thinkingLevelMap"] = $$createField6_0($$parsedSource["thinkingLevelMap"]);
+        }
+        if ("input" in $$parsedSource) {
+            $$parsedSource["input"] = $$createField7_0($$parsedSource["input"]);
+        }
+        if ("cost" in $$parsedSource) {
+            $$parsedSource["cost"] = $$createField8_0($$parsedSource["cost"]);
+        }
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField11_0($$parsedSource["headers"]);
+        }
+        if ("compat" in $$parsedSource) {
+            $$parsedSource["compat"] = $$createField12_0($$parsedSource["compat"]);
+        }
+        return new PiBuiltinModel($$parsedSource as Partial<PiBuiltinModel>);
+    }
+}
+
+export class PiBuiltinModelAddRequest {
+    "sourceProviderId": string;
+    "modelId": string;
+    "targetProviderId": string;
+    "expectedFingerprint": string;
+    "conflictAction"?: string;
+
+    /** Creates a new PiBuiltinModelAddRequest instance. */
+    constructor($$source: Partial<PiBuiltinModelAddRequest> = {}) {
+        if (!("sourceProviderId" in $$source)) {
+            this["sourceProviderId"] = "";
+        }
+        if (!("modelId" in $$source)) {
+            this["modelId"] = "";
+        }
+        if (!("targetProviderId" in $$source)) {
+            this["targetProviderId"] = "";
+        }
+        if (!("expectedFingerprint" in $$source)) {
+            this["expectedFingerprint"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiBuiltinModelAddRequest instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiBuiltinModelAddRequest {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PiBuiltinModelAddRequest($$parsedSource as Partial<PiBuiltinModelAddRequest>);
+    }
+}
+
+export class PiBuiltinModelAddResult {
+    "status": string;
+    "conflictKind"?: string;
+
+    /** Creates a new PiBuiltinModelAddResult instance. */
+    constructor($$source: Partial<PiBuiltinModelAddResult> = {}) {
+        if (!("status" in $$source)) {
+            this["status"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiBuiltinModelAddResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiBuiltinModelAddResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PiBuiltinModelAddResult($$parsedSource as Partial<PiBuiltinModelAddResult>);
+    }
+}
+
+export class PiBuiltinProvider {
+    "id": string;
+    "models": PiBuiltinModel[];
+
+    /** Creates a new PiBuiltinProvider instance. */
+    constructor($$source: Partial<PiBuiltinProvider> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("models" in $$source)) {
+            this["models"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PiBuiltinProvider instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PiBuiltinProvider {
+        const $$createField1_0 = $$createType32;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("models" in $$parsedSource) {
+            $$parsedSource["models"] = $$createField1_0($$parsedSource["models"]);
+        }
+        return new PiBuiltinProvider($$parsedSource as Partial<PiBuiltinProvider>);
+    }
+}
+
 export class PiConfigDiagnostic {
     "path": string;
     "message": string;
@@ -2069,7 +2263,7 @@ export class PiModelCost {
      * Creates a new PiModelCost instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelCost {
-        const $$createField4_0 = $$createType27;
+        const $$createField4_0 = $$createType34;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("tiers" in $$parsedSource) {
             $$parsedSource["tiers"] = $$createField4_0($$parsedSource["tiers"]);
@@ -2194,7 +2388,7 @@ export class PiModelOverride {
     static createFrom($$source: any = {}): PiModelOverride {
         const $$createField2_0 = $$createType28;
         const $$createField3_0 = $$createType20;
-        const $$createField6_0 = $$createType32;
+        const $$createField6_0 = $$createType36;
         const $$createField7_0 = $$createType4;
         const $$createField8_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
@@ -2234,7 +2428,7 @@ export class PiModelOverrideCost {
      * Creates a new PiModelOverrideCost instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelOverrideCost {
-        const $$createField4_0 = $$createType27;
+        const $$createField4_0 = $$createType34;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("tiers" in $$parsedSource) {
             $$parsedSource["tiers"] = $$createField4_0($$parsedSource["tiers"]);
@@ -2312,7 +2506,7 @@ export class PiModelsCatalogSnapshot {
      * Creates a new PiModelsCatalogSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsCatalogSnapshot {
-        const $$createField10_0 = $$createType34;
+        const $$createField10_0 = $$createType38;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("templates" in $$parsedSource) {
             $$parsedSource["templates"] = $$createField10_0($$parsedSource["templates"]);
@@ -2353,7 +2547,7 @@ export class PiModelsCatalogTemplate {
      * Creates a new PiModelsCatalogTemplate instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsCatalogTemplate {
-        const $$createField7_0 = $$createType36;
+        const $$createField7_0 = $$createType40;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField7_0($$parsedSource["models"]);
@@ -2377,7 +2571,7 @@ export class PiModelsPreviewRequest {
      * Creates a new PiModelsPreviewRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsPreviewRequest {
-        const $$createField0_0 = $$createType38;
+        const $$createField0_0 = $$createType42;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("providers" in $$parsedSource) {
             $$parsedSource["providers"] = $$createField0_0($$parsedSource["providers"]);
@@ -2412,7 +2606,7 @@ export class PiModelsPreviewResult {
      */
     static createFrom($$source: any = {}): PiModelsPreviewResult {
         const $$createField1_0 = $$createType20;
-        const $$createField3_0 = $$createType40;
+        const $$createField3_0 = $$createType44;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("currentModelIds" in $$parsedSource) {
             $$parsedSource["currentModelIds"] = $$createField1_0($$parsedSource["currentModelIds"]);
@@ -2465,8 +2659,8 @@ export class PiModelsProviderTemplate {
     static createFrom($$source: any = {}): PiModelsProviderTemplate {
         const $$createField6_0 = $$createType4;
         const $$createField8_0 = $$createType5;
-        const $$createField9_0 = $$createType42;
-        const $$createField10_0 = $$createType44;
+        const $$createField9_0 = $$createType46;
+        const $$createField10_0 = $$createType48;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField6_0($$parsedSource["headers"]);
@@ -2668,7 +2862,7 @@ export class PiProviderTemplate {
      * Creates a new PiProviderTemplate instance from a string or object.
      */
     static createFrom($$source: any = {}): PiProviderTemplate {
-        const $$createField7_0 = $$createType45;
+        const $$createField7_0 = $$createType49;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("knownModels" in $$parsedSource) {
             $$parsedSource["knownModels"] = $$createField7_0($$parsedSource["knownModels"]);
@@ -2793,7 +2987,7 @@ export class PiRuntimePlatform {
      */
     static createFrom($$source: any = {}): PiRuntimePlatform {
         const $$createField12_0 = $$createType20;
-        const $$createField13_0 = $$createType36;
+        const $$createField13_0 = $$createType40;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("managementBlockers" in $$parsedSource) {
             $$parsedSource["managementBlockers"] = $$createField12_0($$parsedSource["managementBlockers"]);
@@ -2900,14 +3094,14 @@ export class PiRuntimeSnapshot {
      * Creates a new PiRuntimeSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PiRuntimeSnapshot {
-        const $$createField5_0 = $$createType46;
-        const $$createField6_0 = $$createType46;
-        const $$createField7_0 = $$createType46;
-        const $$createField8_0 = $$createType47;
-        const $$createField9_0 = $$createType49;
+        const $$createField5_0 = $$createType50;
+        const $$createField6_0 = $$createType50;
+        const $$createField7_0 = $$createType50;
+        const $$createField8_0 = $$createType51;
+        const $$createField9_0 = $$createType53;
         const $$createField10_0 = $$createType20;
-        const $$createField11_0 = $$createType51;
-        const $$createField12_0 = $$createType53;
+        const $$createField11_0 = $$createType55;
+        const $$createField12_0 = $$createType57;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("modelsFile" in $$parsedSource) {
             $$parsedSource["modelsFile"] = $$createField5_0($$parsedSource["modelsFile"]);
@@ -3033,8 +3227,8 @@ export class PiSupplierMutationRequest {
      * Creates a new PiSupplierMutationRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): PiSupplierMutationRequest {
-        const $$createField3_0 = $$createType37;
-        const $$createField4_0 = $$createType42;
+        const $$createField3_0 = $$createType41;
+        const $$createField4_0 = $$createType46;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField3_0($$parsedSource["provider"]);
@@ -3066,7 +3260,7 @@ export class PiSupplierMutationResult {
      * Creates a new PiSupplierMutationResult instance from a string or object.
      */
     static createFrom($$source: any = {}): PiSupplierMutationResult {
-        const $$createField0_0 = $$createType37;
+        const $$createField0_0 = $$createType41;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField0_0($$parsedSource["provider"]);
@@ -3371,14 +3565,14 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField11_0 = $$createType54;
+        const $$createField11_0 = $$createType58;
         const $$createField12_0 = $$createType4;
-        const $$createField16_0 = $$createType56;
+        const $$createField16_0 = $$createType60;
         const $$createField21_0 = $$createType4;
-        const $$createField24_0 = $$createType58;
-        const $$createField25_0 = $$createType59;
-        const $$createField27_0 = $$createType42;
-        const $$createField28_0 = $$createType44;
+        const $$createField24_0 = $$createType62;
+        const $$createField25_0 = $$createType63;
+        const $$createField27_0 = $$createType46;
+        const $$createField28_0 = $$createType48;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("supportedModels" in $$parsedSource) {
             $$parsedSource["supportedModels"] = $$createField11_0($$parsedSource["supportedModels"]);
@@ -3489,7 +3683,7 @@ export class ProviderModelDiscoveryRequest {
      * Creates a new ProviderModelDiscoveryRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryRequest {
-        const $$createField1_0 = $$createType37;
+        const $$createField1_0 = $$createType41;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField1_0($$parsedSource["provider"]);
@@ -3518,7 +3712,7 @@ export class ProviderModelDiscoveryResult {
      * Creates a new ProviderModelDiscoveryResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryResult {
-        const $$createField0_0 = $$createType61;
+        const $$createField0_0 = $$createType65;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField0_0($$parsedSource["models"]);
@@ -3587,7 +3781,7 @@ export class ProviderRequestTemplate {
      */
     static createFrom($$source: any = {}): ProviderRequestTemplate {
         const $$createField2_0 = $$createType4;
-        const $$createField4_0 = $$createType58;
+        const $$createField4_0 = $$createType62;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
@@ -3746,7 +3940,7 @@ export class RecordCleanupResult {
      * Creates a new RecordCleanupResult instance from a string or object.
      */
     static createFrom($$source: any = {}): RecordCleanupResult {
-        const $$createField3_0 = $$createType62;
+        const $$createField3_0 = $$createType66;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storage" in $$parsedSource) {
             $$parsedSource["storage"] = $$createField3_0($$parsedSource["storage"]);
@@ -4381,40 +4575,44 @@ const $$createType22 = $Create.Array($$createType21);
 const $$createType23 = MCPServer.createFrom;
 const $$createType24 = $Create.Array($$createType23);
 const $$createType25 = TargetCli.createFrom;
-const $$createType26 = PiModelCostTier.createFrom;
+const $$createType26 = PiBuiltinProvider.createFrom;
 const $$createType27 = $Create.Array($$createType26);
 const $$createType28 = $Create.Map($Create.Any, $Create.Any);
 const $$createType29 = PiModelCost.createFrom;
 const $$createType30 = $Create.Nullable($$createType29);
-const $$createType31 = PiModelOverrideCost.createFrom;
-const $$createType32 = $Create.Nullable($$createType31);
-const $$createType33 = PiModelsCatalogTemplate.createFrom;
+const $$createType31 = PiBuiltinModel.createFrom;
+const $$createType32 = $Create.Array($$createType31);
+const $$createType33 = PiModelCostTier.createFrom;
 const $$createType34 = $Create.Array($$createType33);
-const $$createType35 = PiModelsCatalogModel.createFrom;
-const $$createType36 = $Create.Array($$createType35);
-const $$createType37 = Provider.createFrom;
+const $$createType35 = PiModelOverrideCost.createFrom;
+const $$createType36 = $Create.Nullable($$createType35);
+const $$createType37 = PiModelsCatalogTemplate.createFrom;
 const $$createType38 = $Create.Array($$createType37);
-const $$createType39 = PiConfigDiagnostic.createFrom;
+const $$createType39 = PiModelsCatalogModel.createFrom;
 const $$createType40 = $Create.Array($$createType39);
-const $$createType41 = PiModelEntry.createFrom;
+const $$createType41 = Provider.createFrom;
 const $$createType42 = $Create.Array($$createType41);
-const $$createType43 = PiModelOverride.createFrom;
-const $$createType44 = $Create.Map($Create.Any, $$createType43);
-const $$createType45 = $Create.Map($Create.Any, $$createType41);
-const $$createType46 = PiRuntimeFileStatus.createFrom;
-const $$createType47 = PiRuntimeSettings.createFrom;
-const $$createType48 = PiRuntimeAuthStatus.createFrom;
-const $$createType49 = $Create.Array($$createType48);
-const $$createType50 = PiRuntimePlatform.createFrom;
-const $$createType51 = $Create.Array($$createType50);
-const $$createType52 = PiRuntimeSupplier.createFrom;
+const $$createType43 = PiConfigDiagnostic.createFrom;
+const $$createType44 = $Create.Array($$createType43);
+const $$createType45 = PiModelEntry.createFrom;
+const $$createType46 = $Create.Array($$createType45);
+const $$createType47 = PiModelOverride.createFrom;
+const $$createType48 = $Create.Map($Create.Any, $$createType47);
+const $$createType49 = $Create.Map($Create.Any, $$createType45);
+const $$createType50 = PiRuntimeFileStatus.createFrom;
+const $$createType51 = PiRuntimeSettings.createFrom;
+const $$createType52 = PiRuntimeAuthStatus.createFrom;
 const $$createType53 = $Create.Array($$createType52);
-const $$createType54 = $Create.Map($Create.Any, $Create.Any);
-const $$createType55 = AvailabilityConfig.createFrom;
-const $$createType56 = $Create.Nullable($$createType55);
-const $$createType57 = ProviderRequestIdentity.createFrom;
-const $$createType58 = $Create.Nullable($$createType57);
-const $$createType59 = $Create.Map($Create.Any, $$createType57);
-const $$createType60 = DiscoveredModel.createFrom;
-const $$createType61 = $Create.Array($$createType60);
-const $$createType62 = RecordStorageInfo.createFrom;
+const $$createType54 = PiRuntimePlatform.createFrom;
+const $$createType55 = $Create.Array($$createType54);
+const $$createType56 = PiRuntimeSupplier.createFrom;
+const $$createType57 = $Create.Array($$createType56);
+const $$createType58 = $Create.Map($Create.Any, $Create.Any);
+const $$createType59 = AvailabilityConfig.createFrom;
+const $$createType60 = $Create.Nullable($$createType59);
+const $$createType61 = ProviderRequestIdentity.createFrom;
+const $$createType62 = $Create.Nullable($$createType61);
+const $$createType63 = $Create.Map($Create.Any, $$createType61);
+const $$createType64 = DiscoveredModel.createFrom;
+const $$createType65 = $Create.Array($$createType64);
+const $$createType66 = RecordStorageInfo.createFrom;

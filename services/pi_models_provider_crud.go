@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -137,18 +136,8 @@ func (s *PiSettingsService) UpdateModelsProvider(input PiModelsProviderTemplate)
 		if !piManagedProviderConnectionMatches(current, s.platformBaseURL(input.ID)) {
 			return fmt.Errorf("Pi 平台 %q 托管配置已被外部修改，请先处理冲突", input.ID)
 		}
-		if _, supported := piManagedAPIs[input.API]; !supported {
-			return fmt.Errorf("Pi 平台 %q 的 api=%q 暂不支持托管", input.ID, input.API)
-		}
-		for _, model := range input.Models {
-			if strings.TrimSpace(model.BaseURL) != "" {
-				return fmt.Errorf("Pi 平台 %q 的模型 %q 配置了独立 baseUrl，会绕过平台网关", input.ID, model.ID)
-			}
-			if api := strings.TrimSpace(model.API); api != "" {
-				if _, supported := piManagedAPIs[api]; !supported {
-					return fmt.Errorf("Pi 平台 %q 的模型 %q 使用了不受网关支持的 api=%q", input.ID, model.ID, api)
-				}
-			}
+		if err := validateManagedPiProviderTemplate(input.ID, input); err != nil {
+			return err
 		}
 		if managed.InjectedAuthHash != "" {
 			authRoot, _, authErr := readJSONObjectOrDefault(s.authPath(), map[string]json.RawMessage{})
@@ -250,36 +239,8 @@ func readPiModelsProviderDocument(path string) (map[string]json.RawMessage, map[
 }
 
 func writePiModelsProviderDocument(path string, root, providers map[string]json.RawMessage, input PiModelsProviderTemplate) error {
-	knownRaw, err := json.Marshal(piModelsProviderFile{
-		BaseURL: input.BaseURL, APIKey: input.APIKey, API: input.API,
-		Headers: input.Headers, AuthHeader: input.AuthHeader, Compat: input.Compat,
-		Models: input.Models, ModelOverrides: input.ModelOverrides, Name: input.Name,
-	})
-	if err != nil {
-		return fmt.Errorf("序列化 Pi models.json Provider %q 失败: %w", input.ID, err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(knownRaw, &fields); err != nil {
-		return err
-	}
-	if current, exists := providers[input.ID]; exists {
-		var existing map[string]json.RawMessage
-		if err := json.Unmarshal(current, &existing); err != nil {
-			return fmt.Errorf("解析 Pi models.json Provider %q 失败: %w", input.ID, err)
-		}
-		for key, value := range existing {
-			if _, known := fields[key]; known {
-				continue
-			}
-			switch key {
-			case "baseUrl", "apiKey", "api", "headers", "authHeader", "compat", "models", "modelOverrides", "name":
-				continue
-			default:
-				fields[key] = value
-			}
-		}
-	}
-	providerRaw, err := marshalOrderedPiProvider(fields)
+	current := providers[input.ID]
+	providerRaw, err := buildPiModelsProviderRaw(input, current)
 	if err != nil {
 		return fmt.Errorf("序列化 Pi models.json Provider %q 失败: %w", input.ID, err)
 	}
@@ -293,6 +254,39 @@ func writePiModelsProviderDocument(path string, root, providers map[string]json.
 		return fmt.Errorf("保存 Pi models.json Provider %q 失败: %w", input.ID, err)
 	}
 	return nil
+}
+
+func buildPiModelsProviderRaw(input PiModelsProviderTemplate, current json.RawMessage) (json.RawMessage, error) {
+	knownRaw, err := json.Marshal(piModelsProviderFile{
+		BaseURL: input.BaseURL, APIKey: input.APIKey, API: input.API,
+		Headers: input.Headers, AuthHeader: input.AuthHeader, Compat: input.Compat,
+		Models: input.Models, ModelOverrides: input.ModelOverrides, Name: input.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("序列化 Pi models.json Provider %q 失败: %w", input.ID, err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(knownRaw, &fields); err != nil {
+		return nil, err
+	}
+	if len(current) > 0 {
+		var existing map[string]json.RawMessage
+		if err := json.Unmarshal(current, &existing); err != nil {
+			return nil, fmt.Errorf("解析 Pi models.json Provider %q 失败: %w", input.ID, err)
+		}
+		for key, value := range existing {
+			if _, known := fields[key]; known {
+				continue
+			}
+			switch key {
+			case "baseUrl", "apiKey", "api", "headers", "authHeader", "compat", "models", "modelOverrides", "name":
+				continue
+			default:
+				fields[key] = value
+			}
+		}
+	}
+	return marshalOrderedPiProvider(fields)
 }
 
 func normalizePiModelsProviderTemplate(input PiModelsProviderTemplate) (PiModelsProviderTemplate, error) {
@@ -361,7 +355,6 @@ func normalizePiModelsProviderTemplate(input PiModelsProviderTemplate) (PiModels
 	if input.Models == nil {
 		input.Models = []PiModelEntry{}
 	}
-	sort.SliceStable(input.Models, func(i, j int) bool { return input.Models[i].ID < input.Models[j].ID })
 	return input, nil
 }
 
