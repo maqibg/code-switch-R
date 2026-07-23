@@ -116,10 +116,16 @@ export const hydrateFrontendPreferences = async (): Promise<FrontendPreferences 
   }
 }
 
-export const persistFrontendPreferencesPatch = async (patch: Partial<FrontendPreferences>) => {
-  try {
-    await saveFrontendPreferences(buildPreferencesPayload(patch))
-  } catch (error) {
-    console.error('Failed to save frontend preferences:', error)
-  }
+let preferencesWriteQueue: Promise<void> = Promise.resolve()
+
+export const persistFrontendPreferencesPatch = (patch: Partial<FrontendPreferences>): Promise<void> => {
+  const queuedPatch = { ...patch }
+  preferencesWriteQueue = preferencesWriteQueue.then(async () => {
+    try {
+      await saveFrontendPreferences(buildPreferencesPayload(queuedPatch))
+    } catch (error) {
+      console.error('Failed to save frontend preferences:', error)
+    }
+  })
+  return preferencesWriteQueue
 }

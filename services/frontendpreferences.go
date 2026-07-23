@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 )
 
 const frontendPreferencesFileName = "frontend-preferences.json"
@@ -21,7 +22,9 @@ type FrontendPreferences struct {
 	PiPlatformOrder        []string `json:"pi_platform_order"`
 }
 
-type FrontendPreferencesService struct{}
+type FrontendPreferencesService struct {
+	mutex sync.Mutex
+}
 
 func NewFrontendPreferencesService() *FrontendPreferencesService {
 	return &FrontendPreferencesService{}
@@ -149,6 +152,8 @@ func (s *FrontendPreferencesService) GetPreferences() (FrontendPreferences, erro
 }
 
 func (s *FrontendPreferencesService) SavePreferences(prefs FrontendPreferences) (FrontendPreferences, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	path, err := getFrontendPreferencesPath()
 	if err != nil {
 		return defaultFrontendPreferences(), err

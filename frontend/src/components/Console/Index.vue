@@ -186,6 +186,18 @@ onUnmounted(() => {
   color: #d4d4d4;
 }
 
+.console-content,
+.console-content * {
+  -webkit-user-select: text;
+  user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+.console-content {
+  cursor: text;
+}
+
 html.dark .console-content {
   background: #0d1117;
   color: #e6edf3;

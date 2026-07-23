@@ -1,12 +1,14 @@
 package services
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,7 +27,7 @@ type ConsoleService struct {
 	writer       *consoleWriter
 	oldStdout    *os.File
 	oldStderr    *os.File
-	pauseLogging bool // 暂停日志捕获标志
+	pauseLogging atomic.Int32 // 大于零时暂停日志捕获，允许并发读取安全嵌套
 }
 
 // consoleWriter 自定义 writer，同时写入控制台和缓存
@@ -78,31 +80,59 @@ func (cs *ConsoleService) captureStdout() {
 }
 
 // readPipe 读取管道内容
-func (cs *ConsoleService) readPipe(reader *os.File, level string, output *os.File) {
-	buf := make([]byte, 1024)
+func (cs *ConsoleService) readPipe(reader io.Reader, defaultLevel string, output io.Writer) {
+	buffered := bufio.NewReader(reader)
 	for {
-		n, err := reader.Read(buf)
+		line, err := buffered.ReadString('\n')
+		if len(line) > 0 {
+			_, _ = io.WriteString(output, line)
+			message := strings.TrimRight(line, "\r\n")
+			if strings.TrimSpace(message) != "" {
+				cs.addLog(classifyConsoleLogLevel(defaultLevel, message), message)
+			}
+		}
 		if err != nil {
 			if err != io.EOF {
 				fmt.Fprintf(output, "读取管道失败: %v\n", err)
 			}
 			return
 		}
+	}
+}
 
-		if n > 0 {
-			msg := string(buf[:n])
-			// 写入原始输出
-			output.Write(buf[:n])
-			// 添加到日志缓存
-			cs.addLog(level, msg)
+func classifyConsoleLogLevel(defaultLevel, message string) string {
+	if strings.HasPrefix(strings.TrimSpace(message), "⚠") {
+		return "WARN"
+	}
+	fields := strings.Fields(message)
+	if len(fields) > 6 {
+		fields = fields[:6]
+	}
+	for _, field := range fields {
+		token := strings.Trim(strings.ToUpper(field), "[]():")
+		switch token {
+		case "ERR", "ERROR":
+			return "ERROR"
+		case "WRN", "WARN", "WARNING":
+			return "WARN"
+		case "INF", "INFO", "DBG", "DEBUG", "TRC", "TRACE":
+			return "INFO"
 		}
+	}
+	switch strings.ToUpper(strings.TrimSpace(defaultLevel)) {
+	case "ERROR":
+		return "ERROR"
+	case "WARN", "WARNING":
+		return "WARN"
+	default:
+		return "INFO"
 	}
 }
 
 // addLog 添加日志到缓存
 func (cs *ConsoleService) addLog(level, message string) {
 	// 如果暂停日志捕获，直接返回
-	if cs.pauseLogging {
+	if cs.pauseLogging.Load() > 0 {
 		return
 	}
 
@@ -155,8 +185,8 @@ func (cs *ConsoleService) cleanOldLogs() {
 // GetLogs 获取所有日志
 func (cs *ConsoleService) GetLogs() []ConsoleLog {
 	// 暂停日志捕获，避免 GetLogs 本身产生的日志被记录（导致递归）
-	cs.pauseLogging = true
-	defer func() { cs.pauseLogging = false }()
+	cs.pauseLogging.Add(1)
+	defer cs.pauseLogging.Add(-1)
 
 	cs.mutex.RLock()
 	defer cs.mutex.RUnlock()
@@ -170,8 +200,8 @@ func (cs *ConsoleService) GetLogs() []ConsoleLog {
 // GetRecentLogs 获取最近 N 条日志
 func (cs *ConsoleService) GetRecentLogs(count int) []ConsoleLog {
 	// 暂停日志捕获，避免递归
-	cs.pauseLogging = true
-	defer func() { cs.pauseLogging = false }()
+	cs.pauseLogging.Add(1)
+	defer cs.pauseLogging.Add(-1)
 
 	cs.mutex.RLock()
 	defer cs.mutex.RUnlock()
@@ -193,8 +223,8 @@ func (cs *ConsoleService) GetRecentLogs(count int) []ConsoleLog {
 // ClearLogs 清空日志
 func (cs *ConsoleService) ClearLogs() {
 	// 暂停日志捕获，避免递归
-	cs.pauseLogging = true
-	defer func() { cs.pauseLogging = false }()
+	cs.pauseLogging.Add(1)
+	defer cs.pauseLogging.Add(-1)
 
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
@@ -214,8 +244,8 @@ func shouldFilterLog(message string) bool {
 	// 2. 过滤掉包含 JSON 结构的日志（GetLogs 的返回值被序列化）
 	// 检测是否包含日志的 JSON 结构特征
 	if strings.Contains(message, `"timestamp":`) &&
-	   strings.Contains(message, `"level":`) &&
-	   strings.Contains(message, `"message":`) {
+		strings.Contains(message, `"level":`) &&
+		strings.Contains(message, `"message":`) {
 		return true
 	}
 
@@ -226,6 +256,7 @@ func shouldFilterLog(message string) bool {
 		"Asset Request",
 		"INF Binding call",
 		"INF Asset Request",
+		"[AssetFileServerFS] Handling request",
 		"/wails/runtime",
 		"ConsoleService.GetLogs",
 		"ConsoleService.GetRecentLogs",

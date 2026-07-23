@@ -22,7 +22,7 @@ const (
 
 // atomicRename Windows 平台原子重命名
 // 使用 MoveFileExW 替代 os.Rename，支持覆盖已存在的文件
-// 并在遇到 ERROR_SHARING_VIOLATION 时重试
+// 并在遇到临时共享冲突或访问拒绝时重试
 func atomicRename(src, dst string) error {
 	srcPtr, err := syscall.UTF16PtrFromString(src)
 	if err != nil {
@@ -52,8 +52,8 @@ func atomicRename(src, dst string) error {
 		}
 		lastErr = callErr
 
-		// ERROR_SHARING_VIOLATION = 32（文件被其他进程锁定）
-		if callErr == syscall.Errno(32) {
+		// ERROR_ACCESS_DENIED = 5、ERROR_SHARING_VIOLATION = 32 都可能由短暂文件占用触发。
+		if callErr == syscall.Errno(5) || callErr == syscall.Errno(32) {
 			if attempt < maxAttempts-1 {
 				time.Sleep(100 * time.Millisecond)
 				continue

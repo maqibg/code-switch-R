@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
+
+var atomicWriteMutex sync.Mutex
 
 // atomicWriteFile 原子写入文件（跨平台）
 // 策略：写入临时文件 → fsync → 重命名
 // 防止断电或崩溃导致状态文件损坏
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	atomicWriteMutex.Lock()
+	defer atomicWriteMutex.Unlock()
+
 	dir := filepath.Dir(path)
 
 	// 确保目录存在
