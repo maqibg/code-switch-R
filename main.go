@@ -127,15 +127,17 @@ func main() {
 	notificationService := services.NewNotificationService(appSettings) // 通知服务
 	blacklistService := services.NewBlacklistService(settingsService, notificationService)
 	geminiService := services.NewGeminiService(relayAddr)
+	piSettings := services.NewPiSettingsService(relayAddr, providerService)
+	pricingService := services.NewPricingService(appSettings, piSettings)
 	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, notificationService, appSettings, relayAddr)
+	providerRelay.SetPricingService(pricingService)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	deepseekCodeSettings := services.NewDeepSeekCodeSettingsService(providerRelay.Addr())
 	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
-	piSettings := services.NewPiSettingsService(providerRelay.Addr(), providerService)
 	providerModelDiscovery := services.NewProviderModelDiscoveryService(appSettings)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
-	logService := services.NewLogService(providerService)
+	logService := services.NewLogServiceWithPricing(providerService, pricingService)
 	mcpService := services.NewMCPService()
 	skillService := services.NewSkillService(appSettings)
 	promptService := services.NewPromptService()
@@ -234,6 +236,7 @@ func main() {
 			application.NewService(deepseekCodeSettings),
 			application.NewService(reasonixSettings),
 			application.NewService(piSettings),
+			application.NewService(pricingService),
 			application.NewService(providerModelDiscovery),
 			application.NewService(frontendPreferencesService),
 		},

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	modelpricing "codeswitch/resources/model-pricing"
 	relayprotocol "codeswitch/services/protocol"
 
 	"github.com/gin-gonic/gin"
@@ -19,11 +20,19 @@ func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
 	}
 	telemetry.Attempts = []RelayAttemptLog{
 		{Provider: "first", Model: "gpt-5", HTTPCode: 500, Success: false, Usage: ReqeustLog{}, ErrorType: "upstream_5xx"},
-		{Provider: "second", Model: "gpt-5", HTTPCode: 200, Success: true, UpstreamProtocol: "openai_chat", Usage: ReqeustLog{InputTokens: 10, OutputTokens: 5}},
+		{
+			Provider: "second", Model: "gpt-5", HTTPCode: 200, Success: true, UpstreamProtocol: "openai_chat",
+			Usage:         ReqeustLog{InputTokens: 10, OutputTokens: 5},
+			Cost:          modelpricing.CostBreakdown{InputCost: 0.1, OutputCost: 0.2, TotalCost: 0.3, HasPricing: true},
+			PricingSource: pricingSourceCustom, PricingVersion: "custom:abc", PricingRuleID: "rule-1",
+		},
 	}
 	logical := telemetry.logicalRequest(200)
 	if logical.AttemptCount != 2 || logical.Provider != "second" || logical.InputTokens != 10 || logical.OutputTokens != 5 {
 		t.Fatalf("逻辑请求聚合错误: %#v", logical)
+	}
+	if !logical.CostCalculated || !logical.HasPricing || logical.TotalCost != 0.3 || logical.PricingSource != pricingSourceCustom || logical.PricingVersion != "custom:abc" || logical.PricingRuleID != "rule-1" {
+		t.Fatalf("逻辑请求未保留请求开始时捕获的价格元数据: %#v", logical)
 	}
 }
 

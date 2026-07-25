@@ -15,7 +15,7 @@
           <DialogPanel :class="['modal', variantClass]">
             <header class="modal-header">
               <DialogTitle class="modal-title">{{ title }}</DialogTitle>
-              <button class="ghost-icon" type="button" aria-label="Close" @click="$emit('close')"><X :size="17" /></button>
+              <button class="ghost-icon" type="button" :aria-label="closeLabel" :title="closeLabel" @click="$emit('close')"><X :size="17" /></button>
             </header>
             <div class="modal-body modal-scrollable">
               <slot />
@@ -39,8 +39,9 @@ const props = withDefaults(
     open: boolean
     title: string
     variant?: Variant
+    closeLabel?: string
   }>(),
-  { variant: 'default' },
+  { variant: 'default', closeLabel: 'Close' },
 )
 
 defineEmits<{ (e: 'close'): void }>()

@@ -3269,6 +3269,414 @@ export class PiSupplierMutationResult {
     }
 }
 
+export class PricingBuiltinDetail {
+    "model": string;
+    "raw_json": string;
+
+    /** Creates a new PricingBuiltinDetail instance. */
+    constructor($$source: Partial<PricingBuiltinDetail> = {}) {
+        if (!("model" in $$source)) {
+            this["model"] = "";
+        }
+        if (!("raw_json" in $$source)) {
+            this["raw_json"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingBuiltinDetail instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingBuiltinDetail {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PricingBuiltinDetail($$parsedSource as Partial<PricingBuiltinDetail>);
+    }
+}
+
+export class PricingBuiltinPage {
+    "items": PricingBuiltinRow[];
+    "page": number;
+    "page_size": number;
+    "total": number;
+    "total_pages": number;
+
+    /** Creates a new PricingBuiltinPage instance. */
+    constructor($$source: Partial<PricingBuiltinPage> = {}) {
+        if (!("items" in $$source)) {
+            this["items"] = [];
+        }
+        if (!("page" in $$source)) {
+            this["page"] = 0;
+        }
+        if (!("page_size" in $$source)) {
+            this["page_size"] = 0;
+        }
+        if (!("total" in $$source)) {
+            this["total"] = 0;
+        }
+        if (!("total_pages" in $$source)) {
+            this["total_pages"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingBuiltinPage instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingBuiltinPage {
+        const $$createField0_0 = $$createType59;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("items" in $$parsedSource) {
+            $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
+        }
+        return new PricingBuiltinPage($$parsedSource as Partial<PricingBuiltinPage>);
+    }
+}
+
+export class PricingBuiltinRow {
+    "model": string;
+    "provider": string;
+    "mode": string;
+    "input": number;
+    "output": number;
+    "reasoning": number;
+    "cache_read": number;
+    "cache_write": number;
+    "context_window": number;
+    "max_output_tokens": number;
+    "billing_status": string;
+    "custom_rule_id"?: string;
+    "custom_rule_name"?: string;
+
+    /** Creates a new PricingBuiltinRow instance. */
+    constructor($$source: Partial<PricingBuiltinRow> = {}) {
+        if (!("model" in $$source)) {
+            this["model"] = "";
+        }
+        if (!("provider" in $$source)) {
+            this["provider"] = "";
+        }
+        if (!("mode" in $$source)) {
+            this["mode"] = "";
+        }
+        if (!("input" in $$source)) {
+            this["input"] = 0;
+        }
+        if (!("output" in $$source)) {
+            this["output"] = 0;
+        }
+        if (!("reasoning" in $$source)) {
+            this["reasoning"] = 0;
+        }
+        if (!("cache_read" in $$source)) {
+            this["cache_read"] = 0;
+        }
+        if (!("cache_write" in $$source)) {
+            this["cache_write"] = 0;
+        }
+        if (!("context_window" in $$source)) {
+            this["context_window"] = 0;
+        }
+        if (!("max_output_tokens" in $$source)) {
+            this["max_output_tokens"] = 0;
+        }
+        if (!("billing_status" in $$source)) {
+            this["billing_status"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingBuiltinRow instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingBuiltinRow {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PricingBuiltinRow($$parsedSource as Partial<PricingBuiltinRow>);
+    }
+}
+
+export class PricingCustomRule {
+    "id": string;
+    "name": string;
+    "pattern": string;
+    "enabled": boolean;
+    "order": number;
+    "rates": PricingRates;
+    "tiers"?: PricingTier[];
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new PricingCustomRule instance. */
+    constructor($$source: Partial<PricingCustomRule> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("pattern" in $$source)) {
+            this["pattern"] = "";
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("order" in $$source)) {
+            this["order"] = 0;
+        }
+        if (!("rates" in $$source)) {
+            this["rates"] = (new PricingRates());
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingCustomRule instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingCustomRule {
+        const $$createField5_0 = $$createType60;
+        const $$createField6_0 = $$createType62;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("rates" in $$parsedSource) {
+            $$parsedSource["rates"] = $$createField5_0($$parsedSource["rates"]);
+        }
+        if ("tiers" in $$parsedSource) {
+            $$parsedSource["tiers"] = $$createField6_0($$parsedSource["tiers"]);
+        }
+        return new PricingCustomRule($$parsedSource as Partial<PricingCustomRule>);
+    }
+}
+
+export class PricingMatchResult {
+    "matched": boolean;
+    "source": string;
+    "rule_id"?: string;
+    "rule_name"?: string;
+    "rates": PricingRates;
+    "version": string;
+
+    /** Creates a new PricingMatchResult instance. */
+    constructor($$source: Partial<PricingMatchResult> = {}) {
+        if (!("matched" in $$source)) {
+            this["matched"] = false;
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("rates" in $$source)) {
+            this["rates"] = (new PricingRates());
+        }
+        if (!("version" in $$source)) {
+            this["version"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingMatchResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingMatchResult {
+        const $$createField4_0 = $$createType60;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("rates" in $$parsedSource) {
+            $$parsedSource["rates"] = $$createField4_0($$parsedSource["rates"]);
+        }
+        return new PricingMatchResult($$parsedSource as Partial<PricingMatchResult>);
+    }
+}
+
+export class PricingOverview {
+    "source": string;
+    "source_url": string;
+    "sha256": string;
+    "updated_at": string;
+    "model_count": number;
+    "token_priced_count": number;
+    "custom_rule_count": number;
+    "custom_revision": string;
+    "providers": string[];
+    "modes": string[];
+    "proxy_enabled": boolean;
+    "proxy_description": string;
+    "load_warning"?: string;
+    "custom_rules_warning"?: string;
+
+    /** Creates a new PricingOverview instance. */
+    constructor($$source: Partial<PricingOverview> = {}) {
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("source_url" in $$source)) {
+            this["source_url"] = "";
+        }
+        if (!("sha256" in $$source)) {
+            this["sha256"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+        if (!("model_count" in $$source)) {
+            this["model_count"] = 0;
+        }
+        if (!("token_priced_count" in $$source)) {
+            this["token_priced_count"] = 0;
+        }
+        if (!("custom_rule_count" in $$source)) {
+            this["custom_rule_count"] = 0;
+        }
+        if (!("custom_revision" in $$source)) {
+            this["custom_revision"] = "";
+        }
+        if (!("providers" in $$source)) {
+            this["providers"] = [];
+        }
+        if (!("modes" in $$source)) {
+            this["modes"] = [];
+        }
+        if (!("proxy_enabled" in $$source)) {
+            this["proxy_enabled"] = false;
+        }
+        if (!("proxy_description" in $$source)) {
+            this["proxy_description"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingOverview instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingOverview {
+        const $$createField8_0 = $$createType20;
+        const $$createField9_0 = $$createType20;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("providers" in $$parsedSource) {
+            $$parsedSource["providers"] = $$createField8_0($$parsedSource["providers"]);
+        }
+        if ("modes" in $$parsedSource) {
+            $$parsedSource["modes"] = $$createField9_0($$parsedSource["modes"]);
+        }
+        return new PricingOverview($$parsedSource as Partial<PricingOverview>);
+    }
+}
+
+export class PricingRates {
+    "input": number;
+    "output": number;
+    "reasoning": number;
+    "cache_read": number;
+    "cache_write": number;
+
+    /** Creates a new PricingRates instance. */
+    constructor($$source: Partial<PricingRates> = {}) {
+        if (!("input" in $$source)) {
+            this["input"] = 0;
+        }
+        if (!("output" in $$source)) {
+            this["output"] = 0;
+        }
+        if (!("reasoning" in $$source)) {
+            this["reasoning"] = 0;
+        }
+        if (!("cache_read" in $$source)) {
+            this["cache_read"] = 0;
+        }
+        if (!("cache_write" in $$source)) {
+            this["cache_write"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingRates instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingRates {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PricingRates($$parsedSource as Partial<PricingRates>);
+    }
+}
+
+export class PricingTier {
+    "input_tokens_above": number;
+    "rates": PricingRates;
+
+    /** Creates a new PricingTier instance. */
+    constructor($$source: Partial<PricingTier> = {}) {
+        if (!("input_tokens_above" in $$source)) {
+            this["input_tokens_above"] = 0;
+        }
+        if (!("rates" in $$source)) {
+            this["rates"] = (new PricingRates());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingTier instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingTier {
+        const $$createField1_0 = $$createType60;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("rates" in $$parsedSource) {
+            $$parsedSource["rates"] = $$createField1_0($$parsedSource["rates"]);
+        }
+        return new PricingTier($$parsedSource as Partial<PricingTier>);
+    }
+}
+
+export class PricingUpdateResult {
+    "changed": boolean;
+    "sha256": string;
+    "model_count": number;
+    "updated_at": string;
+    "proxy_enabled": boolean;
+    "proxy_description": string;
+
+    /** Creates a new PricingUpdateResult instance. */
+    constructor($$source: Partial<PricingUpdateResult> = {}) {
+        if (!("changed" in $$source)) {
+            this["changed"] = false;
+        }
+        if (!("sha256" in $$source)) {
+            this["sha256"] = "";
+        }
+        if (!("model_count" in $$source)) {
+            this["model_count"] = 0;
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+        if (!("proxy_enabled" in $$source)) {
+            this["proxy_enabled"] = false;
+        }
+        if (!("proxy_description" in $$source)) {
+            this["proxy_description"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PricingUpdateResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PricingUpdateResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PricingUpdateResult($$parsedSource as Partial<PricingUpdateResult>);
+    }
+}
+
 export class ProjectTransferInfo {
     "legacy_config_dir": string;
     "current_config_dir": string;
@@ -3565,12 +3973,12 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField11_0 = $$createType58;
+        const $$createField11_0 = $$createType63;
         const $$createField12_0 = $$createType4;
-        const $$createField16_0 = $$createType60;
+        const $$createField16_0 = $$createType65;
         const $$createField21_0 = $$createType4;
-        const $$createField24_0 = $$createType62;
-        const $$createField25_0 = $$createType63;
+        const $$createField24_0 = $$createType67;
+        const $$createField25_0 = $$createType68;
         const $$createField27_0 = $$createType46;
         const $$createField28_0 = $$createType48;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
@@ -3712,7 +4120,7 @@ export class ProviderModelDiscoveryResult {
      * Creates a new ProviderModelDiscoveryResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryResult {
-        const $$createField0_0 = $$createType65;
+        const $$createField0_0 = $$createType70;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField0_0($$parsedSource["models"]);
@@ -3781,7 +4189,7 @@ export class ProviderRequestTemplate {
      */
     static createFrom($$source: any = {}): ProviderRequestTemplate {
         const $$createField2_0 = $$createType4;
-        const $$createField4_0 = $$createType62;
+        const $$createField4_0 = $$createType67;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
@@ -3940,7 +4348,7 @@ export class RecordCleanupResult {
      * Creates a new RecordCleanupResult instance from a string or object.
      */
     static createFrom($$source: any = {}): RecordCleanupResult {
-        const $$createField3_0 = $$createType66;
+        const $$createField3_0 = $$createType71;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storage" in $$parsedSource) {
             $$parsedSource["storage"] = $$createField3_0($$parsedSource["storage"]);
@@ -4046,6 +4454,8 @@ export class ReqeustLog {
     "has_pricing": boolean;
     "cost_calculated"?: boolean;
     "pricing_version"?: string;
+    "pricing_source"?: string;
+    "pricing_rule_id"?: string;
 
     /** Creates a new ReqeustLog instance. */
     constructor($$source: Partial<ReqeustLog> = {}) {
@@ -4607,12 +5017,17 @@ const $$createType54 = PiRuntimePlatform.createFrom;
 const $$createType55 = $Create.Array($$createType54);
 const $$createType56 = PiRuntimeSupplier.createFrom;
 const $$createType57 = $Create.Array($$createType56);
-const $$createType58 = $Create.Map($Create.Any, $Create.Any);
-const $$createType59 = AvailabilityConfig.createFrom;
-const $$createType60 = $Create.Nullable($$createType59);
-const $$createType61 = ProviderRequestIdentity.createFrom;
-const $$createType62 = $Create.Nullable($$createType61);
-const $$createType63 = $Create.Map($Create.Any, $$createType61);
-const $$createType64 = DiscoveredModel.createFrom;
-const $$createType65 = $Create.Array($$createType64);
-const $$createType66 = RecordStorageInfo.createFrom;
+const $$createType58 = PricingBuiltinRow.createFrom;
+const $$createType59 = $Create.Array($$createType58);
+const $$createType60 = PricingRates.createFrom;
+const $$createType61 = PricingTier.createFrom;
+const $$createType62 = $Create.Array($$createType61);
+const $$createType63 = $Create.Map($Create.Any, $Create.Any);
+const $$createType64 = AvailabilityConfig.createFrom;
+const $$createType65 = $Create.Nullable($$createType64);
+const $$createType66 = ProviderRequestIdentity.createFrom;
+const $$createType67 = $Create.Nullable($$createType66);
+const $$createType68 = $Create.Map($Create.Any, $$createType66);
+const $$createType69 = DiscoveredModel.createFrom;
+const $$createType70 = $Create.Array($$createType69);
+const $$createType71 = RecordStorageInfo.createFrom;

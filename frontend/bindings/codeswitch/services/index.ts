@@ -19,6 +19,7 @@ import * as LogService from "./logservice.js";
 import * as MCPService from "./mcpservice.js";
 import * as NetworkService from "./networkservice.js";
 import * as PiSettingsService from "./pisettingsservice.js";
+import * as PricingService from "./pricingservice.js";
 import * as PromptService from "./promptservice.js";
 import * as ProviderModelDiscoveryService from "./providermodeldiscoveryservice.js";
 import * as ProviderService from "./providerservice.js";
@@ -46,6 +47,7 @@ export {
     MCPService,
     NetworkService,
     PiSettingsService,
+    PricingService,
     PromptService,
     ProviderModelDiscoveryService,
     ProviderService,
@@ -127,6 +129,15 @@ export {
     PiRuntimeSupplier,
     PiSupplierMutationRequest,
     PiSupplierMutationResult,
+    PricingBuiltinDetail,
+    PricingBuiltinPage,
+    PricingBuiltinRow,
+    PricingCustomRule,
+    PricingMatchResult,
+    PricingOverview,
+    PricingRates,
+    PricingTier,
+    PricingUpdateResult,
     ProjectTransferInfo,
     ProjectTransferResult,
     Prompt,

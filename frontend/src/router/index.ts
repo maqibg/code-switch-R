@@ -10,10 +10,12 @@ import EnvCheckPage from '../components/EnvCheck/Index.vue'
 import ConsolePage from '../components/Console/Index.vue'
 import TrayPage from '../components/Tray/Index.vue'
 import PiPage from '../components/Pi/Index.vue'
+import PricingPage from '../components/Pricing/Index.vue'
 
 const routes = [
   { path: '/', component: MainPage },
   { path: '/pi', component: PiPage },
+  { path: '/pricing', component: PricingPage },
   { path: '/stats', component: StatsPage },
   { path: '/prompts', component: PromptsPage },
   { path: '/mcp', component: McpPage },

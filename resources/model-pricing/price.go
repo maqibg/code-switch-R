@@ -14,6 +14,16 @@ var pricingFile []byte
 //go:embed model_prices_overlay.json
 var overlayFile []byte
 
+// EmbeddedPricingData 返回随程序发布的只读价格基线副本。
+func EmbeddedPricingData() []byte {
+	return append([]byte(nil), pricingFile...)
+}
+
+// EmbeddedOverlayData 返回随程序发布的只读别名 overlay 副本。
+func EmbeddedOverlayData() []byte {
+	return append([]byte(nil), overlayFile...)
+}
+
 var (
 	defaultOnce    sync.Once
 	defaultService *Service
@@ -43,6 +53,12 @@ type Service struct {
 
 // PricingEntry 映射 JSON 内的字段。
 type PricingEntry struct {
+	LiteLLMProvider string  `json:"litellm_provider"`
+	Mode            string  `json:"mode"`
+	MaxTokens       float64 `json:"max_tokens"`
+	MaxInputTokens  float64 `json:"max_input_tokens"`
+	MaxOutputTokens float64 `json:"max_output_tokens"`
+
 	InputCostPerToken           float64 `json:"input_cost_per_token"`
 	OutputCostPerToken          float64 `json:"output_cost_per_token"`
 	OutputCostPerReasoningToken float64 `json:"output_cost_per_reasoning_token"`
@@ -219,12 +235,27 @@ func DefaultService() (*Service, error) {
 
 // NewService 从嵌入的 JSON 创建服务实例。
 func NewService() (*Service, error) {
-	raw := make(map[string]PricingEntry)
-	if err := json.Unmarshal(pricingFile, &raw); err != nil {
+	return NewServiceFromData(pricingFile, overlayFile)
+}
+
+// NewServiceFromData 从指定价格表和 overlay 构造服务。
+// 下载更新先用此入口完整校验并构造候选服务，成功后才允许切换运行时快照。
+func NewServiceFromData(pricingData, overlayData []byte) (*Service, error) {
+	rawEntries := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(pricingData, &rawEntries); err != nil {
 		return nil, fmt.Errorf("parse pricing file: %w", err)
 	}
-	// litellm 首条 sample_spec 是 schema 文档,不是真实模型。
-	delete(raw, "sample_spec")
+	// LiteLLM 的这些顶层键是 schema/匹配规则元数据，不是真实模型。
+	delete(rawEntries, "sample_spec")
+	delete(rawEntries, "fallback_generalizations")
+	raw := make(map[string]PricingEntry, len(rawEntries))
+	for key, payload := range rawEntries {
+		var entry PricingEntry
+		if err := json.Unmarshal(payload, &entry); err != nil {
+			return nil, fmt.Errorf("parse pricing entry %q: %w", key, err)
+		}
+		raw[key] = entry
+	}
 
 	pricing := make(map[string]*PricingEntry, len(raw))
 	normalized := make(map[string]string, len(raw))
@@ -240,8 +271,8 @@ func NewService() (*Service, error) {
 
 	// 合并 overlay aliases:裸名指向真实键的同一 entry 指针。
 	var overlay overlayConfig
-	if len(overlayFile) > 0 {
-		if err := json.Unmarshal(overlayFile, &overlay); err != nil {
+	if len(overlayData) > 0 {
+		if err := json.Unmarshal(overlayData, &overlay); err != nil {
 			return nil, fmt.Errorf("parse overlay file: %w", err)
 		}
 		for alias, target := range overlay.Aliases {
@@ -271,11 +302,42 @@ func (s *Service) CalculateCost(model string, usage UsageSnapshot) CostBreakdown
 		return CostBreakdown{}
 	}
 	entry, hasPricing := s.getPricing(model)
+	return s.calculateCostWithEntry(model, usage, entry, hasPricing, true)
+}
+
+// ResolvePricing 返回模型按运行时匹配规则解析后的基础价格副本。
+// 调用方只能读取副本，不能修改服务内部的只读价格表。
+func (s *Service) ResolvePricing(model string) (PricingEntry, bool) {
+	if s == nil || model == "" {
+		return PricingEntry{}, false
+	}
+	entry, ok := s.getPricing(model)
+	if !ok || entry == nil {
+		return PricingEntry{}, false
+	}
+	resolved := *entry
+	resolved.TieredPricing = append([]TieredPricingBand(nil), entry.TieredPricing...)
+	return resolved, true
+}
+
+// CalculateCostWithPricing 使用调用方提供的完整价格项计算费用。
+// 该价格项会整体替代内置价格，不与内置字段合并。
+func (s *Service) CalculateCostWithPricing(model string, usage UsageSnapshot, entry PricingEntry) CostBreakdown {
+	if s == nil || model == "" {
+		return CostBreakdown{}
+	}
+	return s.calculateCostWithEntry(model, usage, &entry, true, false)
+}
+
+func (s *Service) calculateCostWithEntry(model string, usage UsageSnapshot, entry *PricingEntry, hasPricing bool, useBuiltInFallbacks bool) CostBreakdown {
 	breakdown := CostBreakdown{HasPricing: hasPricing}
 	if entry == nil && !strings.Contains(strings.ToLower(model), "[1m]") {
 		return breakdown
 	}
-	longTier, useLong := s.longContextTier(model, usage)
+	longTier, useLong := LongContextPricing{}, false
+	if useBuiltInFallbacks {
+		longTier, useLong = s.longContextTier(model, usage)
+	}
 	if entry == nil {
 		entry = &PricingEntry{}
 	}
@@ -336,7 +398,11 @@ func (s *Service) CalculateCost(model string, usage UsageSnapshot) CostBreakdown
 	cacheCreateTokens, cache1hTokens := resolveCacheTokens(usage)
 	cache5mRate := entry.CacheCreationInputTokenCost
 	// 1h 价取值优先级:longBand.cacheCreate1h > JSON above_1hr 字段 > 硬编码兜底
-	cache1hRate := firstNonZero(entry.CacheCreationInputTokenCostAbove1Hr, s.getEphemeral1hPricing(model))
+	cache1hFallback := 0.0
+	if useBuiltInFallbacks {
+		cache1hFallback = s.getEphemeral1hPricing(model)
+	}
+	cache1hRate := firstNonZero(entry.CacheCreationInputTokenCostAbove1Hr, cache1hFallback)
 	if longBand.active {
 		cache5mRate = firstNonZero(longBand.cacheCreate, entry.CacheCreationInputTokenCost)
 		cache1hRate = firstNonZero(longBand.cacheCreate1h, cache1hRate)

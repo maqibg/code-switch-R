@@ -52,6 +52,7 @@ type ProviderRelayService struct {
 	blacklistService    *BlacklistService
 	notificationService *NotificationService
 	appSettings         *AppSettingsService // 应用设置服务（用于获取轮询开关状态）
+	pricingService      *PricingService
 	server              *http.Server
 	addr                string
 	lastUsed            map[string]*LastUsedProvider // 各平台最后使用的供应商
@@ -59,6 +60,10 @@ type ProviderRelayService struct {
 	rrMu                sync.Mutex                   // 轮询状态锁
 	rrLastStart         map[string]string            // 轮询状态：key="platform:level" → value=上次起始 Provider Name
 	codexChatHistory    *CodexChatBridgeHistoryStore
+}
+
+func (prs *ProviderRelayService) SetPricingService(pricingService *PricingService) {
+	prs.pricingService = pricingService
 }
 
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
@@ -417,7 +422,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		if protocolName, exists := c.Get(piClientProtocolContextKey); exists {
 			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
 		}
-		telemetry := beginRelayTelemetry(c, kind, clientProtocol, telemetryModel, isStream)
+		telemetry := beginRelayTelemetry(c, kind, clientProtocol, telemetryModel, isStream, prs.pricingService, piPlatform)
 		if piPlatform != "" {
 			telemetry.SourceID = piPlatform
 		}
@@ -1160,6 +1165,8 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		{"attempt_count", "INTEGER DEFAULT 1"},
 		{"error_type", "TEXT DEFAULT ''"},
 		{"pricing_version", "TEXT DEFAULT ''"},
+		{"pricing_source", "TEXT DEFAULT ''"},
+		{"pricing_rule_id", "TEXT DEFAULT ''"},
 	}
 	for _, m := range migrations {
 		if err := ensureRequestLogColumn(db, m.column, m.definition); err != nil {
@@ -1317,6 +1324,8 @@ type ReqeustLog struct {
 	HasPricing      bool    `json:"has_pricing"`
 	CostCalculated  bool    `json:"cost_calculated,omitempty"`
 	PricingVersion  string  `json:"pricing_version,omitempty"`
+	PricingSource   string  `json:"pricing_source,omitempty"`
+	PricingRuleID   string  `json:"pricing_rule_id,omitempty"`
 }
 
 // claude code usage parser
@@ -1593,7 +1602,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		// 判断是否为流式请求
 		isStream := strings.Contains(endpoint, ":streamGenerateContent") || strings.Contains(query, "alt=sse")
 		requestedModel := extractGeminiModelFromEndpoint(endpoint)
-		telemetry := beginRelayTelemetry(c, "gemini", relayprotocol.GeminiNative, requestedModel, isStream)
+		telemetry := beginRelayTelemetry(c, "gemini", relayprotocol.GeminiNative, requestedModel, isStream, prs.pricingService, "")
 		defer telemetry.finish(c)
 		start := time.Now()
 
@@ -2017,7 +2026,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
-		telemetry := beginRelayTelemetry(c, kind, relayprotocol.AnthropicMessages, requestedModel, isStream)
+		telemetry := beginRelayTelemetry(c, kind, relayprotocol.AnthropicMessages, requestedModel, isStream, prs.pricingService, "")
 		defer telemetry.finish(c)
 
 		if requestedModel == "" {

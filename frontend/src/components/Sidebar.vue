@@ -71,6 +71,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: '/', icon: 'home', labelKey: 'sidebar.home' },
   { path: '/pi', icon: 'cpu', labelKey: 'sidebar.pi', isNew: true },
+  { path: '/pricing', icon: 'dollar-sign', labelKey: 'sidebar.pricing', isNew: true },
   { path: '/stats', icon: 'pie-chart', labelKey: 'sidebar.stats' },
   { path: '/prompts', icon: 'file-text', labelKey: 'sidebar.prompts', isNew: true },
   { path: '/mcp', icon: 'plug', labelKey: 'sidebar.mcp' },
@@ -120,6 +121,12 @@ const navigate = (path: string) => {
           <rect x="5" y="5" width="14" height="14" rx="2"></rect>
           <rect x="9" y="9" width="6" height="6" rx="1"></rect>
           <path d="M9 1v4M15 1v4M9 19v4M15 19v4M19 9h4M19 14h4M1 9h4M1 14h4"></path>
+        </svg>
+
+        <!-- Model Pricing -->
+        <svg v-else-if="item.icon === 'dollar-sign'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="1" x2="12" y2="23"></line>
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
         </svg>
 
         <!-- File Text -->

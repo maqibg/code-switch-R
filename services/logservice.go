@@ -41,6 +41,7 @@ const (
 
 type LogService struct {
 	pricing         *modelpricing.Service
+	pricingService  *PricingService
 	providerService *ProviderService // 用于校验供应商是否仍存在于配置中
 }
 
@@ -159,7 +160,12 @@ func selectRequestLogRecords(platform string, start *time.Time, fields ...string
 
 func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...string) ([]xdb.Record, error) {
 	selectFields := append([]string{}, fields...)
-	selectFields = append(selectFields, "created_at", "ephemeral_5m_tokens", "ephemeral_1h_tokens", "service_tier")
+	selectFields = appendUniqueLogFields(selectFields,
+		"created_at", "platform", "source_id", "ephemeral_5m_tokens", "ephemeral_1h_tokens", "service_tier",
+		"input_cost", "output_cost", "reasoning_cost", "cache_create_cost", "cache_read_cost",
+		"ephemeral_5m_cost", "ephemeral_1h_cost", "total_cost", "has_pricing", "cost_calculated",
+		"pricing_version", "pricing_source", "pricing_rule_id",
+	)
 
 	model := xdb.New("request_log")
 	options := []xdb.Option{
@@ -191,6 +197,21 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 		return nil, err
 	}
 	return records, nil
+}
+
+func appendUniqueLogFields(fields []string, additions ...string) []string {
+	seen := make(map[string]struct{}, len(fields)+len(additions))
+	for _, field := range fields {
+		seen[field] = struct{}{}
+	}
+	for _, field := range additions {
+		if _, exists := seen[field]; exists {
+			continue
+		}
+		seen[field] = struct{}{}
+		fields = append(fields, field)
+	}
+	return fields
 }
 
 func requestLogRecordSucceeded(record xdb.Record) bool {
@@ -265,25 +286,10 @@ func (ls *LogService) CostSince(start string, platform string) (float64, error) 
 	if err != nil {
 		return 0, err
 	}
-	model := xdb.New("request_log")
-	options := []xdb.Option{
-		xdb.WhereGte("created_at", formatCreatedAtBoundary(startTime)),
-		xdb.Field(
-			"model",
-			"input_tokens",
-			"output_tokens",
-			"reasoning_tokens",
-			"cache_create_tokens",
-			"cache_read_tokens",
-			"ephemeral_5m_tokens",
-			"ephemeral_1h_tokens",
-			"service_tier",
-		),
-	}
-	if platform != "" {
-		options = append(options, xdb.WhereEq("platform", platform))
-	}
-	records, err := model.Selects(options...)
+	records, err := selectRequestLogRecords(platform, &startTime,
+		"model", "input_tokens", "output_tokens", "reasoning_tokens",
+		"cache_create_tokens", "cache_read_tokens",
+	)
 	if err != nil {
 		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
 			return 0, nil
@@ -292,9 +298,7 @@ func (ls *LogService) CostSince(start string, platform string) (float64, error) 
 	}
 	total := 0.0
 	for _, record := range records {
-		usage := buildSnapshotFromRecord(record)
-		cost := ls.calculateCost(record.GetString("model"), usage)
-		total += cost.TotalCost
+		total += ls.costForRecord(record).TotalCost
 	}
 	return total, nil
 }
@@ -322,12 +326,16 @@ func buildSnapshotFromRecord(record xdb.Record) modelpricing.UsageSnapshot {
 }
 
 func NewLogService(providerService *ProviderService) *LogService {
+	return NewLogServiceWithPricing(providerService, nil)
+}
+
+func NewLogServiceWithPricing(providerService *ProviderService, pricingService *PricingService) *LogService {
 	svc, err := modelpricing.DefaultService()
 	if err != nil {
 		log.Printf("pricing service init failed: %v", err)
 	}
-	service := &LogService{pricing: svc, providerService: providerService}
-	if svc != nil {
+	service := &LogService{pricing: svc, pricingService: pricingService, providerService: providerService}
+	if pricingService != nil || svc != nil {
 		if err := service.backfillStoredRequestCosts(800); err != nil {
 			log.Printf("request_log 成本回填失败: %v", err)
 		}
@@ -382,6 +390,7 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 		logEntry := ReqeustLog{
 			ID:                record.GetInt64("id"),
 			Platform:          record.GetString("platform"),
+			SourceID:          record.GetString("source_id"),
 			Model:             record.GetString("model"),
 			Provider:          record.GetString("provider"),
 			HttpCode:          record.GetInt("http_code"),
@@ -489,7 +498,7 @@ func (ls *LogService) DashboardOverviewByRange(platform string, rangeKey string)
 	previous := dashboardAccumulator{}
 
 	for _, record := range records {
-		cost := ls.calculateCost(record.GetString("model"), buildUsageSnapshot(record))
+		cost := ls.costForRecord(record)
 		if recordInWindow(record, window.currentStart, window.currentEnd) {
 			current.add(record, cost)
 		}
@@ -526,24 +535,10 @@ func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
 	if totalHours > 1 {
 		rangeStart = rangeStart.Add(-time.Duration(totalHours-1) * time.Hour)
 	}
-	model := xdb.New("request_log")
-	options := []xdb.Option{
-		xdb.WhereGe("created_at", formatCreatedAtBoundary(rangeStart)),
-		xdb.Field(
-			"model",
-			"input_tokens",
-			"output_tokens",
-			"reasoning_tokens",
-			"cache_create_tokens",
-			"cache_read_tokens",
-			"ephemeral_5m_tokens",
-			"ephemeral_1h_tokens",
-			"service_tier",
-			"created_at",
-		),
-		xdb.OrderByDesc("created_at"),
-	}
-	records, err := model.Selects(options...)
+	records, err := selectRequestLogRecords("", &rangeStart,
+		"model", "input_tokens", "output_tokens", "reasoning_tokens",
+		"cache_create_tokens", "cache_read_tokens",
+	)
 	if err != nil {
 		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
 			return []HeatmapStat{}, nil
@@ -568,7 +563,7 @@ func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
 		bucket.InputTokens += int64(usage.InputTokens)
 		bucket.OutputTokens += int64(usage.OutputTokens)
 		bucket.ReasoningTokens += int64(usage.ReasoningTokens)
-		cost := ls.calculateCost(record.GetString("model"), usage)
+		cost := ls.costForRecord(record)
 		bucket.TotalCost += cost.TotalCost
 	}
 	if len(hourBuckets) == 0 {
@@ -644,7 +639,7 @@ func (ls *LogService) statsByRange(platform string, provider string, rangeKey st
 		reasoning := record.GetInt("reasoning_tokens")
 		cacheCreate := record.GetInt("cache_create_tokens")
 		cacheRead := record.GetInt("cache_read_tokens")
-		cost := ls.calculateCost(record.GetString("model"), buildUsageSnapshot(record))
+		cost := ls.costForRecord(record)
 
 		stats.TotalRequests++
 		stats.InputTokens += int64(input)
@@ -739,7 +734,7 @@ func (ls *LogService) providerStatsByRange(platform string, provider string, sou
 			statMap[provider] = stat
 		}
 		usage := buildUsageSnapshot(record)
-		cost := ls.calculateCost(record.GetString("model"), usage)
+		cost := ls.costForRecord(record)
 		stat.TotalRequests++
 		if requestLogRecordSucceeded(record) {
 			stat.SuccessfulRequests++
@@ -812,7 +807,7 @@ func (ls *LogService) ModelStatsByRange(platform string, rangeKey string) ([]Mod
 		reasoning := record.GetInt("reasoning_tokens")
 		cacheCreate := record.GetInt("cache_create_tokens")
 		cacheRead := record.GetInt("cache_read_tokens")
-		cost := ls.calculateCost(record.GetString("model"), buildUsageSnapshot(record))
+		cost := ls.costForRecord(record)
 
 		stat.TotalRequests++
 		if requestLogRecordSucceeded(record) {
@@ -1012,6 +1007,10 @@ func loadStoredCost(logEntry *ReqeustLog, record xdb.Record) bool {
 	logEntry.Ephemeral1hCost = record.GetFloat64("ephemeral_1h_cost")
 	logEntry.TotalCost = record.GetFloat64("total_cost")
 	logEntry.HasPricing = record.GetInt("has_pricing") == 1
+	logEntry.CostCalculated = true
+	logEntry.PricingVersion = record.GetString("pricing_version")
+	logEntry.PricingSource = record.GetString("pricing_source")
+	logEntry.PricingRuleID = record.GetString("pricing_rule_id")
 	return true
 }
 
@@ -1024,7 +1023,7 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 		return err
 	}
 	rows, err := db.Query(`
-		SELECT id, model, input_tokens, output_tokens, reasoning_tokens, cache_create_tokens, cache_read_tokens,
+		SELECT id, platform, source_id, model, input_tokens, output_tokens, reasoning_tokens, cache_create_tokens, cache_read_tokens,
 		       ephemeral_5m_tokens, ephemeral_1h_tokens, service_tier
 		FROM request_log
 		WHERE cost_calculated = 0
@@ -1049,6 +1048,8 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 	for rows.Next() {
 		var (
 			id                int64
+			platform          string
+			sourceID          string
 			model             string
 			inputTokens       int
 			outputTokens      int
@@ -1059,7 +1060,7 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 			ephemeral1hTokens int
 			serviceTier       string
 		)
-		if err := rows.Scan(&id, &model, &inputTokens, &outputTokens, &reasoningTokens, &cacheCreateTokens, &cacheReadTokens,
+		if err := rows.Scan(&id, &platform, &sourceID, &model, &inputTokens, &outputTokens, &reasoningTokens, &cacheCreateTokens, &cacheReadTokens,
 			&ephemeral5mTokens, &ephemeral1hTokens, &serviceTier); err != nil {
 			return err
 		}
@@ -1077,11 +1078,13 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 				Ephemeral1hTokens: ephemeral1hTokens,
 			}
 		}
-		cost := ls.calculateCost(model, snapshot)
+		result := ls.calculateCost(platform, sourceID, model, snapshot)
+		cost := result.Cost
 		if _, err := tx.Exec(`
 			UPDATE request_log
 			SET input_cost = ?, output_cost = ?, reasoning_cost = ?, cache_create_cost = ?, cache_read_cost = ?,
-			    ephemeral_5m_cost = ?, ephemeral_1h_cost = ?, total_cost = ?, has_pricing = ?, cost_calculated = 1
+			    ephemeral_5m_cost = ?, ephemeral_1h_cost = ?, total_cost = ?, has_pricing = ?, cost_calculated = 1,
+			    pricing_version = ?, pricing_source = ?, pricing_rule_id = ?
 			WHERE id = ?
 		`,
 			cost.InputCost,
@@ -1093,6 +1096,9 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 			cost.Ephemeral1hCost,
 			cost.TotalCost,
 			boolToInt(cost.HasPricing),
+			result.Version,
+			result.Source,
+			result.RuleID,
 			id,
 		); err != nil {
 			return err
@@ -1109,7 +1115,7 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 }
 
 func (ls *LogService) decorateCost(logEntry *ReqeustLog) {
-	if ls == nil || ls.pricing == nil || logEntry == nil {
+	if ls == nil || logEntry == nil {
 		return
 	}
 	usage := modelpricing.UsageSnapshot{
@@ -1126,7 +1132,8 @@ func (ls *LogService) decorateCost(logEntry *ReqeustLog) {
 			Ephemeral1hTokens: logEntry.Ephemeral1hTokens,
 		}
 	}
-	cost := ls.pricing.CalculateCost(logEntry.Model, usage)
+	result := ls.calculateCost(logEntry.Platform, logEntry.SourceID, logEntry.Model, usage)
+	cost := result.Cost
 	logEntry.HasPricing = cost.HasPricing
 	logEntry.InputCost = cost.InputCost
 	logEntry.OutputCost = cost.OutputCost
@@ -1136,13 +1143,37 @@ func (ls *LogService) decorateCost(logEntry *ReqeustLog) {
 	logEntry.Ephemeral5mCost = cost.Ephemeral5mCost
 	logEntry.Ephemeral1hCost = cost.Ephemeral1hCost
 	logEntry.TotalCost = cost.TotalCost
+	logEntry.PricingVersion = result.Version
+	logEntry.PricingSource = result.Source
+	logEntry.PricingRuleID = result.RuleID
 }
 
-func (ls *LogService) calculateCost(model string, usage modelpricing.UsageSnapshot) modelpricing.CostBreakdown {
-	if ls == nil || ls.pricing == nil {
-		return modelpricing.CostBreakdown{}
+func (ls *LogService) calculateCost(platform, sourceID, model string, usage modelpricing.UsageSnapshot) PricingResult {
+	if ls == nil {
+		return PricingResult{}
 	}
-	return ls.pricing.CalculateCost(model, usage)
+	if ls.pricingService != nil {
+		return ls.pricingService.newRequestSnapshot(platform, sourceID, model).Calculate(model, usage)
+	}
+	if ls.pricing == nil {
+		return PricingResult{}
+	}
+	return PricingResult{Cost: ls.pricing.CalculateCost(model, usage), Source: pricingSourceEmbedded, Version: "embedded-v1"}
+}
+
+func (ls *LogService) costForRecord(record xdb.Record) modelpricing.CostBreakdown {
+	if record.GetInt("cost_calculated") == 1 {
+		return modelpricing.CostBreakdown{
+			InputCost: record.GetFloat64("input_cost"), OutputCost: record.GetFloat64("output_cost"),
+			ReasoningCost: record.GetFloat64("reasoning_cost"), CacheCreateCost: record.GetFloat64("cache_create_cost"),
+			CacheReadCost: record.GetFloat64("cache_read_cost"), Ephemeral5mCost: record.GetFloat64("ephemeral_5m_cost"),
+			Ephemeral1hCost: record.GetFloat64("ephemeral_1h_cost"), TotalCost: record.GetFloat64("total_cost"),
+			HasPricing: record.GetInt("has_pricing") == 1,
+		}
+	}
+	return ls.calculateCost(
+		record.GetString("platform"), record.GetString("source_id"), record.GetString("model"), buildUsageSnapshot(record),
+	).Cost
 }
 
 func parseCreatedAt(record xdb.Record) (time.Time, bool) {

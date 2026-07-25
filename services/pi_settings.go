@@ -70,6 +70,8 @@ type PiProxyState struct {
 type PiSettingsService struct {
 	modelsMu          sync.Mutex
 	builtinCatalogMu  sync.Mutex
+	pricingMu         sync.Mutex
+	pricingCache      *piModelPricingCache
 	builtinCatalog    *PiBuiltinCatalogSnapshot
 	builtinLoader     func() (PiBuiltinCatalogSnapshot, error)
 	relayAddr         string

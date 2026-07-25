@@ -61,6 +61,7 @@
   "sidebar": {
     "home": "Home",
     "pi": "Pi Config",
+    "pricing": "Model Pricing",
     "stats": "Stats",
     "prompts": "Prompts",
     "mcp": "MCP",
@@ -70,6 +71,181 @@
     "logs": "Logs",
     "console": "Console",
     "settings": "Settings"
+  },
+  "pricingPage": {
+    "eyebrow": "Model Pricing",
+    "title": "Model pricing",
+    "description": "Inspect the read-only LiteLLM catalog, maintain case-insensitive regex overrides, and provide traceable cost calculations for statistics and request logs.",
+    "priority": {
+      "title": "Effective pricing priority",
+      "description": "Pi requests use Pi's own model pricing first. This page is consulted only when neither Pi custom nor Pi built-in pricing matches.",
+      "piCustom": "Pi custom pricing",
+      "piBuiltin": "Pi built-in pricing",
+      "globalCustom": "Global custom regex",
+      "globalBuiltin": "Global built-in pricing",
+      "isolation": "This page never reads or writes Pi configuration. Pricing and model definitions on the Pi Config page remain independent."
+    },
+    "actions": {
+      "updateBuiltin": "Update built-in pricing",
+      "updating": "Updating",
+      "reload": "Reload",
+      "clearFilters": "Clear filters",
+      "details": "Details",
+      "override": "Create override",
+      "newRule": "New rule",
+      "cancel": "Cancel",
+      "close": "Close",
+      "save": "Save rule",
+      "saving": "Saving",
+      "deleting": "Deleting"
+    },
+    "overview": {
+      "title": "Pricing overview",
+      "source": "Current built-in source",
+      "embeddedTime": "Bundled with the app",
+      "models": "Model entries",
+      "tokenPriced": "{count} with token pricing",
+      "customRules": "Custom rules",
+      "firstMatch": "First match wins",
+      "proxy": "Update network",
+      "proxyOn": "Using Settings proxy",
+      "proxyOff": "Direct connection",
+      "sourceUrl": "Pinned source",
+      "readOnly": "Built-in pricing is always read-only. Updates switch an independent snapshot and never overwrite the bundled baseline."
+    },
+    "tabs": {
+      "label": "Pricing catalog type",
+      "builtin": "Built-in pricing",
+      "custom": "Custom pricing"
+    },
+    "builtin": {
+      "title": "Read-only built-in catalog",
+      "description": "All prices are USD / 1M tokens. Search, filters, and pagination run in the backend, so the full catalog is never loaded into the page at once.",
+      "unit": "Price unit: USD / 1M tokens",
+      "overridden": "Custom override"
+    },
+    "custom": {
+      "title": "Custom model pricing",
+      "description": "Regex matching is case-insensitive. Rules are checked from top to bottom, and the first match completely replaces global built-in pricing.",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "tierCount": "{count} tiers",
+      "priority": "Priority {index}",
+      "toggleRule": "Toggle rule {name}",
+      "moveUp": "Move rule {name} up",
+      "moveDown": "Move rule {name} down",
+      "editRule": "Edit rule {name}",
+      "deleteRule": "Delete rule {name}",
+      "exactRuleName": "Override {model}",
+      "created": "Custom pricing rule created",
+      "updated": "Custom pricing rule updated",
+      "deleted": "Custom pricing rule deleted"
+    },
+    "filters": {
+      "search": "Search models",
+      "searchPlaceholder": "Search model, provider, or mode",
+      "provider": "Provider",
+      "mode": "Mode",
+      "coverage": "Custom coverage",
+      "all": "All",
+      "covered": "Covered only",
+      "uncovered": "Uncovered only"
+    },
+    "columns": {
+      "model": "Model",
+      "providerMode": "Provider / Mode",
+      "status": "Pricing status",
+      "actions": "Actions"
+    },
+    "rates": {
+      "input": "Input",
+      "output": "Output",
+      "reasoning": "Reasoning",
+      "cacheRead": "Cache read",
+      "cacheWrite": "Cache write"
+    },
+    "status": {
+      "full": "Complete",
+      "partial": "Partial",
+      "unsupported": "Not supported"
+    },
+    "pagination": {
+      "summary": "{total} items · page {page} / {pages}",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "tester": {
+      "title": "Test model matching",
+      "description": "Tests global custom and built-in pricing in current runtime order. Pi pricing is not read here.",
+      "placeholder": "For example, gpt-5.2-codex",
+      "test": "Test",
+      "unmatched": "No billable pricing matched",
+      "matchedRule": "Matched {source}: {rule}",
+      "matchedBuiltin": "Matched {source}"
+    },
+    "states": {
+      "loading": "Loading pricing catalog",
+      "loadingDetail": "Loading raw pricing data",
+      "noBuiltin": "No models match the current filters",
+      "noRules": "No custom pricing rules yet",
+      "noRulesHint": "Create a case-insensitive regex rule for a custom model or to override built-in model pricing."
+    },
+    "sources": {
+      "embedded": "Bundled LiteLLM",
+      "downloaded": "Downloaded LiteLLM snapshot",
+      "custom": "Global custom rule",
+      "pi-custom": "Pi custom model",
+      "pi-override": "Pi model override",
+      "pi-builtin": "Pi built-in model",
+      "unmatched": "Unmatched"
+    },
+    "update": {
+      "updated": "Built-in pricing updated with {count} models",
+      "unchanged": "Built-in pricing is already current"
+    },
+    "ruleModal": {
+      "createTitle": "Create custom pricing rule",
+      "editTitle": "Edit custom pricing rule",
+      "priorityTitle": "The first matching rule wins",
+      "priorityHint": "Model matching is case-insensitive and fully replaces global built-in pricing. Use Move up/down in the rule list to change priority.",
+      "enabled": "Enable rule",
+      "name": "Rule name",
+      "namePlaceholder": "For example, OpenAI GPT-5 family",
+      "pattern": "Model regex",
+      "patternPlaceholder": "For example, ^gpt-5(?:[.-].*)?$",
+      "patternHint": "Do not add /.../i. The backend ignores case automatically and validates Go RE2 syntax when saving.",
+      "baseRates": "Base pricing",
+      "rateUnit": "All prices are USD / 1M tokens. Enter 0 for unused categories.",
+      "tiers": "Tiered pricing",
+      "tierHint": "When total input tokens (input + cache read + cache write) are strictly above a threshold, the highest matched tier applies.",
+      "addTier": "Add tier",
+      "tierLabel": "Tier {index}",
+      "threshold": "Input tokens above",
+      "tokens": "tokens",
+      "removeTier": "Remove tier {index}",
+      "noTiers": "No pricing tiers. Base pricing always applies.",
+      "requiredError": "Rule name and model regex are required.",
+      "nameRequired": "Enter a rule name.",
+      "patternRequired": "Enter a model regex.",
+      "regexError": "Invalid regex: {message}",
+      "rateFieldError": "Enter a finite number greater than or equal to 0.",
+      "thresholdError": "Enter a positive integer.",
+      "thresholdDuplicate": "This threshold already exists.",
+      "rateError": "Every base price must be a finite number greater than or equal to 0.",
+      "tierError": "Tier thresholds must be unique positive integers, and every tier price must be a finite number greater than or equal to 0."
+    },
+    "detail": {
+      "title": "Built-in pricing details",
+      "description": "This is the complete raw JSON for the model in the current read-only built-in snapshot.",
+      "copy": "Copy JSON",
+      "copied": "Copied",
+      "copyFailed": "Copy failed: {message}"
+    },
+    "delete": {
+      "title": "Delete custom pricing rule",
+      "message": "Delete rule “{name}”? Matching models will continue to later rules and built-in pricing.",
+      "confirm": "Delete rule"
+    }
   },
   "piPage": {
     "eyebrow": "Pi Gateway",

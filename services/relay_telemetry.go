@@ -19,7 +19,6 @@ import (
 
 const (
 	relayTelemetryContextKey = "codeswitch.relay.telemetry"
-	relayPricingVersion      = "embedded-v1"
 )
 
 var relaySensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:key|api[_-]?key|apikey|token|access[_-]?token)=)([^&#\s]+)`)
@@ -37,6 +36,9 @@ type RelayAttemptLog struct {
 	ErrorMessage     string
 	Usage            ReqeustLog
 	Cost             modelpricing.CostBreakdown
+	PricingSource    string
+	PricingVersion   string
+	PricingRuleID    string
 }
 
 type relayTelemetry struct {
@@ -49,14 +51,19 @@ type relayTelemetry struct {
 	IsStream       bool
 	StartedAt      time.Time
 	Attempts       []RelayAttemptLog
-	pricing        *modelpricing.Service
+	pricing        *RequestPricingSnapshot
+	legacyPricing  *modelpricing.Service
 }
 
-func beginRelayTelemetry(c *gin.Context, platform string, clientProtocol relayprotocol.Protocol, requestedModel string, isStream bool) *relayTelemetry {
-	pricing, _ := modelpricing.DefaultService()
+func beginRelayTelemetry(c *gin.Context, platform string, clientProtocol relayprotocol.Protocol, requestedModel string, isStream bool, pricingService *PricingService, sourceID string) *relayTelemetry {
 	telemetry := &relayTelemetry{
 		RequestID: uuid.NewString(), Platform: platform, ClientProtocol: clientProtocol,
-		AliasPlatform: platform, RequestedModel: requestedModel, IsStream: isStream, StartedAt: time.Now(), pricing: pricing,
+		AliasPlatform: platform, SourceID: sourceID, RequestedModel: requestedModel, IsStream: isStream, StartedAt: time.Now(),
+	}
+	if pricingService != nil {
+		telemetry.pricing = pricingService.newRequestSnapshot(platform, sourceID, requestedModel)
+	} else {
+		telemetry.legacyPricing, _ = modelpricing.DefaultService()
 	}
 	if strings.HasPrefix(platform, "custom:") {
 		telemetry.Platform = "custom"
@@ -101,7 +108,11 @@ func (t *relayTelemetry) recordAttempt(provider Provider, execution *relayForwar
 		attempt.ErrorMessage = truncateRelayError(sanitizeRelayError(err.Error(), provider.APIKey))
 	}
 	if t.pricing != nil {
-		attempt.Cost = t.pricing.CalculateCost(attempt.Model, usageSnapshotFromLog(usage))
+		result := t.pricing.Calculate(attempt.Model, usageSnapshotFromLog(usage))
+		attempt.Cost, attempt.PricingSource = result.Cost, result.Source
+		attempt.PricingVersion, attempt.PricingRuleID = result.Version, result.RuleID
+	} else if t.legacyPricing != nil {
+		attempt.Cost = t.legacyPricing.CalculateCost(attempt.Model, usageSnapshotFromLog(usage))
 	}
 	t.Attempts = append(t.Attempts, attempt)
 }
@@ -121,7 +132,11 @@ func (t *relayTelemetry) recordGeminiAttempt(provider GeminiProvider, usage Reqe
 		attempt.ErrorMessage = truncateRelayError(sanitizeRelayError(err.Error(), provider.APIKey))
 	}
 	if t.pricing != nil {
-		attempt.Cost = t.pricing.CalculateCost(attempt.Model, usageSnapshotFromLog(usage))
+		result := t.pricing.Calculate(attempt.Model, usageSnapshotFromLog(usage))
+		attempt.Cost, attempt.PricingSource = result.Cost, result.Source
+		attempt.PricingVersion, attempt.PricingRuleID = result.Version, result.RuleID
+	} else if t.legacyPricing != nil {
+		attempt.Cost = t.legacyPricing.CalculateCost(attempt.Model, usageSnapshotFromLog(usage))
 	}
 	t.Attempts = append(t.Attempts, attempt)
 }
@@ -131,7 +146,7 @@ func (t *relayTelemetry) logicalRequest(status int) ReqeustLog {
 		RequestID: t.RequestID, Platform: t.Platform, SourceID: t.SourceID,
 		RequestedModel: t.RequestedModel, ClientProtocol: string(t.ClientProtocol),
 		IsStream: t.IsStream, DurationSec: time.Since(t.StartedAt).Seconds(),
-		AttemptCount: len(t.Attempts), HttpCode: status, PricingVersion: relayPricingVersion,
+		AttemptCount: len(t.Attempts), HttpCode: status,
 	}
 	var final *RelayAttemptLog
 	for i := range t.Attempts {
@@ -152,6 +167,11 @@ func (t *relayTelemetry) logicalRequest(status int) ReqeustLog {
 		result.Ephemeral1hCost += attempt.Cost.Ephemeral1hCost
 		result.TotalCost += attempt.Cost.TotalCost
 		result.HasPricing = result.HasPricing || attempt.Cost.HasPricing
+		if result.PricingVersion == "" && attempt.PricingVersion != "" {
+			result.PricingSource = attempt.PricingSource
+			result.PricingVersion = attempt.PricingVersion
+			result.PricingRuleID = attempt.PricingRuleID
+		}
 		if attempt.Success {
 			final = attempt
 		}
@@ -209,15 +229,15 @@ func enqueueLogicalRequest(ctx context.Context, log ReqeustLog) error {
 			reasoning_tokens, is_stream, duration_sec, ephemeral_5m_tokens,
 			ephemeral_1h_tokens, service_tier, input_cost, output_cost, reasoning_cost,
 			cache_create_cost, cache_read_cost, ephemeral_5m_cost, ephemeral_1h_cost,
-			total_cost, has_pricing, cost_calculated, pricing_version
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			total_cost, has_pricing, cost_calculated, pricing_version, pricing_source, pricing_rule_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, log.RequestID, log.Platform, log.SourceID, log.ClientProtocol, log.UpstreamProtocol,
 		log.RequestedModel, log.Model, log.Provider, log.HttpCode, log.AttemptCount, log.ErrorType,
 		log.InputTokens, log.OutputTokens, log.CacheCreateTokens, log.CacheReadTokens,
 		log.ReasoningTokens, boolToInt(log.IsStream), log.DurationSec, log.Ephemeral5mTokens,
 		log.Ephemeral1hTokens, log.ServiceTier, log.InputCost, log.OutputCost, log.ReasoningCost,
 		log.CacheCreateCost, log.CacheReadCost, log.Ephemeral5mCost, log.Ephemeral1hCost,
-		log.TotalCost, boolToInt(log.HasPricing), 1, log.PricingVersion)
+		log.TotalCost, boolToInt(log.HasPricing), 1, log.PricingVersion, log.PricingSource, log.PricingRuleID)
 }
 
 func enqueueRelayAttempt(ctx context.Context, telemetry *relayTelemetry, attempt RelayAttemptLog) error {

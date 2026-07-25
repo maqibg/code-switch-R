@@ -61,6 +61,7 @@
   "sidebar": {
     "home": "首页",
     "pi": "Pi 配置",
+    "pricing": "模型定价",
     "stats": "统计",
     "prompts": "提示词",
     "mcp": "MCP",
@@ -70,6 +71,181 @@
     "logs": "日志",
     "console": "控制台",
     "settings": "设置"
+  },
+  "pricingPage": {
+    "eyebrow": "Model Pricing",
+    "title": "模型定价",
+    "description": "查看只读 LiteLLM 内置价格，维护覆盖内置结果的自定义正则价格，并为统计与请求日志提供可追溯的成本计算。",
+    "priority": {
+      "title": "实际计费优先级",
+      "description": "Pi 请求先使用 Pi 自身的模型价格；只有 Pi 自定义和 Pi 内置价格都未命中时，才回退到本页。",
+      "piCustom": "Pi 自定义价格",
+      "piBuiltin": "Pi 内置价格",
+      "globalCustom": "全局自定义正则",
+      "globalBuiltin": "全局内置价格",
+      "isolation": "本页不会读取或改写 Pi 配置。Pi 配置页中的价格与模型定义保持独立。"
+    },
+    "actions": {
+      "updateBuiltin": "一键更新内置价格",
+      "updating": "正在更新",
+      "reload": "重新加载",
+      "clearFilters": "清除筛选",
+      "details": "详情",
+      "override": "创建覆盖",
+      "newRule": "新建规则",
+      "cancel": "取消",
+      "close": "关闭",
+      "save": "保存规则",
+      "saving": "保存中",
+      "deleting": "删除中"
+    },
+    "overview": {
+      "title": "价格表概览",
+      "source": "当前内置来源",
+      "embeddedTime": "随程序内置",
+      "models": "模型条目",
+      "tokenPriced": "{count} 个具有 Token 价格",
+      "customRules": "自定义规则",
+      "firstMatch": "按顺序第一条匹配生效",
+      "proxy": "更新网络",
+      "proxyOn": "使用设置代理",
+      "proxyOff": "直接连接",
+      "sourceUrl": "固定数据源",
+      "readOnly": "内置价格始终只读；更新只会切换独立快照，不会覆盖程序内置基线。"
+    },
+    "tabs": {
+      "label": "价格表类型",
+      "builtin": "内置价格",
+      "custom": "自定义价格"
+    },
+    "builtin": {
+      "title": "只读内置价格表",
+      "description": "价格单位均为 USD / 1M tokens。搜索、筛选和分页由后端处理，大型价格表不会一次性加载到页面。",
+      "unit": "价格单位：USD / 1M tokens",
+      "overridden": "已被自定义覆盖"
+    },
+    "custom": {
+      "title": "自定义模型价格",
+      "description": "正则匹配忽略大小写；规则从上到下检查，第一条命中的规则会完整替换全局内置价格。",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "tierCount": "{count} 个分段",
+      "priority": "优先级 {index}",
+      "toggleRule": "切换规则 {name}",
+      "moveUp": "上移规则 {name}",
+      "moveDown": "下移规则 {name}",
+      "editRule": "编辑规则 {name}",
+      "deleteRule": "删除规则 {name}",
+      "exactRuleName": "覆盖 {model}",
+      "created": "自定义价格规则已创建",
+      "updated": "自定义价格规则已更新",
+      "deleted": "自定义价格规则已删除"
+    },
+    "filters": {
+      "search": "搜索模型",
+      "searchPlaceholder": "搜索模型、Provider 或 mode",
+      "provider": "Provider",
+      "mode": "Mode",
+      "coverage": "自定义覆盖",
+      "all": "全部",
+      "covered": "仅已覆盖",
+      "uncovered": "仅未覆盖"
+    },
+    "columns": {
+      "model": "模型",
+      "providerMode": "Provider / Mode",
+      "status": "价格状态",
+      "actions": "操作"
+    },
+    "rates": {
+      "input": "输入",
+      "output": "输出",
+      "reasoning": "Reasoning",
+      "cacheRead": "缓存读取",
+      "cacheWrite": "缓存写入"
+    },
+    "status": {
+      "full": "完整",
+      "partial": "部分",
+      "unsupported": "暂不支持"
+    },
+    "pagination": {
+      "summary": "共 {total} 条 · 第 {page} / {pages} 页",
+      "previous": "上一页",
+      "next": "下一页"
+    },
+    "tester": {
+      "title": "测试模型匹配",
+      "description": "按当前运行时顺序测试全局自定义和内置价格，不读取 Pi 价格。",
+      "placeholder": "例如 gpt-5.2-codex",
+      "test": "测试",
+      "unmatched": "未匹配到可计费价格",
+      "matchedRule": "命中 {source}：{rule}",
+      "matchedBuiltin": "命中 {source}"
+    },
+    "states": {
+      "loading": "正在加载价格表",
+      "loadingDetail": "正在加载原始价格数据",
+      "noBuiltin": "没有符合当前筛选条件的模型",
+      "noRules": "还没有自定义价格规则",
+      "noRulesHint": "新建一条忽略大小写的正则规则，用于自定义模型或覆盖内置模型价格。"
+    },
+    "sources": {
+      "embedded": "程序内置 LiteLLM",
+      "downloaded": "已下载 LiteLLM 快照",
+      "custom": "全局自定义规则",
+      "pi-custom": "Pi 自定义模型",
+      "pi-override": "Pi 模型覆盖",
+      "pi-builtin": "Pi 内置模型",
+      "unmatched": "未命中"
+    },
+    "update": {
+      "updated": "内置价格已更新，共 {count} 个模型",
+      "unchanged": "内置价格已经是最新内容"
+    },
+    "ruleModal": {
+      "createTitle": "新建自定义价格规则",
+      "editTitle": "编辑自定义价格规则",
+      "priorityTitle": "第一条匹配规则生效",
+      "priorityHint": "规则匹配忽略模型名大小写，并完整替换全局内置价格；拖动优先级请在规则列表中使用上移/下移。",
+      "enabled": "启用规则",
+      "name": "规则名称",
+      "namePlaceholder": "例如 OpenAI GPT-5 系列",
+      "pattern": "模型正则",
+      "patternPlaceholder": "例如 ^gpt-5(?:[.-].*)?$",
+      "patternHint": "无需添加 /.../i，后端会自动忽略大小写；保存时按 Go RE2 语法校验。",
+      "baseRates": "基础价格",
+      "rateUnit": "所有价格单位均为 USD / 1M tokens。未使用的项目可以填写 0。",
+      "tiers": "分段价格",
+      "tierHint": "总输入 Token（输入 + 缓存读取 + 缓存写入）严格大于阈值时，取命中的最高阈值档。",
+      "addTier": "添加分段",
+      "tierLabel": "分段 {index}",
+      "threshold": "输入 Token 大于",
+      "tokens": "Token",
+      "removeTier": "删除第 {index} 个分段",
+      "noTiers": "没有分段价格，将始终使用基础价格。",
+      "requiredError": "规则名称和模型正则不能为空。",
+      "nameRequired": "请输入规则名称。",
+      "patternRequired": "请输入模型正则。",
+      "regexError": "正则表达式无效：{message}",
+      "rateFieldError": "请输入大于等于 0 的有限数值。",
+      "thresholdError": "请输入大于 0 的整数。",
+      "thresholdDuplicate": "该阈值已存在。",
+      "rateError": "所有基础价格必须是大于等于 0 的有限数值。",
+      "tierError": "分段阈值必须是唯一的正整数，且分段价格必须是大于等于 0 的有限数值。"
+    },
+    "detail": {
+      "title": "内置价格详情",
+      "description": "以下为当前只读内置快照中该模型的完整原始 JSON。",
+      "copy": "复制 JSON",
+      "copied": "已复制",
+      "copyFailed": "复制失败：{message}"
+    },
+    "delete": {
+      "title": "删除自定义价格规则",
+      "message": "确定删除规则“{name}”吗？删除后，匹配该规则的模型会继续尝试后续规则和内置价格。",
+      "confirm": "删除规则"
+    }
   },
   "piPage": {
     "eyebrow": "Pi Gateway",
