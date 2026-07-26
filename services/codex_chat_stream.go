@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tidwall/gjson"
 )
 
 type CodexChatSSEConverter struct {
@@ -296,9 +295,24 @@ func writeCodexSSE(out *strings.Builder, event string, payload map[string]any) {
 }
 
 func gjsonGetString(body map[string]any, path string) string {
-	raw, err := json.Marshal(body)
-	if err != nil {
+	choices, ok := body["choices"].([]any)
+	if !ok || len(choices) == 0 {
 		return ""
 	}
-	return gjson.GetBytes(raw, path).String()
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	switch path {
+	case "choices.0.finish_reason":
+		value, _ := choice["finish_reason"].(string)
+		return value
+	case "choices.0.delta.content", "choices.0.delta.reasoning_content":
+		delta, _ := choice["delta"].(map[string]any)
+		key := strings.TrimPrefix(path, "choices.0.delta.")
+		value, _ := delta[key].(string)
+		return value
+	default:
+		return ""
+	}
 }

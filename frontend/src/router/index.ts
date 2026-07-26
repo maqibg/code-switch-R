@@ -1,30 +1,18 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import MainPage from '../components/Main/Index.vue'
-import StatsPage from '../components/Stats/Index.vue'
-import LogsPage from '../components/Logs/Index.vue'
-import GeneralPage from '../components/General/Index.vue'
-import McpPage from '../components/Mcp/index.vue'
-import SkillPage from '../components/Skill/Index.vue'
-import PromptsPage from '../components/Prompts/Index.vue'
-import EnvCheckPage from '../components/EnvCheck/Index.vue'
-import ConsolePage from '../components/Console/Index.vue'
-import TrayPage from '../components/Tray/Index.vue'
-import PiPage from '../components/Pi/Index.vue'
-import PricingPage from '../components/Pricing/Index.vue'
 
 const routes = [
-  { path: '/', component: MainPage },
-  { path: '/pi', component: PiPage },
-  { path: '/pricing', component: PricingPage },
-  { path: '/stats', component: StatsPage },
-  { path: '/prompts', component: PromptsPage },
-  { path: '/mcp', component: McpPage },
-  { path: '/skill', component: SkillPage },
-  { path: '/env', component: EnvCheckPage },
-  { path: '/logs', component: LogsPage },
-  { path: '/console', component: ConsolePage },
-  { path: '/settings', component: GeneralPage },
-  { path: '/tray', component: TrayPage },
+  { path: '/', component: () => import('../components/Main/Index.vue') },
+  { path: '/pi', component: () => import('../components/Pi/Index.vue') },
+  { path: '/pricing', component: () => import('../components/Pricing/Index.vue') },
+  { path: '/stats', component: () => import('../components/Stats/Index.vue') },
+  { path: '/prompts', component: () => import('../components/Prompts/Index.vue') },
+  { path: '/mcp', component: () => import('../components/Mcp/index.vue') },
+  { path: '/skill', component: () => import('../components/Skill/Index.vue') },
+  { path: '/env', component: () => import('../components/EnvCheck/Index.vue') },
+  { path: '/logs', component: () => import('../components/Logs/Index.vue') },
+  { path: '/console', component: () => import('../components/Console/Index.vue') },
+  { path: '/settings', component: () => import('../components/General/Index.vue') },
+  { path: '/tray', component: () => import('../components/Tray/Index.vue') },
 ]
 
 export default createRouter({

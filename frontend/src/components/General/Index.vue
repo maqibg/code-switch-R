@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { Call } from '@wailsio/runtime'
 import { useRouter } from 'vue-router'
 import ListItem from '../Setting/ListRow.vue'
 import LanguageSwitcher from '../Setting/LanguageSwitcher.vue'
@@ -52,6 +53,7 @@ const globalProxyProtocol = ref<AppSettings['global_proxy_protocol']>(
 )
 const globalProxyHost = ref(getCachedString('globalProxyHost', '127.0.0.1'))
 const globalProxyPort = ref(getCachedNumber('globalProxyPort', 7890))
+const logRetentionDays = ref(getCachedNumber('logRetentionDays', 0))
 const budgetTotal = ref(getCachedNumber('budgetTotal', 0))
 const budgetUsedAdjustment = ref(getCachedNumber('budgetUsedAdjustment', 0))
 const budgetForecastMethod = ref(getCachedString('budgetForecastMethod', 'cycle'))
@@ -151,6 +153,7 @@ const loadAppSettings = async () => {
     globalProxyProtocol.value = normalizeGlobalProxyProtocol(data?.global_proxy_protocol ?? 'http')
     globalProxyHost.value = (data?.global_proxy_host || '127.0.0.1').trim() || '127.0.0.1'
     globalProxyPort.value = normalizeGlobalProxyPort(Number(data?.global_proxy_port ?? 7890))
+    logRetentionDays.value = Math.max(0, Math.floor(Number(data?.log_retention_days ?? 0)))
 
     // 缓存到 localStorage，下次打开时直接显示正确状态
     localStorage.setItem('app-settings-heatmap', String(heatmapEnabled.value))
@@ -181,6 +184,7 @@ const loadAppSettings = async () => {
     localStorage.setItem('app-settings-globalProxyProtocol', globalProxyProtocol.value)
     localStorage.setItem('app-settings-globalProxyHost', globalProxyHost.value)
     localStorage.setItem('app-settings-globalProxyPort', String(globalProxyPort.value))
+    localStorage.setItem('app-settings-logRetentionDays', String(logRetentionDays.value))
   } catch (error) {
     console.error('failed to load app settings', error)
     heatmapEnabled.value = true
@@ -284,6 +288,7 @@ const persistAppSettings = async () => {
       global_proxy_protocol: normalizedGlobalProxyProtocol,
       global_proxy_host: normalizedGlobalProxyHost,
       global_proxy_port: normalizedGlobalProxyPort,
+      log_retention_days: Math.max(0, Math.min(3650, Math.floor(logRetentionDays.value))),
     }
     await saveAppSettings(payload)
 
@@ -316,6 +321,7 @@ const persistAppSettings = async () => {
     localStorage.setItem('app-settings-globalProxyProtocol', globalProxyProtocol.value)
     localStorage.setItem('app-settings-globalProxyHost', globalProxyHost.value)
     localStorage.setItem('app-settings-globalProxyPort', String(globalProxyPort.value))
+    localStorage.setItem('app-settings-logRetentionDays', String(logRetentionDays.value))
 
     window.dispatchEvent(new CustomEvent('app-settings-updated'))
   } catch (error) {
@@ -552,6 +558,18 @@ const handleClearStoredRecords = async () => {
   } finally {
     recordStorageClearing.value = false
     await loadRecordStorageInfo()
+  }
+}
+
+const handleRetentionChange = async () => {
+  logRetentionDays.value = Math.max(0, Math.min(3650, Math.floor(logRetentionDays.value)))
+  await persistAppSettings()
+  if (logRetentionDays.value <= 0) return
+  try {
+    const result = await Call.ByName('codeswitch/services.LogService.ApplyRetentionPolicy')
+    if (result?.storage) recordStorageInfo.value = result.storage
+  } catch (error) {
+    console.error('failed to apply log retention policy', error)
   }
 }
 
@@ -993,9 +1011,16 @@ onMounted(async () => {
           <article class="records-card records-card--status">
             <div class="records-card-head">
               <span class="records-card-kicker">{{ $t('components.general.records.autoCleanup') }}</span>
-              <span class="record-badge record-badge--muted">{{ $t('components.general.records.autoCleanupValue') }}</span>
+              <select v-model.number="logRetentionDays" class="retention-select" @change="handleRetentionChange">
+                <option :value="0">{{ $t('components.general.records.retentionOff') }}</option>
+                <option :value="30">{{ $t('components.general.records.retentionDays', { days: 30 }) }}</option>
+                <option :value="90">{{ $t('components.general.records.retentionDays', { days: 90 }) }}</option>
+                <option :value="180">{{ $t('components.general.records.retentionDays', { days: 180 }) }}</option>
+                <option :value="365">{{ $t('components.general.records.retentionDays', { days: 365 }) }}</option>
+                <option :value="730">{{ $t('components.general.records.retentionDays', { days: 730 }) }}</option>
+              </select>
             </div>
-            <p class="records-card-copy">{{ $t('components.general.records.autoCleanupHint') }}</p>
+            <p class="records-card-copy">{{ $t('components.general.records.retentionHint') }}</p>
           </article>
 
           <article class="records-card records-card--storage">
@@ -1503,6 +1528,23 @@ onMounted(async () => {
 .record-badge--muted {
   color: var(--mac-text-secondary);
   background: rgba(148, 163, 184, 0.16);
+}
+
+.retention-select {
+  min-width: 126px;
+  height: 34px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--mac-border);
+  border-radius: 8px;
+  color: var(--mac-text);
+  background: var(--mac-surface-strong);
+  font: inherit;
+  font-size: 12px;
+}
+
+.retention-select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--mac-accent) 45%, transparent);
+  outline-offset: 2px;
 }
 
 .record-subtext {

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Call } from '@wailsio/runtime'
+import { useActivePolling } from '../../composables/useActivePolling'
 
 interface ConsoleLog {
-  timestamp: string
+	sequence: number
+	timestamp: string
   level: string
   message: string
 }
@@ -15,23 +17,37 @@ const autoScroll = ref(true)
 const loading = ref(false)
 const logsContainer = ref<HTMLElement>()
 let refreshInterval: number | null = null
+let lastSequence = 0
+let fetchingLogs = false
 
 const goBack = () => {
   router.push('/')
 }
 
 const loadLogs = async () => {
-  try {
-    const result = await Call.ByName('codeswitch/services.ConsoleService.GetLogs')
-    logs.value = result as ConsoleLog[]
+	if (fetchingLogs) return
+	fetchingLogs = true
+	try {
+		const result = await Call.ByName('codeswitch/services.ConsoleService.GetLogsSince', lastSequence, 1000) as {
+			logs?: ConsoleLog[]
+			latest_sequence?: number
+			reset?: boolean
+		}
+		const incoming = result?.logs ?? []
+		logs.value = result?.reset
+			? incoming
+			: [...logs.value, ...incoming].slice(-1000)
+		lastSequence = result?.latest_sequence ?? lastSequence
 
     if (autoScroll.value) {
       await nextTick()
       scrollToBottom()
     }
-  } catch (error) {
-    console.error('加载控制台日志失败:', error)
-  }
+	} catch (error) {
+		console.error('加载控制台日志失败:', error)
+	} finally {
+		fetchingLogs = false
+	}
 }
 
 const clearLogs = async () => {
@@ -40,8 +56,9 @@ const clearLogs = async () => {
   }
 
   try {
-    await Call.ByName('codeswitch/services.ConsoleService.ClearLogs')
-    logs.value = []
+		await Call.ByName('codeswitch/services.ConsoleService.ClearLogs')
+		logs.value = []
+		lastSequence = 0
   } catch (error) {
     console.error('清空日志失败:', error)
     alert('清空失败：' + (error as Error).message)
@@ -70,20 +87,22 @@ const getLevelClass = (level: string) => {
   }
 }
 
-onMounted(async () => {
-  loading.value = true
-  await loadLogs()
-  loading.value = false
+const startPolling = async () => {
+	loading.value = true
+	await loadLogs()
+	loading.value = false
+	if (refreshInterval !== null) clearInterval(refreshInterval)
+	refreshInterval = window.setInterval(loadLogs, 1000)
+}
 
-  // 每秒刷新一次日志
-  refreshInterval = window.setInterval(loadLogs, 1000)
-})
+const stopPolling = () => {
+	if (refreshInterval !== null) {
+		clearInterval(refreshInterval)
+		refreshInterval = null
+	}
+}
 
-onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
-})
+useActivePolling(startPolling, stopPolling)
 </script>
 
 <template>
@@ -122,9 +141,9 @@ onUnmounted(() => {
           <p>暂无日志</p>
         </div>
 
-        <div
-          v-for="(log, index) in logs"
-          :key="index"
+		<div
+			v-for="log in logs"
+			:key="log.sequence"
           class="log-entry"
           :class="getLevelClass(log.level)"
         >

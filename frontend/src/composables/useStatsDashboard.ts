@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   fetchDashboardBundle,
@@ -9,6 +9,7 @@ import {
   type StatsRange,
 } from '../services/logs'
 import { formatBeijingDateTime } from '../utils/beijingTime'
+import { useActivePolling } from './useActivePolling'
 
 const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode', 'reasonix', 'pi', 'custom']
 const REFRESH_INTERVAL = 60
@@ -262,14 +263,10 @@ export function useStatsDashboard() {
     }
   }
 
-  onMounted(async () => {
-    await loadBundle(selectedRange.value, true)
-    startTimer()
-  })
-
-  onUnmounted(() => {
-    stopTimer()
-  })
+	useActivePolling(async () => {
+		await loadBundle(selectedRange.value)
+		startTimer()
+	}, stopTimer)
 
   return {
     activeRangeLabel,

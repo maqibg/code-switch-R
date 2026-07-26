@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	modelpricing "codeswitch/resources/model-pricing"
@@ -43,6 +44,18 @@ type LogService struct {
 	pricing         *modelpricing.Service
 	pricingService  *PricingService
 	providerService *ProviderService // 用于校验供应商是否仍存在于配置中
+	appSettings     *AppSettingsService
+	maintenanceMu   sync.Mutex
+	cleanupMu       sync.Mutex
+	maintenanceStop chan struct{}
+	maintenanceDone chan struct{}
+}
+
+type RequestLogPage struct {
+	Logs     []ReqeustLog `json:"logs"`
+	Total    int64        `json:"total"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"page_size"`
 }
 
 type dashboardAccumulator struct {
@@ -286,21 +299,11 @@ func (ls *LogService) CostSince(start string, platform string) (float64, error) 
 	if err != nil {
 		return 0, err
 	}
-	records, err := selectRequestLogRecords(platform, &startTime,
-		"model", "input_tokens", "output_tokens", "reasoning_tokens",
-		"cache_create_tokens", "cache_read_tokens",
-	)
+	db, err := xdb.DB("default")
 	if err != nil {
-		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
-			return 0, nil
-		}
 		return 0, err
 	}
-	total := 0.0
-	for _, record := range records {
-		total += ls.costForRecord(record).TotalCost
-	}
-	return total, nil
+	return queryCostSince(db, startTime, platform)
 }
 
 // buildSnapshotFromRecord 从 request_log 记录构造定价输入,统一处理 ephemeral 拆分 + service_tier。
@@ -326,21 +329,25 @@ func buildSnapshotFromRecord(record xdb.Record) modelpricing.UsageSnapshot {
 }
 
 func NewLogService(providerService *ProviderService) *LogService {
-	return NewLogServiceWithPricing(providerService, nil)
+	return NewLogServiceWithPricingAndSettings(providerService, nil, nil)
 }
 
 func NewLogServiceWithPricing(providerService *ProviderService, pricingService *PricingService) *LogService {
-	svc, err := modelpricing.DefaultService()
-	if err != nil {
-		log.Printf("pricing service init failed: %v", err)
-	}
-	service := &LogService{pricing: svc, pricingService: pricingService, providerService: providerService}
-	if pricingService != nil || svc != nil {
-		if err := service.backfillStoredRequestCosts(800); err != nil {
-			log.Printf("request_log 成本回填失败: %v", err)
+	return NewLogServiceWithPricingAndSettings(providerService, pricingService, nil)
+}
+
+func NewLogServiceWithPricingAndSettings(providerService *ProviderService, pricingService *PricingService, appSettings *AppSettingsService) *LogService {
+	var svc *modelpricing.Service
+	if pricingService == nil {
+		var err error
+		svc, err = modelpricing.DefaultService()
+		if err != nil {
+			log.Printf("pricing service init failed: %v", err)
 		}
 	}
-	return service
+	return &LogService{
+		pricing: svc, pricingService: pricingService, providerService: providerService, appSettings: appSettings,
+	}
 }
 
 func (ls *LogService) ListRequestLogs(platform string, provider string, limit int) ([]ReqeustLog, error) {
@@ -387,31 +394,88 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 		if !recordInWindow(record, window.currentStart, window.currentEnd) {
 			continue
 		}
-		logEntry := ReqeustLog{
-			ID:                record.GetInt64("id"),
-			Platform:          record.GetString("platform"),
-			SourceID:          record.GetString("source_id"),
-			Model:             record.GetString("model"),
-			Provider:          record.GetString("provider"),
-			HttpCode:          record.GetInt("http_code"),
-			InputTokens:       record.GetInt("input_tokens"),
-			OutputTokens:      record.GetInt("output_tokens"),
-			CacheCreateTokens: record.GetInt("cache_create_tokens"),
-			Ephemeral5mTokens: record.GetInt("ephemeral_5m_tokens"),
-			Ephemeral1hTokens: record.GetInt("ephemeral_1h_tokens"),
-			CacheReadTokens:   record.GetInt("cache_read_tokens"),
-			ReasoningTokens:   record.GetInt("reasoning_tokens"),
-			CreatedAt:         record.GetString("created_at"),
-			IsStream:          record.GetBool("is_stream"),
-			DurationSec:       record.GetFloat64("duration_sec"),
-			ServiceTier:       record.GetString("service_tier"),
-		}
-		if !loadStoredCost(&logEntry, record) {
-			ls.decorateCost(&logEntry)
-		}
-		logs = append(logs, logEntry)
+		logs = append(logs, ls.requestLogFromRecord(record))
 	}
 	return logs, nil
+}
+
+func (ls *LogService) ListRequestLogsPage(platform string, provider string, rangeKey string, page int, pageSize int) (RequestLogPage, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 15
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	hasRange := strings.TrimSpace(rangeKey) != ""
+	window := statsWindow{currentEnd: nowInBeijing()}
+	if hasRange {
+		window = resolveStatsWindow(rangeKey, nowInBeijing())
+	}
+	filters := make([]xdb.Option, 0, 4)
+	if window.currentStart != nil {
+		filters = append(filters, xdb.WhereGte("created_at", formatCreatedAtBoundary(*window.currentStart)))
+	}
+	if hasRange {
+		filters = append(filters, xdb.WhereLt("created_at", formatCreatedAtBoundary(window.currentEnd)))
+	}
+	if platform != "" {
+		filters = append(filters, xdb.WhereEq("platform", platform))
+	}
+	if provider != "" {
+		filters = append(filters, xdb.WhereEq("provider", provider))
+	}
+
+	model := xdb.New("request_log")
+	total, err := model.Count(filters...)
+	if err != nil {
+		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
+			return RequestLogPage{Logs: []ReqeustLog{}, Page: page, PageSize: pageSize}, nil
+		}
+		return RequestLogPage{}, err
+	}
+	options := append([]xdb.Option{}, filters...)
+	options = append(options, xdb.OrderByDesc("id"), xdb.Limit(pageSize), xdb.Offset((page-1)*pageSize))
+	records, err := model.Selects(options...)
+	if err != nil {
+		if errors.Is(err, xdb.ErrNotFound) {
+			return RequestLogPage{Logs: []ReqeustLog{}, Total: total, Page: page, PageSize: pageSize}, nil
+		}
+		return RequestLogPage{}, err
+	}
+	logs := make([]ReqeustLog, 0, len(records))
+	for _, record := range records {
+		logs = append(logs, ls.requestLogFromRecord(record))
+	}
+	return RequestLogPage{Logs: logs, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+func (ls *LogService) requestLogFromRecord(record xdb.Record) ReqeustLog {
+	logEntry := ReqeustLog{
+		ID:                record.GetInt64("id"),
+		Platform:          record.GetString("platform"),
+		SourceID:          record.GetString("source_id"),
+		Model:             record.GetString("model"),
+		Provider:          record.GetString("provider"),
+		HttpCode:          record.GetInt("http_code"),
+		InputTokens:       record.GetInt("input_tokens"),
+		OutputTokens:      record.GetInt("output_tokens"),
+		CacheCreateTokens: record.GetInt("cache_create_tokens"),
+		Ephemeral5mTokens: record.GetInt("ephemeral_5m_tokens"),
+		Ephemeral1hTokens: record.GetInt("ephemeral_1h_tokens"),
+		CacheReadTokens:   record.GetInt("cache_read_tokens"),
+		ReasoningTokens:   record.GetInt("reasoning_tokens"),
+		CreatedAt:         record.GetString("created_at"),
+		IsStream:          record.GetBool("is_stream"),
+		DurationSec:       record.GetFloat64("duration_sec"),
+		ServiceTier:       record.GetString("service_tier"),
+	}
+	if !loadStoredCost(&logEntry, record) {
+		ls.decorateCost(&logEntry)
+	}
+	return logEntry
 }
 
 func (ls *LogService) ListProviders(platform string) ([]string, error) {
@@ -472,55 +536,22 @@ func (ls *LogService) DashboardOverview(platform string) (DashboardOverview, err
 
 func (ls *LogService) DashboardOverviewByRange(platform string, rangeKey string) (DashboardOverview, error) {
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
-	queryStart := window.currentStart
-	if window.previousStart != nil && (queryStart == nil || window.previousStart.Before(*queryStart)) {
-		queryStart = window.previousStart
-	}
-
-	records, err := selectRequestLogRecords(
-		platform,
-		queryStart,
-		"model",
-		"http_code",
-		"error_type",
-		"input_tokens",
-		"output_tokens",
-		"reasoning_tokens",
-		"cache_create_tokens",
-		"cache_read_tokens",
-		"duration_sec",
-	)
+	db, err := xdb.DB("default")
 	if err != nil {
 		return DashboardOverview{}, err
 	}
-
-	current := dashboardAccumulator{}
-	previous := dashboardAccumulator{}
-
-	for _, record := range records {
-		cost := ls.costForRecord(record)
-		if recordInWindow(record, window.currentStart, window.currentEnd) {
-			current.add(record, cost)
-		}
-		if window.previousStart != nil && window.previousEnd != nil && recordInWindow(record, window.previousStart, *window.previousEnd) {
-			previous.add(record, cost)
+	current, err := queryAggregateSnapshot(db, window.currentStart, window.currentEnd, platform)
+	if err != nil {
+		return DashboardOverview{}, err
+	}
+	previous := aggregateSnapshot{}
+	if window.previousStart != nil && window.previousEnd != nil {
+		previous, err = queryAggregateSnapshot(db, window.previousStart, *window.previousEnd, platform)
+		if err != nil {
+			return DashboardOverview{}, err
 		}
 	}
-
-	return DashboardOverview{
-		RangeKey:               window.key,
-		CurrentRequests:        current.requests,
-		CurrentTokens:          current.totalTokens,
-		CurrentCost:            current.costTotal,
-		CurrentAvgDurationSec:  averageDuration(current),
-		CurrentSuccessRate:     successRate(current),
-		PreviousRequests:       previous.requests,
-		PreviousTokens:         previous.totalTokens,
-		PreviousCost:           previous.costTotal,
-		PreviousAvgDurationSec: averageDuration(previous),
-		PreviousSuccessRate:    successRate(previous),
-		HasPreviousComparison:  window.previousStart != nil && window.previousEnd != nil,
-	}, nil
+	return buildBundleOverview(window.key, current, previous, window.previousStart != nil && window.previousEnd != nil), nil
 }
 
 func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
@@ -535,52 +566,11 @@ func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
 	if totalHours > 1 {
 		rangeStart = rangeStart.Add(-time.Duration(totalHours-1) * time.Hour)
 	}
-	records, err := selectRequestLogRecords("", &rangeStart,
-		"model", "input_tokens", "output_tokens", "reasoning_tokens",
-		"cache_create_tokens", "cache_read_tokens",
-	)
+	db, err := xdb.DB("default")
 	if err != nil {
-		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
-			return []HeatmapStat{}, nil
-		}
 		return nil, err
 	}
-	hourBuckets := map[int64]*HeatmapStat{}
-	for _, record := range records {
-		createdAt, _ := parseCreatedAt(record)
-		if createdAt.IsZero() {
-			continue
-		}
-		hourStart := startOfHour(createdAt)
-		hourKey := hourStart.Unix()
-		bucket := hourBuckets[hourKey]
-		if bucket == nil {
-			bucket = &HeatmapStat{Day: hourStart.Format("01-02 15")}
-			hourBuckets[hourKey] = bucket
-		}
-		bucket.TotalRequests++
-		usage := buildSnapshotFromRecord(record)
-		bucket.InputTokens += int64(usage.InputTokens)
-		bucket.OutputTokens += int64(usage.OutputTokens)
-		bucket.ReasoningTokens += int64(usage.ReasoningTokens)
-		cost := ls.costForRecord(record)
-		bucket.TotalCost += cost.TotalCost
-	}
-	if len(hourBuckets) == 0 {
-		return []HeatmapStat{}, nil
-	}
-	hourKeys := make([]int64, 0, len(hourBuckets))
-	for key := range hourBuckets {
-		hourKeys = append(hourKeys, key)
-	}
-	sort.Slice(hourKeys, func(i, j int) bool {
-		return hourKeys[i] < hourKeys[j]
-	})
-	stats := make([]HeatmapStat, 0, min(len(hourKeys), totalHours))
-	for i := len(hourKeys) - 1; i >= 0 && len(stats) < totalHours; i-- {
-		stats = append(stats, *hourBuckets[hourKeys[i]])
-	}
-	return stats, nil
+	return queryHeatmapStats(db, rangeStart, totalHours)
 }
 
 func (ls *LogService) StatsSince(platform string) (LogStats, error) {
@@ -597,88 +587,11 @@ func (ls *LogService) StatsByProviderAndRange(platform string, provider string, 
 
 func (ls *LogService) statsByRange(platform string, provider string, rangeKey string) (LogStats, error) {
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
-	stats := LogStats{
-		RangeKey: window.key,
-		Series:   make([]LogStatsSeries, 0),
-	}
-	records, err := selectRequestLogRecordsByFilter(
-		requestLogRecordFilter{
-			platform: platform,
-			provider: provider,
-			start:    window.currentStart,
-		},
-		"model",
-		"input_tokens",
-		"output_tokens",
-		"reasoning_tokens",
-		"cache_create_tokens",
-		"cache_read_tokens",
-		"created_at",
-	)
+	db, err := xdb.DB("default")
 	if err != nil {
-		return stats, err
+		return LogStats{RangeKey: window.key, Series: []LogStatsSeries{}}, err
 	}
-
-	seriesMap := map[int64]*LogStatsSeries{}
-	if window.currentStart != nil && window.key != statsRangeAll {
-		startBucket := bucketStartForTime(*window.currentStart, window.bucket)
-		for cursor := startBucket; !cursor.After(window.currentEnd); cursor = nextBucket(cursor, window.bucket) {
-			bucketCopy := cursor
-			seriesMap[bucketCopy.Unix()] = &LogStatsSeries{
-				Day: bucketLabel(bucketCopy, window.bucket),
-			}
-		}
-	}
-
-	for _, record := range records {
-		if !recordInWindow(record, window.currentStart, window.currentEnd) {
-			continue
-		}
-		input := record.GetInt("input_tokens")
-		output := record.GetInt("output_tokens")
-		reasoning := record.GetInt("reasoning_tokens")
-		cacheCreate := record.GetInt("cache_create_tokens")
-		cacheRead := record.GetInt("cache_read_tokens")
-		cost := ls.costForRecord(record)
-
-		stats.TotalRequests++
-		stats.InputTokens += int64(input)
-		stats.OutputTokens += int64(output)
-		stats.ReasoningTokens += int64(reasoning)
-		stats.CacheCreateTokens += int64(cacheCreate)
-		stats.CacheReadTokens += int64(cacheRead)
-		stats.CostInput += cost.InputCost
-		stats.CostOutput += cost.OutputCost
-		stats.CostCacheCreate += cost.CacheCreateCost
-		stats.CostCacheRead += cost.CacheReadCost
-		stats.CostTotal += cost.TotalCost
-
-		createdAt, hasTime := parseCreatedAt(record)
-		if !hasTime {
-			day, err := time.ParseInLocation("2006-01-02", dayFromTimestamp(record.GetString("created_at")), beijingLocation)
-			if err != nil {
-				continue
-			}
-			createdAt = day
-		}
-		bucketStart := bucketStartForTime(createdAt, window.bucket)
-		bucketKey := bucketStart.Unix()
-		bucket := seriesMap[bucketKey]
-		if bucket == nil {
-			bucket = &LogStatsSeries{Day: bucketLabel(bucketStart, window.bucket)}
-			seriesMap[bucketKey] = bucket
-		}
-		bucket.TotalRequests++
-		bucket.InputTokens += int64(input)
-		bucket.OutputTokens += int64(output)
-		bucket.ReasoningTokens += int64(reasoning)
-		bucket.CacheCreateTokens += int64(cacheCreate)
-		bucket.CacheReadTokens += int64(cacheRead)
-		bucket.TotalCost += cost.TotalCost
-	}
-
-	stats.Series = buildOrderedSeries(seriesMap)
-	return stats, nil
+	return queryLogStats(db, window, platform, provider)
 }
 
 func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, error) {
@@ -699,69 +612,11 @@ func (ls *LogService) ProviderStatsBySourceAndRange(platform string, sourceID st
 
 func (ls *LogService) providerStatsByRange(platform string, provider string, sourceID string, rangeKey string) ([]ProviderDailyStat, error) {
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
-	records, err := selectRequestLogRecordsByFilter(
-		requestLogRecordFilter{
-			platform: platform,
-			provider: provider,
-			sourceID: sourceID,
-			start:    window.currentStart,
-		},
-		"provider",
-		"model",
-		"http_code",
-		"error_type",
-		"input_tokens",
-		"output_tokens",
-		"reasoning_tokens",
-		"cache_create_tokens",
-		"cache_read_tokens",
-	)
+	db, err := xdb.DB("default")
 	if err != nil {
 		return nil, err
 	}
-	statMap := map[string]*ProviderDailyStat{}
-	for _, record := range records {
-		if !recordInWindow(record, window.currentStart, window.currentEnd) {
-			continue
-		}
-		provider := strings.TrimSpace(record.GetString("provider"))
-		if provider == "" {
-			provider = "(unknown)"
-		}
-		stat := statMap[provider]
-		if stat == nil {
-			stat = &ProviderDailyStat{Provider: provider}
-			statMap[provider] = stat
-		}
-		usage := buildUsageSnapshot(record)
-		cost := ls.costForRecord(record)
-		stat.TotalRequests++
-		if requestLogRecordSucceeded(record) {
-			stat.SuccessfulRequests++
-		} else {
-			stat.FailedRequests++
-		}
-		stat.InputTokens += int64(usage.InputTokens)
-		stat.OutputTokens += int64(usage.OutputTokens)
-		stat.ReasoningTokens += int64(usage.ReasoningTokens)
-		stat.CacheCreateTokens += int64(usage.CacheCreateTokens)
-		stat.CacheReadTokens += int64(usage.CacheReadTokens)
-		stat.CostTotal += cost.TotalCost
-	}
-	stats := make([]ProviderDailyStat, 0, len(statMap))
-	for _, stat := range statMap {
-		if stat.TotalRequests > 0 {
-			stat.SuccessRate = float64(stat.SuccessfulRequests) / float64(stat.TotalRequests)
-		}
-		stats = append(stats, *stat)
-	}
-	sort.Slice(stats, func(i, j int) bool {
-		if stats[i].TotalRequests == stats[j].TotalRequests {
-			return stats[i].Provider < stats[j].Provider
-		}
-		return stats[i].TotalRequests > stats[j].TotalRequests
-	})
-	return stats, nil
+	return queryProviderStats(db, window, platform, provider, sourceID)
 }
 
 func (ls *LogService) ModelDailyStats(platform string) ([]ModelDailyStat, error) {
@@ -770,76 +625,11 @@ func (ls *LogService) ModelDailyStats(platform string) ([]ModelDailyStat, error)
 
 func (ls *LogService) ModelStatsByRange(platform string, rangeKey string) ([]ModelDailyStat, error) {
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
-	records, err := selectRequestLogRecords(
-		platform,
-		window.currentStart,
-		"model",
-		"http_code",
-		"error_type",
-		"input_tokens",
-		"output_tokens",
-		"reasoning_tokens",
-		"cache_create_tokens",
-		"cache_read_tokens",
-	)
+	db, err := xdb.DB("default")
 	if err != nil {
 		return nil, err
 	}
-	statsMap := map[string]*ModelDailyStat{}
-	for _, record := range records {
-		if !recordInWindow(record, window.currentStart, window.currentEnd) {
-			continue
-		}
-
-		modelName := strings.TrimSpace(record.GetString("model"))
-		if modelName == "" {
-			modelName = "(unknown)"
-		}
-
-		stat := statsMap[modelName]
-		if stat == nil {
-			stat = &ModelDailyStat{Model: modelName}
-			statsMap[modelName] = stat
-		}
-
-		input := record.GetInt("input_tokens")
-		output := record.GetInt("output_tokens")
-		reasoning := record.GetInt("reasoning_tokens")
-		cacheCreate := record.GetInt("cache_create_tokens")
-		cacheRead := record.GetInt("cache_read_tokens")
-		cost := ls.costForRecord(record)
-
-		stat.TotalRequests++
-		if requestLogRecordSucceeded(record) {
-			stat.SuccessfulRequests++
-		} else {
-			stat.FailedRequests++
-		}
-		stat.InputTokens += int64(input)
-		stat.OutputTokens += int64(output)
-		stat.ReasoningTokens += int64(reasoning)
-		stat.CacheCreateTokens += int64(cacheCreate)
-		stat.CacheReadTokens += int64(cacheRead)
-		stat.CostTotal += cost.TotalCost
-	}
-
-	stats := make([]ModelDailyStat, 0, len(statsMap))
-	for _, stat := range statsMap {
-		if stat.TotalRequests > 0 {
-			stat.SuccessRate = float64(stat.SuccessfulRequests) / float64(stat.TotalRequests)
-		}
-		stats = append(stats, *stat)
-	}
-	sort.Slice(stats, func(i, j int) bool {
-		if stats[i].TotalRequests == stats[j].TotalRequests {
-			if stats[i].CostTotal == stats[j].CostTotal {
-				return stats[i].Model < stats[j].Model
-			}
-			return stats[i].CostTotal > stats[j].CostTotal
-		}
-		return stats[i].TotalRequests > stats[j].TotalRequests
-	})
-	return stats, nil
+	return queryModelStats(db, window, platform)
 }
 
 func (ls *LogService) GetRecordStorageInfo() (RecordStorageInfo, error) {
@@ -1015,12 +805,17 @@ func loadStoredCost(logEntry *ReqeustLog, record xdb.Record) bool {
 }
 
 func (ls *LogService) backfillStoredRequestCosts(limit int) error {
+	_, err := ls.backfillStoredRequestCostsBatch(limit)
+	return err
+}
+
+func (ls *LogService) backfillStoredRequestCostsBatch(limit int) (int, error) {
 	if limit <= 0 {
 		limit = 800
 	}
 	db, err := xdb.DB("default")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	rows, err := db.Query(`
 		SELECT id, platform, source_id, model, input_tokens, output_tokens, reasoning_tokens, cache_create_tokens, cache_read_tokens,
@@ -1032,15 +827,15 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 	`, limit)
 	if err != nil {
 		if isNoSuchTableErr(err) {
-			return nil
+			return 0, nil
 		}
-		return err
+		return 0, err
 	}
 	defer rows.Close()
 
 	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
@@ -1062,7 +857,7 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 		)
 		if err := rows.Scan(&id, &platform, &sourceID, &model, &inputTokens, &outputTokens, &reasoningTokens, &cacheCreateTokens, &cacheReadTokens,
 			&ephemeral5mTokens, &ephemeral1hTokens, &serviceTier); err != nil {
-			return err
+			return updated, err
 		}
 		snapshot := modelpricing.UsageSnapshot{
 			InputTokens:       inputTokens,
@@ -1101,17 +896,20 @@ func (ls *LogService) backfillStoredRequestCosts(limit int) error {
 			result.RuleID,
 			id,
 		); err != nil {
-			return err
+			return updated, err
 		}
 		updated++
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return updated, err
 	}
 	if updated == 0 {
-		return nil
+		return 0, nil
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return updated, err
+	}
+	return updated, nil
 }
 
 func (ls *LogService) decorateCost(logEntry *ReqeustLog) {

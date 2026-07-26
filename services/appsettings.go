@@ -46,12 +46,18 @@ type AppSettings struct {
 	GlobalProxyProtocol       string  `json:"global_proxy_protocol"`
 	GlobalProxyHost           string  `json:"global_proxy_host"`
 	GlobalProxyPort           int     `json:"global_proxy_port"`
+	LogRetentionDays          int     `json:"log_retention_days"`
 }
 
 type AppSettingsService struct {
 	path             string
 	mu               sync.Mutex
 	autoStartService *AutoStartService
+	cache            AppSettings
+	cacheModTime     time.Time
+	cacheSize        int64
+	cacheExists      bool
+	cacheValid       bool
 }
 
 func NewAppSettingsService(autoStartService *AutoStartService) *AppSettingsService {
@@ -133,14 +139,6 @@ func migrateSettings(oldPath, newPath, oldDir, markerPath string) error {
 }
 
 func (as *AppSettingsService) defaultSettings() AppSettings {
-	// 检查当前开机自启动状态
-	autoStartEnabled := false
-	if as.autoStartService != nil {
-		if enabled, err := as.autoStartService.IsEnabled(); err == nil {
-			autoStartEnabled = enabled
-		}
-	}
-
 	return AppSettings{
 		ShowHeatmap:               true,
 		ShowHomeTitle:             true,
@@ -162,7 +160,7 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 		BudgetShowCountdownCodex:  false,
 		BudgetShowForecastCodex:   false,
 		BudgetForecastMethodCodex: "cycle",
-		AutoStart:                 autoStartEnabled,
+		AutoStart:                 false,
 		AutoUpdate:                true,  // 默认开启自动更新
 		EnableSwitchNotify:        true,  // 默认开启切换通知
 		EnableRoundRobin:          false, // 默认关闭轮询（使用顺序降级）
@@ -170,6 +168,7 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 		GlobalProxyProtocol:       defaultGlobalProxyProtocol,
 		GlobalProxyHost:           defaultGlobalProxyHost,
 		GlobalProxyPort:           defaultGlobalProxyPort,
+		LogRetentionDays:          0,
 	}
 }
 
@@ -184,7 +183,7 @@ func (as *AppSettingsService) GetAppSettings() (AppSettings, error) {
 func (as *AppSettingsService) SaveAppSettings(settings AppSettings) (AppSettings, error) {
 	as.mu.Lock()
 	defer as.mu.Unlock()
-	settings = normalizeAppProxySettings(settings)
+	settings = normalizeAppSettings(settings)
 
 	// 同步开机自启动状态
 	if as.autoStartService != nil {
@@ -207,20 +206,40 @@ func (as *AppSettingsService) SaveAppSettings(settings AppSettings) (AppSettings
 
 func (as *AppSettingsService) loadLocked() (AppSettings, error) {
 	settings := as.defaultSettings()
+	info, statErr := os.Stat(as.path)
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return settings, statErr
+	}
+	exists := statErr == nil
+	if as.cacheValid && as.cacheExists == exists {
+		if !exists || (info.Size() == as.cacheSize && info.ModTime().Equal(as.cacheModTime)) {
+			return as.cache, nil
+		}
+	}
+	if !exists {
+		if as.autoStartService != nil {
+			if enabled, err := as.autoStartService.IsEnabled(); err == nil {
+				settings.AutoStart = enabled
+			}
+		}
+		as.storeCacheLocked(settings, nil)
+		return settings, nil
+	}
+
 	data, err := os.ReadFile(as.path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return settings, nil
-		}
 		return settings, err
 	}
 	if len(data) == 0 {
+		as.storeCacheLocked(settings, info)
 		return settings, nil
 	}
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return settings, err
 	}
-	return normalizeAppProxySettings(settings), nil
+	settings = normalizeAppSettings(settings)
+	as.storeCacheLocked(settings, info)
+	return settings, nil
 }
 
 func (as *AppSettingsService) saveLocked(settings AppSettings) error {
@@ -232,7 +251,29 @@ func (as *AppSettingsService) saveLocked(settings AppSettings) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(as.path, data, 0o644)
+	if err := os.WriteFile(as.path, data, 0o644); err != nil {
+		return err
+	}
+	info, err := os.Stat(as.path)
+	if err != nil {
+		as.cacheValid = false
+		return nil
+	}
+	as.storeCacheLocked(settings, info)
+	return nil
+}
+
+func (as *AppSettingsService) storeCacheLocked(settings AppSettings, info os.FileInfo) {
+	as.cache = settings
+	as.cacheExists = info != nil
+	as.cacheValid = true
+	if info == nil {
+		as.cacheModTime = time.Time{}
+		as.cacheSize = 0
+		return
+	}
+	as.cacheModTime = info.ModTime()
+	as.cacheSize = info.Size()
 }
 
 func (as *AppSettingsService) GetGlobalProxyConfig() (ProxyConfig, error) {

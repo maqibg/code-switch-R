@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	xproxy "golang.org/x/net/proxy"
@@ -215,6 +216,17 @@ func normalizeAppProxySettings(settings AppSettings) AppSettings {
 	return settings
 }
 
+func normalizeAppSettings(settings AppSettings) AppSettings {
+	settings = normalizeAppProxySettings(settings)
+	if settings.LogRetentionDays < 0 {
+		settings.LogRetentionDays = 0
+	}
+	if settings.LogRetentionDays > 3650 {
+		settings.LogRetentionDays = 3650
+	}
+	return settings
+}
+
 func (settings AppSettings) GlobalProxyConfig() ProxyConfig {
 	return normalizeProxyConfig(ProxyConfig{
 		Enabled:  settings.GlobalProxyEnabled,
@@ -235,7 +247,12 @@ func (config ProxyConfig) URL() (*url.URL, error) {
 
 func cloneHTTPTransport(base *http.Transport) *http.Transport {
 	transport := &http.Transport{
-		ForceAttemptHTTP2: false,
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          128,
+		MaxIdleConnsPerHost:   32,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: time.Second,
 	}
 
 	if base == nil {
@@ -263,6 +280,68 @@ func cloneHTTPTransport(base *http.Transport) *http.Transport {
 	return transport
 }
 
+type proxyTransportKey struct {
+	enabled  bool
+	protocol string
+	host     string
+	port     int
+}
+
+var sharedProxyTransports sync.Map
+
+func newProxyTransport(baseTransport *http.Transport, config ProxyConfig) (*http.Transport, error) {
+	transport := cloneHTTPTransport(baseTransport)
+	transport.Proxy = nil
+	transport.DialContext = nil
+	transport.DialTLSContext = nil
+
+	normalized := normalizeProxyConfig(config)
+	if !normalized.Enabled {
+		return transport, nil
+	}
+	proxyURL, err := normalized.URL()
+	if err != nil {
+		return nil, fmt.Errorf("解析代理地址失败: %w", err)
+	}
+
+	switch normalized.Protocol {
+	case "http", "https":
+		transport.Proxy = http.ProxyURL(proxyURL)
+	case "socks5":
+		baseDialer := &net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
+		dialer, err := xproxy.FromURL(proxyURL, baseDialer)
+		if err != nil {
+			return nil, fmt.Errorf("创建 SOCKS5 代理失败: %w", err)
+		}
+		transport.DialContext = dialContextFromProxyDialer(dialer)
+	default:
+		return nil, fmt.Errorf("不支持的代理协议: %s", normalized.Protocol)
+	}
+	return transport, nil
+}
+
+func sharedProxyTransport(config ProxyConfig) (*http.Transport, error) {
+	normalized := normalizeProxyConfig(config)
+	key := proxyTransportKey{
+		enabled:  normalized.Enabled,
+		protocol: normalized.Protocol,
+		host:     normalized.Host,
+		port:     normalized.Port,
+	}
+	if cached, ok := sharedProxyTransports.Load(key); ok {
+		return cached.(*http.Transport), nil
+	}
+	transport, err := newProxyTransport(nil, normalized)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := sharedProxyTransports.LoadOrStore(key, transport)
+	return actual.(*http.Transport), nil
+}
+
 func dialContextFromProxyDialer(dialer xproxy.Dialer) func(context.Context, string, string) (net.Conn, error) {
 	if contextDialer, ok := dialer.(xproxy.ContextDialer); ok {
 		return contextDialer.DialContext
@@ -287,34 +366,15 @@ func dialContextFromProxyDialer(dialer xproxy.Dialer) func(context.Context, stri
 }
 
 func NewHTTPClientWithProxy(timeout time.Duration, baseTransport *http.Transport, config ProxyConfig) (*http.Client, error) {
-	transport := cloneHTTPTransport(baseTransport)
-	transport.Proxy = nil
-	transport.DialContext = nil
-	transport.DialTLSContext = nil
-
-	normalized := normalizeProxyConfig(config)
-	if normalized.Enabled {
-		proxyURL, err := normalized.URL()
-		if err != nil {
-			return nil, fmt.Errorf("解析代理地址失败: %w", err)
-		}
-
-		switch normalized.Protocol {
-		case "http", "https":
-			transport.Proxy = http.ProxyURL(proxyURL)
-		case "socks5":
-			baseDialer := &net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}
-			dialer, err := xproxy.FromURL(proxyURL, baseDialer)
-			if err != nil {
-				return nil, fmt.Errorf("创建 SOCKS5 代理失败: %w", err)
-			}
-			transport.DialContext = dialContextFromProxyDialer(dialer)
-		default:
-			return nil, fmt.Errorf("不支持的代理协议: %s", normalized.Protocol)
-		}
+	var transport *http.Transport
+	var err error
+	if baseTransport == nil {
+		transport, err = sharedProxyTransport(config)
+	} else {
+		transport, err = newProxyTransport(baseTransport, config)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return &http.Client{

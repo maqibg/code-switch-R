@@ -46,7 +46,7 @@ func (ls *LogService) GetDashboardBundle(rangeKey string, recentLimit int) (Dash
 	}
 	window := resolveStatsWindow(rangeKey, nowInBeijing())
 
-	current, err := queryAggregateSnapshot(db, window.currentStart, window.currentEnd, "")
+	platformStats, current, err := queryPlatformStats(db, window)
 	if err != nil {
 		return DashboardBundle{}, err
 	}
@@ -58,11 +58,7 @@ func (ls *LogService) GetDashboardBundle(rangeKey string, recentLimit int) (Dash
 		}
 	}
 
-	trendStats, err := queryTrendStats(db, window)
-	if err != nil {
-		return DashboardBundle{}, err
-	}
-	platformStats, err := queryPlatformStats(db, window)
+	trendStats, err := queryTrendStats(db, window, current)
 	if err != nil {
 		return DashboardBundle{}, err
 	}
@@ -108,7 +104,11 @@ func buildBundleOverview(rangeKey string, current, previous aggregateSnapshot, h
 }
 
 func queryAggregateSnapshot(db *sql.DB, start *time.Time, end time.Time, platform string) (aggregateSnapshot, error) {
-	where, args := buildRangeArgs(start, end, platform)
+	return queryAggregateSnapshotFiltered(db, start, end, platform, "", "")
+}
+
+func queryAggregateSnapshotFiltered(db *sql.DB, start *time.Time, end time.Time, platform, provider, sourceID string) (aggregateSnapshot, error) {
+	where, args := buildRangeFilterArgs(start, end, platform, provider, sourceID)
 	query := `
 		SELECT
 			COUNT(*) AS total_requests,
@@ -150,7 +150,7 @@ func queryAggregateSnapshot(db *sql.DB, start *time.Time, end time.Time, platfor
 	return snapshot, err
 }
 
-func queryTrendStats(db *sql.DB, window statsWindow) (LogStats, error) {
+func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot) (LogStats, error) {
 	query := `
 		SELECT
 			` + bucketExpr(window.bucket) + ` AS bucket_key,
@@ -198,10 +198,6 @@ func queryTrendStats(db *sql.DB, window statsWindow) (LogStats, error) {
 	}
 
 	ordered := buildPrefilledSeries(window, seriesMap)
-	snapshot, err := queryAggregateSnapshot(db, window.currentStart, window.currentEnd, "")
-	if err != nil {
-		return LogStats{}, err
-	}
 	return LogStats{
 		RangeKey:          window.key,
 		TotalRequests:     snapshot.Requests,
@@ -219,7 +215,7 @@ func queryTrendStats(db *sql.DB, window statsWindow) (LogStats, error) {
 	}, nil
 }
 
-func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, error) {
+func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, aggregateSnapshot, error) {
 	result := map[string]LogStats{
 		"claude":       {RangeKey: window.key, Series: []LogStatsSeries{}},
 		"codex":        {RangeKey: window.key, Series: []LogStatsSeries{}},
@@ -242,7 +238,10 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, er
 			COALESCE(SUM(input_cost), 0),
 			COALESCE(SUM(output_cost), 0),
 			COALESCE(SUM(cache_create_cost), 0),
-			COALESCE(SUM(cache_read_cost), 0)
+			COALESCE(SUM(cache_read_cost), 0),
+			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN duration_sec ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN 1 ELSE 0 END), 0)
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		GROUP BY platform_key
@@ -250,16 +249,20 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, er
 	rows, err := db.Query(query, buildRangeOnlyArgs(window.currentStart, window.currentEnd)...)
 	if err != nil {
 		if isNoSuchTableErr(err) {
-			return result, nil
+			return result, aggregateSnapshot{}, nil
 		}
-		return nil, err
+		return nil, aggregateSnapshot{}, err
 	}
 	defer rows.Close()
 
+	total := aggregateSnapshot{}
 	for rows.Next() {
 		var (
 			platformKey string
 			stats       LogStats
+			successes   int64
+			durationSum float64
+			durationCnt int64
 		)
 		stats.RangeKey = window.key
 		if err := rows.Scan(
@@ -275,15 +278,35 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, er
 			&stats.CostOutput,
 			&stats.CostCacheCreate,
 			&stats.CostCacheRead,
+			&successes,
+			&durationSum,
+			&durationCnt,
 		); err != nil {
-			return nil, err
+			return nil, aggregateSnapshot{}, err
 		}
+		total.Requests += stats.TotalRequests
+		total.InputTokens += stats.InputTokens
+		total.OutputTokens += stats.OutputTokens
+		total.Reasoning += stats.ReasoningTokens
+		total.CacheCreate += stats.CacheCreateTokens
+		total.CacheRead += stats.CacheReadTokens
+		total.CostTotal += stats.CostTotal
+		total.CostInput += stats.CostInput
+		total.CostOutput += stats.CostOutput
+		total.CostCacheCreate += stats.CostCacheCreate
+		total.CostCacheRead += stats.CostCacheRead
+		total.Successes += successes
+		total.DurationSumSec += durationSum
+		total.DurationCount += durationCnt
 		if _, ok := result[platformKey]; ok {
 			stats.Series = []LogStatsSeries{}
 			result[platformKey] = stats
 		}
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, aggregateSnapshot{}, err
+	}
+	return result, total, nil
 }
 
 func queryProviderRanks(db *sql.DB, window statsWindow, limit int) ([]ProviderDailyStat, error) {
@@ -458,6 +481,10 @@ func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]ReqeustLog, e
 }
 
 func buildRangeArgs(start *time.Time, end time.Time, platform string) (string, []interface{}) {
+	return buildRangeFilterArgs(start, end, platform, "", "")
+}
+
+func buildRangeFilterArgs(start *time.Time, end time.Time, platform, provider, sourceID string) (string, []interface{}) {
 	clauses := make([]string, 0, 3)
 	args := make([]interface{}, 0, 3)
 	if start != nil {
@@ -466,9 +493,16 @@ func buildRangeArgs(start *time.Time, end time.Time, platform string) (string, [
 	}
 	clauses = append(clauses, "created_at < ?")
 	args = append(args, formatCreatedAtBoundary(end))
-	if platform != "" {
+	if sourceID != "" {
+		clauses = append(clauses, "((platform = ? AND source_id = ?) OR platform = ?)")
+		args = append(args, platform, sourceID, "custom:"+sourceID)
+	} else if platform != "" {
 		clauses = append(clauses, "platform = ?")
 		args = append(args, platform)
+	}
+	if provider != "" {
+		clauses = append(clauses, "provider = ?")
+		args = append(args, provider)
 	}
 	return strings.Join(clauses, " AND "), args
 }

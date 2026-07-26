@@ -34,6 +34,13 @@ type RequestLogQuery = {
   range?: StatsRange | ''
 }
 
+export type RequestLogPage = {
+  logs: RequestLog[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export const fetchRequestLogs = async (query: RequestLogQuery = {}): Promise<RequestLog[]> => {
   const platform = query.platform ?? ''
   const provider = query.provider ?? ''
@@ -43,6 +50,24 @@ export const fetchRequestLogs = async (query: RequestLogQuery = {}): Promise<Req
     return Call.ByName('codeswitch/services.LogService.ListRequestLogs', platform, provider, limit)
   }
   return Call.ByName('codeswitch/services.LogService.ListRequestLogsByRange', platform, provider, range, limit)
+}
+
+export const fetchRequestLogPage = async (
+  query: RequestLogQuery & { page?: number; pageSize?: number } = {},
+): Promise<RequestLogPage> => {
+  const platform = query.platform ?? ''
+  const provider = query.provider ?? ''
+  const range = query.range ?? ''
+  const page = Math.max(1, Math.floor(query.page ?? 1))
+  const pageSize = Math.min(100, Math.max(1, Math.floor(query.pageSize ?? 15)))
+  return Call.ByName(
+    'codeswitch/services.LogService.ListRequestLogsPage',
+    platform,
+    provider,
+    range,
+    page,
+    pageSize,
+  )
 }
 
 export const fetchLogProviders = async (platform: LogPlatform | '' = ''): Promise<string[]> => {

@@ -30,6 +30,12 @@ export function GetLogs(): $CancellablePromise<$models.ConsoleLog[]> {
     });
 }
 
+export function GetLogsSince(afterSequence: number, limit: number): $CancellablePromise<$models.ConsoleLogBatch> {
+    return $Call.ByID(159937930, afterSequence, limit).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 /**
  * GetRecentLogs 获取最近 N 条日志
  */
@@ -42,3 +48,4 @@ export function GetRecentLogs(count: number): $CancellablePromise<$models.Consol
 // Private type creation functions
 const $$createType0 = $models.ConsoleLog.createFrom;
 const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $models.ConsoleLogBatch.createFrom;

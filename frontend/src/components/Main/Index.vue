@@ -1128,7 +1128,8 @@ import {
   type PiModelDefinition,
   type PiModelOverride,
 } from '../../data/cards'
-import lobeIcons from '../../icons/lobeIconMap'
+import { ensureLobeIcon, lobeIconKeys } from '../../icons/lobeIconMap'
+import { useActivePolling } from '../../composables/useActivePolling'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
@@ -1317,9 +1318,10 @@ const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   others: false,
 })
 let providerStatsTimer: number | undefined
+let mainPollingActive = false
 const showHeatmap = ref(true)
 const showHomeTitle = ref(true)
-const mcpIcon = lobeIcons['mcp'] ?? ''
+const mcpIcon = computed(() => ensureLobeIcon('mcp'))
 const appVersion = ref('')
 
 // 自定义 CLI 工具状态
@@ -2156,9 +2158,8 @@ const formatOfficialSite = (site: string) => {
 const startProviderStatsTimer = () => {
   stopProviderStatsTimer()
   providerStatsTimer = window.setInterval(() => {
-    providerTabIds.forEach((tab) => {
-      void loadProviderStats(tab)
-    })
+	if (!mainPollingActive || document.hidden) return
+	void loadProviderStats(activeTab.value)
   }, 60_000)
 }
 
@@ -2270,16 +2271,16 @@ onMounted(async () => {
   await loadProvidersFromDisk()
   await Promise.all(providerTabIds.map(refreshProxyState))
   await Promise.all(providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)))
-  await Promise.all(providerTabIds.map((tab) => loadProviderStats(tab)))
+  await loadProviderStats(activeTab.value)
   await loadAppSettings()
   await loadAppVersion()
-  startProviderStatsTimer()
 
   // 加载初始黑名单状态
   await Promise.all(providerTabIds.map((tab) => loadBlacklistStatus(tab)))
 
   // 每秒更新黑名单倒计时
   blacklistTimer = window.setInterval(() => {
+	if (!mainPollingActive || document.hidden) return
     const tab = activeTab.value
     Object.keys(blacklistStatusMap[tab]).forEach(providerName => {
       const status = blacklistStatusMap[tab][providerName]
@@ -2294,12 +2295,14 @@ onMounted(async () => {
 
   // 窗口焦点事件：从最小化恢复时立即刷新黑名单状态
   const handleWindowFocus = () => {
+	if (!mainPollingActive || document.hidden) return
     void loadBlacklistStatus(activeTab.value)
   }
   window.addEventListener('focus', handleWindowFocus)
 
   // 定期轮询黑名单状态（每 10 秒）
   const blacklistPollingTimer = window.setInterval(() => {
+	if (!mainPollingActive || document.hidden) return
     void loadBlacklistStatus(activeTab.value)
   }, 10_000)
 
@@ -2387,6 +2390,14 @@ const getDefaultAuthType = (platform: string) => {
   return 'bearer'
 }
 
+useActivePolling(() => {
+	mainPollingActive = true
+	startProviderStatsTimer()
+}, () => {
+	mainPollingActive = false
+	stopProviderStatsTimer()
+})
+
 const getEffectiveConnectivityEndpoint = (platform: string) => {
   return modalState.form.apiEndpoint?.trim() || getDefaultEndpoint(platform)
 }
@@ -2428,6 +2439,8 @@ const handleTestConnectivity = async () => {
 
 // 监听 tab 切换，立即刷新黑名单状态
 watch(activeTab, (newTab) => {
+	if (!mainPollingActive || document.hidden) return
+	void loadProviderStats(newTab)
   void loadBlacklistStatus(newTab)
 })
 const currentProxyLabel = computed(() => {
@@ -2516,7 +2529,7 @@ type VendorForm = {
   codexReasoningContinueLogEnabled?: boolean
 }
 
-const iconOptions = Object.keys(lobeIcons).sort((a, b) => a.localeCompare(b))
+const iconOptions = lobeIconKeys
 const defaultIconKey = iconOptions[0] ?? 'aicoding'
 
 // 图标搜索筛选
@@ -3181,8 +3194,8 @@ const onDragEnd = () => {
 }
 
 const iconSvg = (name: string) => {
-  if (!name) return ''
-  return lobeIcons[name.toLowerCase()] ?? ''
+	if (!name) return ''
+	return ensureLobeIcon(name)
 }
 
 const vendorInitials = (name: string) => {

@@ -8,6 +8,7 @@ import (
 type codexSSEFrame struct {
 	done  bool
 	event map[string]any
+	data  []byte
 }
 
 type codexSSEParser struct {
@@ -82,5 +83,5 @@ func parseCodexSSEBlock(block string) (codexSSEFrame, bool) {
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return codexSSEFrame{}, false
 	}
-	return codexSSEFrame{event: event}, true
+	return codexSSEFrame{event: event, data: []byte(payload)}, true
 }

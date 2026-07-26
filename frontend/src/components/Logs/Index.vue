@@ -90,7 +90,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in pagedLogs" :key="item.id">
+          <tr v-for="item in logs" :key="item.id">
             <td>{{ formatTime(item.created_at) }}</td>
             <td>{{ item.platform || '—' }}</td>
             <td>{{ item.provider || '—' }}</td>
@@ -122,7 +122,7 @@
               </div>
             </td>
           </tr>
-          <tr v-if="!pagedLogs.length && !loading">
+          <tr v-if="!logs.length && !loading">
             <td colspan="9" class="empty">{{ t('components.logs.empty') }}</td>
           </tr>
         </tbody>
@@ -187,14 +187,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { formatBeijingDateTime } from '../../utils/beijingTime'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import {
-  fetchRequestLogs,
+  fetchRequestLogPage,
   fetchLogProviders,
   fetchLogStats,
   fetchProviderDailyStats,
@@ -205,6 +205,7 @@ import {
   type ProviderDailyStat,
   type StatsRange,
 } from '../../services/logs'
+import { useActivePolling } from '../../composables/useActivePolling'
 import {
   Chart,
   CategoryScale,
@@ -232,7 +233,7 @@ const filters = reactive<{ platform: LogPlatform | ''; provider: string; range: 
 })
 const page = ref(1)
 const PAGE_SIZE = 15
-const LOG_QUERY_LIMIT = 1000
+const totalLogs = ref(0)
 const providerOptions = ref<string[]>([])
 const statsSeries = computed<LogStatsSeries[]>(() => stats.value?.series ?? [])
 
@@ -449,14 +450,20 @@ const normalizeProviderName = (value: string) => value.trim()
 const loadLogs = async () => {
   loading.value = true
   try {
-    const data = await fetchRequestLogs({
+    const data = await fetchRequestLogPage({
       platform: filters.platform,
       provider: filters.provider,
-      limit: LOG_QUERY_LIMIT,
       range: filters.range === 'all' ? '' : filters.range,
+      page: page.value,
+      pageSize: PAGE_SIZE,
     })
-    logs.value = data ?? []
-    page.value = Math.min(page.value, totalPages.value)
+    logs.value = data?.logs ?? []
+    totalLogs.value = data?.total ?? 0
+    const maxPage = Math.max(1, Math.ceil(totalLogs.value / PAGE_SIZE))
+    if (page.value > maxPage) {
+      page.value = maxPage
+      await loadLogs()
+    }
   } catch (error) {
     console.error('failed to load request logs', error)
   } finally {
@@ -474,16 +481,10 @@ const loadStats = async () => {
 }
 
 const loadDashboard = async () => {
-  await loadProviderOptions()
   await Promise.all([loadLogs(), loadStats()])
 }
 
-const pagedLogs = computed(() => {
-  const start = (page.value - 1) * PAGE_SIZE
-  return logs.value.slice(start, start + PAGE_SIZE)
-})
-
-const totalPages = computed(() => Math.max(1, Math.ceil(logs.value.length / PAGE_SIZE)))
+const totalPages = computed(() => Math.max(1, Math.ceil(totalLogs.value / PAGE_SIZE)))
 
 const applyFilters = async () => {
   page.value = 1
@@ -503,12 +504,14 @@ const manualRefresh = () => {
 const nextPage = () => {
   if (page.value < totalPages.value) {
     page.value += 1
+    void loadLogs()
   }
 }
 
 const prevPage = () => {
   if (page.value > 1) {
     page.value -= 1
+    void loadLogs()
   }
 }
 
@@ -666,14 +669,13 @@ watch(
   },
 )
 
-onMounted(async () => {
+const startPolling = async () => {
+  await loadProviderOptions()
   await loadDashboard()
   startCountdown()
-})
+}
 
-onUnmounted(() => {
-  stopCountdown()
-})
+useActivePolling(startPolling, stopCountdown)
 </script>
 
 <style scoped>

@@ -200,6 +200,19 @@ func TestCodexChatBridgeHistoryStoreClonesMessages(t *testing.T) {
 	}
 }
 
+func TestCodexChatBridgeHistoryStoreEvictsByByteBudget(t *testing.T) {
+	store := NewCodexChatBridgeHistoryStore(10)
+	store.maxBytes = 100
+	store.Store("resp_1", []map[string]any{{"role": "user", "content": strings.Repeat("a", 40)}})
+	store.Store("resp_2", []map[string]any{{"role": "user", "content": strings.Repeat("b", 40)}})
+	if _, ok := store.Load("resp_1"); ok {
+		t.Fatal("超过字节预算后最旧 history 未驱逐")
+	}
+	if _, ok := store.Load("resp_2"); !ok {
+		t.Fatal("最新 history 被错误驱逐")
+	}
+}
+
 func TestConvertOpenAIChatToCodexResponse(t *testing.T) {
 	body := []byte(`{
 		"id":"chatcmpl_1",

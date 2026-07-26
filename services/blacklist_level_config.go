@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // GetBlacklistLevelConfigPath 获取等级拉黑配置文件路径
@@ -20,6 +21,14 @@ func GetBlacklistLevelConfigPath() (string, error) {
 // GetBlacklistLevelConfig 获取等级拉黑配置
 // 【修复】开关状态从数据库读取，其他配置从 JSON 文件读取
 func (ss *SettingsService) GetBlacklistLevelConfig() (*BlacklistLevelConfig, error) {
+	ss.cacheMu.Lock()
+	if ss.blacklistLevelConfig != nil && time.Now().Before(ss.blacklistLevelConfigUntil) {
+		cached := *ss.blacklistLevelConfig
+		ss.cacheMu.Unlock()
+		return &cached, nil
+	}
+	ss.cacheMu.Unlock()
+
 	configPath, err := GetBlacklistLevelConfigPath()
 	if err != nil {
 		return nil, err
@@ -61,7 +70,13 @@ func (ss *SettingsService) GetBlacklistLevelConfig() (*BlacklistLevelConfig, err
 	}
 	// 如果数据库读取失败，保留 JSON 文件中的值（向后兼容）
 
-	return config, nil
+	ss.cacheMu.Lock()
+	cached := *config
+	ss.blacklistLevelConfig = &cached
+	ss.blacklistLevelConfigUntil = time.Now().Add(settingsHotPathCacheTTL)
+	ss.cacheMu.Unlock()
+	result := cached
+	return &result, nil
 }
 
 // SaveBlacklistLevelConfig 保存等级拉黑配置
@@ -86,6 +101,7 @@ func (ss *SettingsService) SaveBlacklistLevelConfig(config *BlacklistLevelConfig
 	if err := os.Rename(tmpPath, configPath); err != nil {
 		return fmt.Errorf("重命名配置文件失败: %w", err)
 	}
+	ss.invalidateBlacklistLevelConfigCache()
 
 	return nil
 }

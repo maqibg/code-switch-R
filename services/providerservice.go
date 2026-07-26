@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // AvailabilityConfig 仅用于兼容读取已删除的可用性配置。
@@ -108,7 +109,8 @@ type Provider struct {
 	ConnectivityTestEndpoint string `json:"connectivityTestEndpoint,omitempty"`
 
 	// 内部字段：配置验证错误（不持久化）
-	configErrors []string `json:"-"`
+	configErrors    []string `json:"-"`
+	configValidated bool     `json:"-"`
 }
 
 type providerEnvelope struct {
@@ -134,6 +136,14 @@ func (p Provider) piPlatformKey() string {
 type ProviderService struct {
 	mu            sync.Mutex
 	piGatewaySync func([]Provider) error
+	cacheMu       sync.Mutex
+	fileCache     map[string]providerFileCache
+}
+
+type providerFileCache struct {
+	modTime   time.Time
+	size      int64
+	providers []Provider
 }
 
 func NewProviderService() *ProviderService {
@@ -248,6 +258,7 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	if err := atomicWriteFile(path, plan.data, 0o644); err != nil {
 		return err
 	}
+	ps.invalidateProviderCache(path)
 
 	piSynced := false
 	if strings.EqualFold(strings.TrimSpace(kind), "pi") && ps.piGatewaySync != nil {
@@ -316,6 +327,8 @@ func prepareProviderSave(kind string, providers, existingProviders []Provider, a
 		}
 
 		// 验证模型配置
+		p.configValidated = false
+		p.configErrors = nil
 		if errs := p.ValidateConfiguration(); len(errs) > 0 {
 			for _, errMsg := range errs {
 				validationErrors = append(validationErrors, fmt.Sprintf("[%s] %s", p.Name, errMsg))
@@ -389,12 +402,24 @@ func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			ps.invalidateProviderCache(path)
+			return nil, nil
+		}
+		return nil, statErr
+	}
+	ps.cacheMu.Lock()
+	if cached, ok := ps.fileCache[path]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+		providers := cloneProviderList(cached.providers)
+		ps.cacheMu.Unlock()
+		return providers, nil
+	}
+	ps.cacheMu.Unlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
 
@@ -406,8 +431,57 @@ func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return nil, err
 	}
+	for i := range envelope.Providers {
+		envelope.Providers[i].ValidateConfiguration()
+	}
+	ps.cacheMu.Lock()
+	if ps.fileCache == nil {
+		ps.fileCache = make(map[string]providerFileCache)
+	}
+	ps.fileCache[path] = providerFileCache{
+		modTime: info.ModTime(), size: info.Size(), providers: cloneProviderList(envelope.Providers),
+	}
+	ps.cacheMu.Unlock()
+	return cloneProviderList(envelope.Providers), nil
+}
 
-	return envelope.Providers, nil
+func (ps *ProviderService) invalidateProviderCache(path string) {
+	ps.cacheMu.Lock()
+	delete(ps.fileCache, path)
+	ps.cacheMu.Unlock()
+}
+
+func cloneProviderList(source []Provider) []Provider {
+	cloned := append([]Provider(nil), source...)
+	for i := range cloned {
+		cloned[i].SupportedModels = cloneProviderBoolMap(source[i].SupportedModels)
+		cloned[i].ModelMapping = cloneProviderStringMap(source[i].ModelMapping)
+		cloned[i].Headers = cloneProviderStringMap(source[i].Headers)
+		cloned[i].configErrors = append([]string(nil), source[i].configErrors...)
+	}
+	return cloned
+}
+
+func cloneProviderBoolMap(source map[string]bool) map[string]bool {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string]bool, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneProviderStringMap(source map[string]string) map[string]string {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // loadProvidersNoLock 内部加载方法，在持有锁的情况下调用（避免递归加锁）
@@ -792,7 +866,15 @@ func (p *Provider) ValidateConfiguration() []string {
 	}
 
 	p.configErrors = errors
-	return errors
+	p.configValidated = true
+	return append([]string(nil), errors...)
+}
+
+func (p *Provider) CachedValidationErrors() []string {
+	if p.configValidated {
+		return append([]string(nil), p.configErrors...)
+	}
+	return p.ValidateConfiguration()
 }
 
 func canonicalizeProviderHeaderMaps(provider *Provider) error {

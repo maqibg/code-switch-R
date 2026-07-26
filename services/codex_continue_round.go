@@ -40,11 +40,11 @@ func handleCodexFrames(w http.ResponseWriter, frames []codexSSEFrame, roundNo in
 		if frame.done || frame.event == nil {
 			continue
 		}
-		handleCodexEvent(w, frame.event, roundNo, state, result, itemKind, outputMap)
+		handleCodexEvent(w, frame.event, frame.data, roundNo, state, result, itemKind, outputMap)
 	}
 }
 
-func handleCodexEvent(w http.ResponseWriter, event map[string]any, roundNo int, state *codexFoldState, result *codexRoundResult, itemKind map[string]string, outputMap map[string]int) {
+func handleCodexEvent(w http.ResponseWriter, event map[string]any, raw []byte, roundNo int, state *codexFoldState, result *codexRoundResult, itemKind map[string]string, outputMap map[string]int) {
 	eventType := stringField(event, "type")
 	if eventType == "response.created" || eventType == "response.in_progress" {
 		if roundNo == 1 {
@@ -56,11 +56,11 @@ func handleCodexEvent(w http.ResponseWriter, event map[string]any, roundNo int, 
 		return
 	}
 	if isCodexTerminalEvent(eventType) {
-		result.terminal = cloneJSONMap(event)
+		result.terminal = event
 		return
 	}
 	if eventType == "response.output_item.added" {
-		handleCodexOutputItemAdded(w, event, state, result, itemKind, outputMap)
+		handleCodexOutputItemAdded(w, event, raw, state, result, itemKind, outputMap)
 		return
 	}
 	upstreamIndex, ok := event["output_index"]
@@ -76,8 +76,8 @@ func handleCodexEvent(w http.ResponseWriter, event map[string]any, roundNo int, 
 		}
 		if eventType == "response.output_item.done" {
 			if item, exists := event["item"]; exists {
-				result.roundReasoning = append(result.roundReasoning, cloneJSONValue(item))
-				state.finalOutput = append(state.finalOutput, cloneJSONValue(item))
+				result.roundReasoning = append(result.roundReasoning, item)
+				state.finalOutput = append(state.finalOutput, item)
 			}
 		}
 		writeCodexSequencedEvent(w, event, state)
@@ -86,10 +86,13 @@ func handleCodexEvent(w http.ResponseWriter, event map[string]any, roundNo int, 
 			if fmt.Sprint(result.bufferedItems[i].upstreamIndex) == key {
 				if eventType == "response.output_item.done" {
 					if item, exists := event["item"]; exists {
-						result.bufferedItems[i].item = cloneJSONValue(item)
+						result.bufferedItems[i].item = item
 					}
 				}
-				result.bufferedItems[i].events = append(result.bufferedItems[i].events, cloneJSONMap(event))
+				result.bufferedItems[i].events = append(result.bufferedItems[i].events, codexBufferedEvent{
+					eventType: eventType,
+					data:      append([]byte(nil), raw...),
+				})
 				break
 			}
 		}
@@ -98,7 +101,7 @@ func handleCodexEvent(w http.ResponseWriter, event map[string]any, roundNo int, 
 	}
 }
 
-func handleCodexOutputItemAdded(w http.ResponseWriter, event map[string]any, state *codexFoldState, result *codexRoundResult, itemKind map[string]string, outputMap map[string]int) {
+func handleCodexOutputItemAdded(w http.ResponseWriter, event map[string]any, raw []byte, state *codexFoldState, result *codexRoundResult, itemKind map[string]string, outputMap map[string]int) {
 	upstreamIndex := event["output_index"]
 	key := fmt.Sprint(upstreamIndex)
 	if outputItemType(event) == "reasoning" {
@@ -112,8 +115,11 @@ func handleCodexOutputItemAdded(w http.ResponseWriter, event map[string]any, sta
 	itemKind[key] = "buffered"
 	result.bufferedItems = append(result.bufferedItems, codexBufferedItem{
 		upstreamIndex: upstreamIndex,
-		events:        []map[string]any{cloneJSONMap(event)},
-		item:          cloneJSONValue(event["item"]),
+		events: []codexBufferedEvent{{
+			eventType: stringField(event, "type"),
+			data:      append([]byte(nil), raw...),
+		}},
+		item: event["item"],
 	})
 }
 
@@ -121,15 +127,9 @@ func flushCodexBufferedItems(w http.ResponseWriter, state *codexFoldState, items
 	for _, item := range items {
 		finalItem := item.item
 		for _, event := range item.events {
-			setOutputIndex(event, state.downstreamOutputIndex)
-			if stringField(event, "type") == "response.output_item.done" {
-				if doneItem, exists := event["item"]; exists {
-					finalItem = cloneJSONValue(doneItem)
-				}
-			}
-			writeCodexSequencedEvent(w, event, state)
+			writeCodexSequencedRawEvent(w, event.data, event.eventType, state.downstreamOutputIndex, state)
 		}
 		state.downstreamOutputIndex++
-		state.finalOutput = append(state.finalOutput, cloneJSONValue(finalItem))
+		state.finalOutput = append(state.finalOutput, finalItem)
 	}
 }

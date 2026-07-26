@@ -9,6 +9,18 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function ApplyRetentionPolicy(): $CancellablePromise<$models.RecordCleanupResult> {
+    return $Call.ByID(283180566).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function CleanupExpiredRecords(days: number): $CancellablePromise<$models.RecordCleanupResult> {
+    return $Call.ByID(1586742335, days).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function ClearStoredRecords(): $CancellablePromise<$models.RecordCleanupResult> {
     return $Call.ByID(3702986518).then(($result: any) => {
         return $$createType0($result);
@@ -67,58 +79,72 @@ export function ListRequestLogsByRange(platform: string, provider: string, range
     });
 }
 
+export function ListRequestLogsPage(platform: string, provider: string, rangeKey: string, page: number, pageSize: number): $CancellablePromise<$models.RequestLogPage> {
+    return $Call.ByID(3790487367, platform, provider, rangeKey, page, pageSize).then(($result: any) => {
+        return $$createType9($result);
+    });
+}
+
 export function ModelDailyStats(platform: string): $CancellablePromise<$models.ModelDailyStat[]> {
     return $Call.ByID(4107228843, platform).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType11($result);
     });
 }
 
 export function ModelStatsByRange(platform: string, rangeKey: string): $CancellablePromise<$models.ModelDailyStat[]> {
     return $Call.ByID(4097019652, platform, rangeKey).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType11($result);
     });
 }
 
 export function ProviderDailyStats(platform: string): $CancellablePromise<$models.ProviderDailyStat[]> {
     return $Call.ByID(974013659, platform).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType13($result);
     });
 }
 
 export function ProviderStatsByProviderAndRange(platform: string, provider: string, rangeKey: string): $CancellablePromise<$models.ProviderDailyStat[]> {
     return $Call.ByID(4077439788, platform, provider, rangeKey).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType13($result);
     });
 }
 
 export function ProviderStatsByRange(platform: string, rangeKey: string): $CancellablePromise<$models.ProviderDailyStat[]> {
     return $Call.ByID(2222483668, platform, rangeKey).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType13($result);
     });
 }
 
 export function ProviderStatsBySourceAndRange(platform: string, sourceID: string, rangeKey: string): $CancellablePromise<$models.ProviderDailyStat[]> {
     return $Call.ByID(3177025776, platform, sourceID, rangeKey).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType13($result);
     });
+}
+
+export function StartMaintenance(): $CancellablePromise<void> {
+    return $Call.ByID(1464424481);
 }
 
 export function StatsByProviderAndRange(platform: string, provider: string, rangeKey: string): $CancellablePromise<$models.LogStats> {
     return $Call.ByID(751124359, platform, provider, rangeKey).then(($result: any) => {
-        return $$createType13($result);
+        return $$createType14($result);
     });
 }
 
 export function StatsByRange(platform: string, rangeKey: string): $CancellablePromise<$models.LogStats> {
     return $Call.ByID(1880807433, platform, rangeKey).then(($result: any) => {
-        return $$createType13($result);
+        return $$createType14($result);
     });
 }
 
 export function StatsSince(platform: string): $CancellablePromise<$models.LogStats> {
     return $Call.ByID(2831143405, platform).then(($result: any) => {
-        return $$createType13($result);
+        return $$createType14($result);
     });
+}
+
+export function StopMaintenance(): $CancellablePromise<void> {
+    return $Call.ByID(1460236905);
 }
 
 // Private type creation functions
@@ -131,8 +157,9 @@ const $$createType5 = $Create.Array($$createType4);
 const $$createType6 = $Create.Array($Create.Any);
 const $$createType7 = $models.ReqeustLog.createFrom;
 const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = $models.ModelDailyStat.createFrom;
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = $models.ProviderDailyStat.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = $models.LogStats.createFrom;
+const $$createType9 = $models.RequestLogPage.createFrom;
+const $$createType10 = $models.ModelDailyStat.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = $models.ProviderDailyStat.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = $models.LogStats.createFrom;

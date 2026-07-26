@@ -455,7 +455,7 @@ import {
   type McpServer,
   type McpServerType,
 } from '../../services/mcp'
-import lobeIcons from '../../icons/lobeIconMap'
+import { ensureLobeIcon } from '../../icons/lobeIconMap'
 import { showToast } from '../../utils/toast'
 
 type EnvEntry = {
@@ -622,9 +622,8 @@ const persistServers = async () => {
 }
 
 const iconSvg = (name: string) => {
-  if (!name) return lobeIcons['mcp'] ?? ''
-  const key = name.toLowerCase()
-  return lobeIcons[key] ?? lobeIcons['mcp'] ?? ''
+	if (!name) return ensureLobeIcon('mcp')
+	return ensureLobeIcon(name) || ensureLobeIcon('mcp')
 }
 
 const iconStyle = (name: string) => ({

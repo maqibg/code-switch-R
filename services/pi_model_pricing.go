@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type piResolvedModelPricing struct {
@@ -15,8 +16,12 @@ type piResolvedModelPricing struct {
 }
 
 type piModelPricingCache struct {
-	key     string
-	entries map[string]piResolvedModelPricing
+	key            string
+	builtinVersion string
+	modelsModTime  time.Time
+	modelsSize     int64
+	modelsExists   bool
+	entries        map[string]piResolvedModelPricing
 }
 
 // resolveModelPricing 按 Pi 自身的 provider+model 精确语义解析价格。
@@ -32,27 +37,60 @@ func (s *PiSettingsService) resolveModelPricing(providerID, modelID string) (*Pi
 	}
 
 	builtin, builtinErr := s.BuiltinModelsCatalog(false)
-	modelsData, readErr := os.ReadFile(s.modelsPath())
-	if errors.Is(readErr, os.ErrNotExist) {
-		modelsData = []byte(`{"providers":{}}`)
-		readErr = nil
-	}
-	if readErr != nil {
-		return nil, "", "", fmt.Errorf("读取 Pi models.json 定价失败: %w", readErr)
-	}
-	cleaned := stripJSONComments(modelsData)
-	modelsFingerprint := fingerprintPiModelsJSON(cleaned)
 	builtinVersion := strings.TrimSpace(builtin.ModelVersion)
-	cacheKey := modelsFingerprint + "\x00" + builtinVersion
+	modelsPath := s.modelsPath()
+	info, statErr := os.Stat(modelsPath)
+	modelsExists := statErr == nil
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return nil, "", "", fmt.Errorf("读取 Pi models.json 定价失败: %w", statErr)
+	}
 
 	s.pricingMu.Lock()
 	defer s.pricingMu.Unlock()
+	if s.pricingCache != nil &&
+		s.pricingCache.builtinVersion == builtinVersion &&
+		s.pricingCache.modelsExists == modelsExists &&
+		(!modelsExists || (s.pricingCache.modelsSize == info.Size() && s.pricingCache.modelsModTime.Equal(info.ModTime()))) {
+		resolved, exists := s.pricingCache.entries[piPricingKey(providerID, modelID)]
+		if !exists {
+			return nil, "", "", nil
+		}
+		cost := clonePiModelCost(resolved.Cost)
+		return &cost, resolved.Source, resolved.Version, nil
+	}
+
+	modelsData := []byte(`{"providers":{}}`)
+	if modelsExists {
+		var readErr error
+		modelsData, readErr = os.ReadFile(modelsPath)
+		if readErr != nil {
+			return nil, "", "", fmt.Errorf("读取 Pi models.json 定价失败: %w", readErr)
+		}
+	}
+	cleaned := stripJSONComments(modelsData)
+	modelsFingerprint := fingerprintPiModelsJSON(cleaned)
+	cacheKey := modelsFingerprint + "\x00" + builtinVersion
 	if s.pricingCache == nil || s.pricingCache.key != cacheKey {
 		entries, err := buildPiModelPricingEntries(cleaned, builtin, builtinErr, modelsFingerprint)
 		if err != nil {
 			return nil, "", "", err
 		}
-		s.pricingCache = &piModelPricingCache{key: cacheKey, entries: entries}
+		cache := &piModelPricingCache{
+			key: cacheKey, builtinVersion: builtinVersion, modelsExists: modelsExists, entries: entries,
+		}
+		if modelsExists {
+			cache.modelsModTime = info.ModTime()
+			cache.modelsSize = info.Size()
+		}
+		s.pricingCache = cache
+	}
+	s.pricingCache.builtinVersion = builtinVersion
+	s.pricingCache.modelsExists = modelsExists
+	s.pricingCache.modelsModTime = time.Time{}
+	s.pricingCache.modelsSize = 0
+	if modelsExists {
+		s.pricingCache.modelsModTime = info.ModTime()
+		s.pricingCache.modelsSize = info.Size()
 	}
 	resolved, exists := s.pricingCache.entries[piPricingKey(providerID, modelID)]
 	if !exists {

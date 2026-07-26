@@ -137,7 +137,8 @@ func main() {
 	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
 	providerModelDiscovery := services.NewProviderModelDiscoveryService(appSettings)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
-	logService := services.NewLogServiceWithPricing(providerService, pricingService)
+	logService := services.NewLogServiceWithPricingAndSettings(providerService, pricingService, appSettings)
+	logService.StartMaintenance()
 	mcpService := services.NewMCPService()
 	skillService := services.NewSkillService(appSettings)
 	promptService := services.NewPromptService()
@@ -259,10 +260,13 @@ func main() {
 		// 1. 停止黑名单定时器
 		close(blacklistStopChan)
 
-		// 2. 停止代理服务器
+		// 2. 停止日志维护任务
+		logService.StopMaintenance()
+
+		// 3. 停止代理服务器
 		_ = providerRelay.Stop()
 
-		// 3. 优雅关闭数据库写入队列（10秒超时，双队列架构）
+		// 4. 优雅关闭数据库写入队列（10秒超时，双队列架构）
 		if err := services.ShutdownGlobalDBQueue(10 * time.Second); err != nil {
 			log.Printf("⚠️ 队列关闭超时: %v", err)
 		} else {

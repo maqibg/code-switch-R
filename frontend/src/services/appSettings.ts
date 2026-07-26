@@ -29,6 +29,7 @@ export type AppSettings = {
   global_proxy_protocol: 'http' | 'https' | 'socks5'
   global_proxy_host: string
   global_proxy_port: number
+  log_retention_days: number
 }
 
 export type GlobalProxyTestResult = {
@@ -68,6 +69,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   global_proxy_protocol: 'http',
   global_proxy_host: '127.0.0.1',
   global_proxy_port: 7890,
+  log_retention_days: 0,
 }
 
 export const fetchAppSettings = async (): Promise<AppSettings> => {

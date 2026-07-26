@@ -12,6 +12,12 @@ var schemaNameContainers = map[string]struct{}{
 }
 
 func filterPrivateRequestFields(body []byte) ([]byte, error) {
+	if !bytes.Contains(body, []byte(`"_`)) {
+		if !json.Valid(body) {
+			return nil, fmt.Errorf("请求体不是合法 JSON")
+		}
+		return body, nil
+	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
 	var value any

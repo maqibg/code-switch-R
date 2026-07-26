@@ -16,6 +16,7 @@ import (
 const (
 	piBuiltinCatalogTimeout = 15 * time.Second
 	piBuiltinOutputLimit    = 32 << 20
+	piBuiltinFailureTTL     = 60 * time.Second
 )
 
 var (
@@ -112,20 +113,30 @@ func (s *PiSettingsService) BuiltinModelsCatalog(forceRefresh bool) (PiBuiltinCa
 	if !forceRefresh && s.builtinCatalog != nil {
 		return clonePiBuiltinCatalog(*s.builtinCatalog), nil
 	}
+	if !forceRefresh && s.builtinCatalogErr != nil && time.Now().Before(s.builtinRetryAt) {
+		return PiBuiltinCatalogSnapshot{}, s.builtinCatalogErr
+	}
 	loader := s.builtinLoader
 	if loader == nil {
 		loader = loadInstalledPiBuiltinCatalog
 	}
 	snapshot, err := loader()
 	if err != nil {
+		s.builtinCatalogErr = err
+		s.builtinRetryAt = time.Now().Add(piBuiltinFailureTTL)
 		return PiBuiltinCatalogSnapshot{}, err
 	}
 	normalizePiBuiltinCatalog(&snapshot)
 	if len(snapshot.Providers) == 0 || snapshot.ModelCount == 0 {
-		return PiBuiltinCatalogSnapshot{}, fmt.Errorf("Pi 内置模型目录为空，请确认当前 Pi 安装完整")
+		err := fmt.Errorf("Pi 内置模型目录为空，请确认当前 Pi 安装完整")
+		s.builtinCatalogErr = err
+		s.builtinRetryAt = time.Now().Add(piBuiltinFailureTTL)
+		return PiBuiltinCatalogSnapshot{}, err
 	}
 	cached := clonePiBuiltinCatalog(snapshot)
 	s.builtinCatalog = &cached
+	s.builtinCatalogErr = nil
+	s.builtinRetryAt = time.Time{}
 	return clonePiBuiltinCatalog(cached), nil
 }
 

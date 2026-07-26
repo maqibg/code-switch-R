@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -25,6 +26,15 @@ import (
 
 // warnedServiceTiers 去重容器:首次见到未知 service_tier 时告警,之后静默。
 var warnedServiceTiers sync.Map
+
+var relayDebugLogging = strings.EqualFold(strings.TrimSpace(os.Getenv("CODE_SWITCH_RELAY_DEBUG")), "1") ||
+	strings.EqualFold(strings.TrimSpace(os.Getenv("CODE_SWITCH_RELAY_DEBUG")), "true")
+
+func relayDebugf(format string, args ...any) {
+	if relayDebugLogging {
+		fmt.Printf(format, args...)
+	}
+}
 
 // warnUnknownTier 在首次遇到未知 service_tier 值时打印一次警告。
 // 同值的后续请求静默,不同未知 tier 分别告警一次。
@@ -267,7 +277,8 @@ func (prs *ProviderRelayService) Start() error {
 		fmt.Println("========================================")
 	}
 
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
 	prs.registerRoutes(router)
 
 	prs.server = &http.Server{
@@ -455,7 +466,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			}
 
 			// 配置验证：失败则自动跳过
-			if errs := provider.ValidateConfiguration(); len(errs) > 0 {
+			if errs := provider.CachedValidationErrors(); len(errs) > 0 {
 				fmt.Printf("[WARN] Provider %s 配置验证失败，已自动跳过: %v\n", provider.Name, errs)
 				skippedCount++
 				continue
@@ -463,7 +474,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 			// 核心过滤：只保留支持请求模型的 provider
 			if requestedModel != "" && !provider.IsModelSupported(requestedModel) {
-				fmt.Printf("[INFO] Provider %s 不支持模型 %s，已跳过\n", provider.Name, requestedModel)
+				relayDebugf("[INFO] Provider %s 不支持模型 %s，已跳过\n", provider.Name, requestedModel)
 				skippedCount++
 				continue
 			}
@@ -492,11 +503,13 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			logPiDebugRoute(piPlatform, requestedModel, endpoint, active)
 		}
 
-		fmt.Printf("[INFO] 找到 %d 个可用的 provider（已过滤 %d 个）：", len(active), skippedCount)
-		for _, p := range active {
-			fmt.Printf("%s ", p.Name)
+		if relayDebugLogging {
+			fmt.Printf("[INFO] 找到 %d 个可用的 provider（已过滤 %d 个）：", len(active), skippedCount)
+			for _, p := range active {
+				fmt.Printf("%s ", p.Name)
+			}
+			fmt.Println()
 		}
-		fmt.Println()
 
 		// 按 Level 分组
 		levelGroups := make(map[int][]Provider)
@@ -515,7 +528,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		}
 		sort.Ints(levels)
 
-		fmt.Printf("[INFO] 共 %d 个 Level 分组：%v\n", len(levels), levels)
+		relayDebugf("[INFO] 共 %d 个 Level 分组：%v\n", len(levels), levels)
 
 		query := flattenQuery(c.Request.URL.Query())
 		if piPlatform != "" {
@@ -533,16 +546,16 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			// 缓存轮询设置（单次请求级别，避免重复读取配置文件）
 			roundRobinSettingEnabled := prs.isRoundRobinSettingEnabled()
 			if roundRobinSettingEnabled {
-				fmt.Printf("[INFO] 🔒 拉黑模式 + 轮询负载均衡\n")
+				relayDebugf("[INFO] 🔒 拉黑模式 + 轮询负载均衡\n")
 			} else {
-				fmt.Printf("[INFO] 🔒 拉黑模式（顺序调度）\n")
+				relayDebugf("[INFO] 🔒 拉黑模式（顺序调度）\n")
 			}
 
 			// 获取重试配置
 			retryConfig := prs.blacklistService.GetRetryConfig()
 			maxRetryPerProvider := retryConfig.FailureThreshold
 			retryWaitSeconds := retryConfig.RetryWaitSeconds
-			fmt.Printf("[INFO] 重试配置: 每 Provider 最多 %d 次重试，间隔 %d 秒\n",
+			relayDebugf("[INFO] 重试配置: 每 Provider 最多 %d 次重试，间隔 %d 秒\n",
 				maxRetryPerProvider, retryWaitSeconds)
 
 			var lastError error
@@ -558,12 +571,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					providersInLevel = prs.roundRobinOrder(relayScope, level, providersInLevel)
 				}
 
-				fmt.Printf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
+				relayDebugf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 				for _, provider := range providersInLevel {
 					// 检查是否已被拉黑（跳过已拉黑的 provider）
 					if blacklisted, until := prs.blacklistService.IsBlacklisted(relayScope, provider.Name); blacklisted {
-						fmt.Printf("[INFO] ⏭️ 跳过已拉黑的 Provider: %s (解禁时间: %v)\n", provider.Name, until)
+						relayDebugf("[INFO] ⏭️ 跳过已拉黑的 Provider: %s (解禁时间: %v)\n", provider.Name, until)
 						continue
 					}
 
@@ -572,7 +585,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 					currentBodyBytes := bodyBytes
 					if effectiveModel != requestedModel && requestedModel != "" {
-						fmt.Printf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
+						relayDebugf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
 						modifiedBody, modifiedEndpoint, err := applyPiAwareModelMapping(bodyBytes, effectiveEndpoint, requestedModel, effectiveModel, clientProtocol)
 						if err != nil {
 							fmt.Printf("[ERROR] 模型映射失败: %v，跳过此 Provider\n", err)
@@ -588,11 +601,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 						// 再次检查是否已被拉黑（重试过程中可能被拉黑）
 						if blacklisted, _ := prs.blacklistService.IsBlacklisted(relayScope, provider.Name); blacklisted {
-							fmt.Printf("[INFO] 🚫 Provider %s 已被拉黑，切换到下一个\n", provider.Name)
+							relayDebugf("[INFO] 🚫 Provider %s 已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
 
-						fmt.Printf("[INFO] [拉黑模式] Provider: %s (Level %d) | 重试 %d/%d | Model: %s\n",
+						relayDebugf("[INFO] [拉黑模式] Provider: %s (Level %d) | 重试 %d/%d | Model: %s\n",
 							provider.Name, level, retryCount+1, maxRetryPerProvider, effectiveModel)
 
 						startTime := time.Now()
@@ -600,7 +613,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						duration := time.Since(startTime)
 
 						if ok {
-							fmt.Printf("[INFO] ✓ 成功: %s | 重试 %d 次 | 耗时: %.2fs\n",
+							relayDebugf("[INFO] ✓ 成功: %s | 重试 %d 次 | 耗时: %.2fs\n",
 								provider.Name, retryCount+1, duration.Seconds())
 							if err := prs.blacklistService.RecordSuccess(relayScope, provider.Name); err != nil {
 								fmt.Printf("[WARN] 清零失败计数失败: %v\n", err)
@@ -622,7 +635,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 						// 客户端请求被拒绝（不支持的格式/功能）：直接返回 400，不重试不拉黑
 						if errors.Is(err, ErrClientRequestRejected) {
-							fmt.Printf("[INFO] 🚫 客户端请求被拒绝: %s\n", errorMsg)
+							relayDebugf("[INFO] 🚫 客户端请求被拒绝: %s\n", errorMsg)
 							c.JSON(http.StatusBadRequest, gin.H{
 								"type":    "error",
 								"error":   map[string]string{"type": "invalid_request_error", "message": errorMsg},
@@ -633,7 +646,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 						// 客户端中断不计入失败次数，直接返回
 						if errors.Is(err, errClientAbort) {
-							fmt.Printf("[INFO] 客户端中断，停止重试\n")
+							relayDebugf("[INFO] 客户端中断，停止重试\n")
 							return
 						}
 						if errors.Is(err, errResponseCommitted) {
@@ -648,14 +661,16 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 						// 检查是否刚被拉黑
 						if blacklisted, _ := prs.blacklistService.IsBlacklisted(relayScope, provider.Name); blacklisted {
-							fmt.Printf("[INFO] 🚫 Provider %s 达到失败阈值，已被拉黑，切换到下一个\n", provider.Name)
+							relayDebugf("[INFO] 🚫 Provider %s 达到失败阈值，已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
 
 						// 等待后重试（除非是最后一次）
 						if retryCount < maxRetryPerProvider-1 {
-							fmt.Printf("[INFO] ⏳ 等待 %d 秒后重试...\n", retryWaitSeconds)
-							time.Sleep(time.Duration(retryWaitSeconds) * time.Second)
+							relayDebugf("[INFO] ⏳ 等待 %d 秒后重试...\n", retryWaitSeconds)
+							if !waitForRetry(c.Request.Context(), time.Duration(retryWaitSeconds)*time.Second) {
+								return
+							}
 						}
 					}
 				}
@@ -681,9 +696,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		// 【降级模式】：拉黑功能关闭，失败自动尝试下一个 provider
 		roundRobinEnabled := prs.isRoundRobinEnabled()
 		if roundRobinEnabled {
-			fmt.Printf("[INFO] 🔄 降级模式 + 轮询负载均衡\n")
+			relayDebugf("[INFO] 🔄 降级模式 + 轮询负载均衡\n")
 		} else {
-			fmt.Printf("[INFO] 🔄 降级模式（顺序降级）\n")
+			relayDebugf("[INFO] 🔄 降级模式（顺序降级）\n")
 		}
 
 		var lastError error
@@ -699,7 +714,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				providersInLevel = prs.roundRobinOrder(relayScope, level, providersInLevel)
 			}
 
-			fmt.Printf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
+			relayDebugf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 			for i, provider := range providersInLevel {
 				totalAttempts++
@@ -711,7 +726,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				effectiveEndpoint := provider.GetEffectiveEndpoint(endpoint)
 				currentBodyBytes := bodyBytes
 				if effectiveModel != requestedModel && requestedModel != "" {
-					fmt.Printf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
+					relayDebugf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
 
 					modifiedBody, modifiedEndpoint, err := applyPiAwareModelMapping(bodyBytes, effectiveEndpoint, requestedModel, effectiveModel, clientProtocol)
 					if err != nil {
@@ -723,7 +738,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					effectiveEndpoint = modifiedEndpoint
 				}
 
-				fmt.Printf("[INFO]   [%d/%d] Provider: %s | Model: %s\n", i+1, len(providersInLevel), provider.Name, effectiveModel)
+				relayDebugf("[INFO]   [%d/%d] Provider: %s | Model: %s\n", i+1, len(providersInLevel), provider.Name, effectiveModel)
 
 				// 尝试发送请求
 				startTime := time.Now()
@@ -731,7 +746,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				duration := time.Since(startTime)
 
 				if ok {
-					fmt.Printf("[INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
+					relayDebugf("[INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
 
 					// 成功：清零连续失败计数
 					if err := prs.blacklistService.RecordSuccess(relayScope, provider.Name); err != nil {
@@ -758,7 +773,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 				// 客户端请求被拒绝（不支持的格式/功能）：直接返回 400，不重试不拉黑
 				if errors.Is(err, ErrClientRequestRejected) {
-					fmt.Printf("[INFO] 🚫 客户端请求被拒绝: %s\n", errorMsg)
+					relayDebugf("[INFO] 🚫 客户端请求被拒绝: %s\n", errorMsg)
 					c.JSON(http.StatusBadRequest, gin.H{
 						"type":    "error",
 						"error":   map[string]string{"type": "invalid_request_error", "message": errorMsg},
@@ -773,7 +788,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 				// 客户端中断不计入失败次数
 				if errors.Is(err, errClientAbort) {
-					fmt.Printf("[INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
+					relayDebugf("[INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
 				} else if err := prs.blacklistService.RecordFailure(relayScope, provider.Name); err != nil {
 					fmt.Printf("[ERROR] 记录失败到黑名单失败: %v\n", err)
 				}
@@ -926,7 +941,7 @@ func (prs *ProviderRelayService) forwardRequest(
 		friendly := describeProxyTransportError(err, proxyConfig)
 		// resp 存在但 err != nil：可能是客户端中断，不计入失败
 		if resp != nil && requestLog.HttpCode == 0 {
-			fmt.Printf("[INFO] Provider %s 响应存在但状态码为0，判定为客户端中断\n", provider.Name)
+			relayDebugf("[INFO] Provider %s 响应存在但状态码为0，判定为客户端中断\n", provider.Name)
 			return false, fmt.Errorf("%w: %v", errClientAbort, err)
 		}
 		// 尝试从响应体提取供应商原始错误信息
@@ -947,7 +962,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	if resp.Error() != nil {
 		// resp 存在、有错误、但状态码为 0：客户端中断，不计入失败
 		if status == 0 {
-			fmt.Printf("[INFO] Provider %s 响应错误但状态码为0，判定为客户端中断\n", provider.Name)
+			relayDebugf("[INFO] Provider %s 响应错误但状态码为0，判定为客户端中断\n", provider.Name)
 			return false, fmt.Errorf("%w: %v", errClientAbort, resp.Error())
 		}
 		// 优先使用 extractUpstreamError 提取完整错误（覆盖 SSE 空 body 场景）
@@ -1215,6 +1230,9 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 	if err := ensureRequestLogIndex(db, "idx_request_log_model_created_at", "model, created_at"); err != nil {
 		return err
 	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_request_log_pending_cost ON request_log(id) WHERE cost_calculated = 0`); err != nil {
+		return err
+	}
 	return ensureRelayAttemptTable(db)
 }
 
@@ -1337,9 +1355,23 @@ type ReqeustLog struct {
 // 对每个字段取 max,既兼容 message_delta 的累计语义,也兼容多事件重复出现的字段,避免重复计费。
 // 参考 https://docs.anthropic.com/en/api/messages-streaming
 func ClaudeCodeParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+	if !strings.Contains(data, `"usage"`) {
+		return
+	}
 	collectAnthropicUsage(data, "message.usage", usage)
 	collectAnthropicUsage(data, "usage", usage)
 	clampCacheEphemerals(usage)
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // collectAnthropicUsage 从指定前缀(message.usage 或 usage)提取 Anthropic 字段,取 max 避免 += 累计导致的翻倍。
@@ -1585,7 +1617,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 			endpoint = endpoint + "?" + query
 		}
 
-		fmt.Printf("[Gemini] 收到请求: %s\n", endpoint)
+		relayDebugf("[Gemini] 收到请求: %s\n", endpoint)
 
 		// 读取请求体
 		var bodyBytes []byte
@@ -1649,7 +1681,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		}
 		sort.Ints(sortedLevels)
 
-		fmt.Printf("[Gemini] 共 %d 个 Level 分组: %v\n", len(sortedLevels), sortedLevels)
+		relayDebugf("[Gemini] 共 %d 个 Level 分组: %v\n", len(sortedLevels), sortedLevels)
 
 		// 获取拉黑功能开关状态
 		blacklistEnabled := prs.blacklistService.ShouldUseFixedMode()
@@ -1659,16 +1691,16 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 			// 缓存轮询设置（单次请求级别，避免重复读取配置文件）
 			roundRobinSettingEnabled := prs.isRoundRobinSettingEnabled()
 			if roundRobinSettingEnabled {
-				fmt.Printf("[Gemini] 🔒 拉黑模式 + 轮询负载均衡\n")
+				relayDebugf("[Gemini] 🔒 拉黑模式 + 轮询负载均衡\n")
 			} else {
-				fmt.Printf("[Gemini] 🔒 拉黑模式（顺序调度）\n")
+				relayDebugf("[Gemini] 🔒 拉黑模式（顺序调度）\n")
 			}
 
 			// 获取重试配置
 			retryConfig := prs.blacklistService.GetRetryConfig()
 			maxRetryPerProvider := retryConfig.FailureThreshold
 			retryWaitSeconds := retryConfig.RetryWaitSeconds
-			fmt.Printf("[Gemini] 重试配置: 每 Provider 最多 %d 次重试，间隔 %d 秒\n",
+			relayDebugf("[Gemini] 重试配置: 每 Provider 最多 %d 次重试，间隔 %d 秒\n",
 				maxRetryPerProvider, retryWaitSeconds)
 
 			var lastError string
@@ -1684,7 +1716,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 					providersInLevel = prs.roundRobinOrderGemini(level, providersInLevel)
 				}
 
-				fmt.Printf("[Gemini] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
+				relayDebugf("[Gemini] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 				for _, provider := range providersInLevel {
 					// 检查是否已被拉黑（跳过已拉黑的 provider）
@@ -1703,12 +1735,12 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 							break
 						}
 
-						fmt.Printf("[Gemini] [拉黑模式] Provider: %s (Level %d) | 重试 %d/%d\n",
+						relayDebugf("[Gemini] [拉黑模式] Provider: %s (Level %d) | 重试 %d/%d\n",
 							provider.Name, level, retryCount+1, maxRetryPerProvider)
 
 						ok, errMsg, responseWritten := prs.forwardGeminiAttempt(c, &provider, endpoint, bodyBytes, isStream)
 						if ok {
-							fmt.Printf("[Gemini] ✓ 成功: %s | 重试 %d 次\n", provider.Name, retryCount+1)
+							relayDebugf("[Gemini] ✓ 成功: %s | 重试 %d 次\n", provider.Name, retryCount+1)
 							_ = prs.blacklistService.RecordSuccess("gemini", provider.Name)
 							prs.setLastUsedProvider("gemini", provider.Name)
 							return
@@ -1740,7 +1772,9 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 						// 等待后重试（除非是最后一次）
 						if retryCount < maxRetryPerProvider-1 {
 							fmt.Printf("[Gemini] ⏳ 等待 %d 秒后重试...\n", retryWaitSeconds)
-							time.Sleep(time.Duration(retryWaitSeconds) * time.Second)
+							if !waitForRetry(c.Request.Context(), time.Duration(retryWaitSeconds)*time.Second) {
+								return
+							}
 						}
 					}
 				}
@@ -1762,9 +1796,9 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		// 【降级模式】：按 Level 顺序尝试所有 provider
 		roundRobinEnabled := prs.isRoundRobinEnabled()
 		if roundRobinEnabled {
-			fmt.Printf("[Gemini] 🔄 降级模式 + 轮询负载均衡\n")
+			relayDebugf("[Gemini] 🔄 降级模式 + 轮询负载均衡\n")
 		} else {
-			fmt.Printf("[Gemini] 🔄 降级模式（顺序降级）\n")
+			relayDebugf("[Gemini] 🔄 降级模式（顺序降级）\n")
 		}
 
 		var lastError string
@@ -1776,17 +1810,17 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 				providersInLevel = prs.roundRobinOrderGemini(level, providersInLevel)
 			}
 
-			fmt.Printf("[Gemini] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
+			relayDebugf("[Gemini] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
 			for idx, provider := range providersInLevel {
-				fmt.Printf("[Gemini]   [%d/%d] Provider: %s\n", idx+1, len(providersInLevel), provider.Name)
+				relayDebugf("[Gemini]   [%d/%d] Provider: %s\n", idx+1, len(providersInLevel), provider.Name)
 
 				ok, errMsg, responseWritten := prs.forwardGeminiAttempt(c, &provider, endpoint, bodyBytes, isStream)
 				if ok {
 					_ = prs.blacklistService.RecordSuccess("gemini", provider.Name)
 					// 记录最后使用的供应商
 					prs.setLastUsedProvider("gemini", provider.Name)
-					fmt.Printf("[Gemini] ✓ 请求完成 | Provider: %s | 总耗时: %.2fs\n", provider.Name, time.Since(start).Seconds())
+					relayDebugf("[Gemini] ✓ 请求完成 | Provider: %s | 总耗时: %.2fs\n", provider.Name, time.Since(start).Seconds())
 					return // 成功，退出
 				}
 
@@ -2010,7 +2044,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 		kind := "custom:" + toolId
 		endpoint := "/v1/messages"
 
-		fmt.Printf("[CustomCLI] 收到请求: toolId=%s, kind=%s\n", toolId, kind)
+		relayDebugf("[CustomCLI] 收到请求: toolId=%s, kind=%s\n", toolId, kind)
 
 		// 读取请求体
 		var bodyBytes []byte
@@ -2048,7 +2082,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 				continue
 			}
 
-			if errs := provider.ValidateConfiguration(); len(errs) > 0 {
+			if errs := provider.CachedValidationErrors(); len(errs) > 0 {
 				fmt.Printf("[CustomCLI][WARN] Provider %s 配置验证失败，已自动跳过: %v\n", provider.Name, errs)
 				skippedCount++
 				continue
@@ -2228,7 +2262,9 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 						// 等待后重试（除非是最后一次）
 						if retryCount < maxRetryPerProvider-1 {
 							fmt.Printf("[CustomCLI][INFO] ⏳ 等待 %d 秒后重试...\n", retryWaitSeconds)
-							time.Sleep(time.Duration(retryWaitSeconds) * time.Second)
+							if !waitForRetry(c.Request.Context(), time.Duration(retryWaitSeconds)*time.Second) {
+								return
+							}
 						}
 					}
 				}

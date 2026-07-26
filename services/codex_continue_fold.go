@@ -175,7 +175,7 @@ func recordCodexContinueRound(entry codexRoundLog) {
 }
 
 func prepareCodexContinuationRound(input codexContinuationRoundInput) ([]byte, error) {
-	input.state.replayTail = append(input.state.replayTail, cloneJSONValue(input.result.roundReasoning).([]any)...)
+	input.state.replayTail = append(input.state.replayTail, input.result.roundReasoning...)
 	input.state.replayTail = append(input.state.replayTail, codexCommentaryMarker(input.config.Marker))
 	return buildCodexContinuationPayload(input.baseBody, input.state.replayTail)
 }

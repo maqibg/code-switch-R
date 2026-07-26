@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/daodao97/xgo/xdb"
@@ -13,6 +14,8 @@ import (
 
 // aliasTTL 定义 rename 后旧名保留时长,必须 > in-flight 请求上限(32h)并留 buffer。
 const aliasTTL = 48 * time.Hour
+
+var providerAliasLookupEnabled atomic.Bool
 
 type providerDataScope struct {
 	identityPlatform  string
@@ -318,6 +321,7 @@ func doRenameTx(tx *sql.Tx, scope providerDataScope, providerID int64, oldName, 
 	); err != nil {
 		return fmt.Errorf("写入 alias 失败: %w", err)
 	}
+	providerAliasLookupEnabled.Store(true)
 
 	return nil
 }
@@ -424,14 +428,25 @@ func cleanupExpiredAliases() error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(`DELETE FROM provider_alias WHERE expires_at <= CURRENT_TIMESTAMP`)
-	return err
+	if _, err = db.Exec(`DELETE FROM provider_alias WHERE expires_at <= CURRENT_TIMESTAMP`); err != nil {
+		return err
+	}
+	return refreshProviderAliasLookupEnabled(db)
+}
+
+func refreshProviderAliasLookupEnabled(db *sql.DB) error {
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM provider_alias WHERE expires_at > CURRENT_TIMESTAMP`).Scan(&count); err != nil {
+		return err
+	}
+	providerAliasLookupEnabled.Store(count > 0)
+	return nil
 }
 
 // ResolveProviderAlias 将旧名翻译为当前 canonical name(未过期),找不到返回原名。
 // 只做 1 跳查询,由 RenameProvider 的链式拒绝约束保证不会出现多层 alias。
 func ResolveProviderAlias(platform, name string) string {
-	if name == "" {
+	if name == "" || !providerAliasLookupEnabled.Load() {
 		return name
 	}
 	db, err := xdb.DB("default")

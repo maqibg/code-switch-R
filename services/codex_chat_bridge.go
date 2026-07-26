@@ -16,6 +16,15 @@ func ConvertCodexResponsesToOpenAIChat(bodyBytes []byte) ([]byte, error) {
 }
 
 func ConvertCodexResponsesToOpenAIChatWithHistory(bodyBytes []byte, history []map[string]any) ([]byte, []map[string]any, error) {
+	out, messages, err := convertCodexResponsesToOpenAIChatObjectWithHistory(bodyBytes, history)
+	if err != nil {
+		return nil, nil, err
+	}
+	converted, err := json.Marshal(out)
+	return converted, messages, err
+}
+
+func convertCodexResponsesToOpenAIChatObjectWithHistory(bodyBytes []byte, history []map[string]any) (map[string]any, []map[string]any, error) {
 	body, err := decodeCodexRequestBody(bodyBytes)
 	if err != nil {
 		return nil, nil, err
@@ -30,8 +39,7 @@ func ConvertCodexResponsesToOpenAIChatWithHistory(bodyBytes []byte, history []ma
 	}
 	messages = append(cloneChatMessages(history), messages...)
 	out["messages"] = messages
-	converted, err := json.Marshal(out)
-	return converted, messages, err
+	return out, messages, nil
 }
 
 func ConvertOpenAIChatToCodexResponse(bodyBytes []byte) ([]byte, error) {
@@ -138,7 +146,7 @@ func (prs *ProviderRelayService) writeCodexChatBridgeResponse(c *gin.Context, re
 		if len(assistantMessage) == 0 {
 			assistantMessage = map[string]any{"role": "assistant", "content": outputText}
 		}
-		prs.codexChatHistory.Store(responseID, appendAssistantChatMessageFromChat(chatMessages, assistantMessage))
+		prs.codexChatHistory.StoreOwned(responseID, appendAssistantChatMessageFromChat(chatMessages, assistantMessage))
 	}
 	copyResponseHeaders(c, resp)
 	c.Data(resp.StatusCode(), "application/json", converted)

@@ -223,6 +223,12 @@ type RequestPricingSnapshot struct {
 	piVersion      string
 }
 
+type parsedPricingCatalog struct {
+	engine  *modelpricing.Service
+	records map[string]pricingCatalogRecord
+	ordered []string
+}
+
 func NewPricingService(appSettings *AppSettingsService, piSettings *PiSettingsService) *PricingService {
 	baseDir := filepath.Join(mustGetAppConfigDir(), "model-pricing")
 	service := &PricingService{
@@ -240,12 +246,14 @@ func NewPricingService(appSettings *AppSettingsService, piSettings *PiSettingsSe
 	}
 
 	raw := modelpricing.EmbeddedPricingData()
+	var parsed *parsedPricingCatalog
 	source := pricingSourceInfo{
 		Source: pricingSourceEmbedded,
 		SHA256: pricingDigest(raw),
 	}
-	if snapshotRaw, snapshotSource, err := service.loadSnapshot(); err == nil {
+	if snapshotRaw, snapshotSource, snapshotParsed, err := service.loadSnapshot(); err == nil {
 		raw, source = snapshotRaw, snapshotSource
+		parsed = snapshotParsed
 	} else if !errors.Is(err, os.ErrNotExist) {
 		service.loadWarning = fmt.Sprintf("下载价格快照无效，已使用程序内置版本: %v", err)
 	}
@@ -255,7 +263,7 @@ func NewPricingService(appSettings *AppSettingsService, piSettings *PiSettingsSe
 		service.rulesLoadWarning = fmt.Sprintf("自定义价格规则无效，当前未启用自定义规则: %v", err)
 		rules = nil
 	}
-	runtime, err := buildPricingRuntime(raw, source, rules)
+	runtime, err := buildPricingRuntimeFromParsed(raw, source, rules, parsed)
 	if err != nil {
 		// 随程序嵌入的数据在测试和构建阶段均会校验；这里保留可诊断的空运行时，避免启动崩溃。
 		service.loadWarning = appendPricingWarning(service.loadWarning, fmt.Sprintf("模型定价初始化失败: %v", err))
@@ -272,39 +280,40 @@ func appendPricingWarning(current, next string) string {
 	return current + "；" + next
 }
 
-func (ps *PricingService) loadSnapshot() ([]byte, pricingSourceInfo, error) {
+func (ps *PricingService) loadSnapshot() ([]byte, pricingSourceInfo, *parsedPricingCatalog, error) {
 	data, err := os.ReadFile(ps.snapshotPath)
 	if err != nil {
-		return nil, pricingSourceInfo{}, err
+		return nil, pricingSourceInfo{}, nil, err
 	}
 	var document pricingSnapshotDocument
 	if err := json.Unmarshal(data, &document); err != nil {
-		return nil, pricingSourceInfo{}, fmt.Errorf("解析快照失败: %w", err)
+		return nil, pricingSourceInfo{}, nil, fmt.Errorf("解析快照失败: %w", err)
 	}
 	if document.SchemaVersion != pricingSchemaVersion {
-		return nil, pricingSourceInfo{}, fmt.Errorf("不支持的快照版本: %d", document.SchemaVersion)
+		return nil, pricingSourceInfo{}, nil, fmt.Errorf("不支持的快照版本: %d", document.SchemaVersion)
 	}
 	if len(document.Models) == 0 || pricingDigest(document.Models) != document.SHA256 {
-		return nil, pricingSourceInfo{}, fmt.Errorf("快照 SHA256 校验失败")
+		return nil, pricingSourceInfo{}, nil, fmt.Errorf("快照 SHA256 校验失败")
 	}
-	records, _, err := parsePricingCatalog(document.Models)
+	records, ordered, err := parsePricingCatalog(document.Models)
 	if err != nil {
-		return nil, pricingSourceInfo{}, err
+		return nil, pricingSourceInfo{}, nil, err
 	}
 	minimumModels := ps.minimumModels
 	if minimumModels <= 0 {
 		minimumModels = pricingMinimumModelCount
 	}
 	if len(records) < minimumModels {
-		return nil, pricingSourceInfo{}, fmt.Errorf("快照仅包含 %d 个模型，低于安全下限", len(records))
+		return nil, pricingSourceInfo{}, nil, fmt.Errorf("快照仅包含 %d 个模型，低于安全下限", len(records))
 	}
-	if _, err := modelpricing.NewServiceFromData(document.Models, modelpricing.EmbeddedOverlayData()); err != nil {
-		return nil, pricingSourceInfo{}, err
+	engine, err := modelpricing.NewServiceFromData(document.Models, modelpricing.EmbeddedOverlayData())
+	if err != nil {
+		return nil, pricingSourceInfo{}, nil, err
 	}
 	return append([]byte(nil), document.Models...), pricingSourceInfo{
 		Source: pricingSourceDownloaded, SourceURL: document.SourceURL,
 		SHA256: document.SHA256, UpdatedAt: document.DownloadedAt,
-	}, nil
+	}, &parsedPricingCatalog{engine: engine, records: records, ordered: ordered}, nil
 }
 
 func (ps *PricingService) loadRules() ([]PricingCustomRule, error) {
@@ -326,13 +335,20 @@ func (ps *PricingService) loadRules() ([]PricingCustomRule, error) {
 }
 
 func buildPricingRuntime(raw []byte, source pricingSourceInfo, rules []PricingCustomRule) (*pricingRuntime, error) {
-	engine, err := modelpricing.NewServiceFromData(raw, modelpricing.EmbeddedOverlayData())
-	if err != nil {
-		return nil, err
-	}
-	records, ordered, err := parsePricingCatalog(raw)
-	if err != nil {
-		return nil, err
+	return buildPricingRuntimeFromParsed(raw, source, rules, nil)
+}
+
+func buildPricingRuntimeFromParsed(raw []byte, source pricingSourceInfo, rules []PricingCustomRule, parsed *parsedPricingCatalog) (*pricingRuntime, error) {
+	if parsed == nil {
+		engine, err := modelpricing.NewServiceFromData(raw, modelpricing.EmbeddedOverlayData())
+		if err != nil {
+			return nil, err
+		}
+		records, ordered, err := parsePricingCatalog(raw)
+		if err != nil {
+			return nil, err
+		}
+		parsed = &parsedPricingCatalog{engine: engine, records: records, ordered: ordered}
 	}
 	compiled, revision, err := compilePricingRules(rules)
 	if err != nil {
@@ -342,7 +358,7 @@ func buildPricingRuntime(raw []byte, source pricingSourceInfo, rules []PricingCu
 	providerSet := map[string]struct{}{}
 	modeSet := map[string]struct{}{}
 	tokenPriced := 0
-	for _, record := range records {
+	for _, record := range parsed.records {
 		if record.entry.LiteLLMProvider != "" {
 			providerSet[record.entry.LiteLLMProvider] = struct{}{}
 		}
@@ -356,8 +372,8 @@ func buildPricingRuntime(raw []byte, source pricingSourceInfo, rules []PricingCu
 	providers := sortedPricingSet(providerSet)
 	modes := sortedPricingSet(modeSet)
 	return &pricingRuntime{
-		engine: engine, rawPricing: append([]byte(nil), raw...), source: source,
-		records: records, orderedModels: ordered, providers: providers, modes: modes,
+		engine: parsed.engine, rawPricing: append([]byte(nil), raw...), source: source,
+		records: parsed.records, orderedModels: parsed.ordered, providers: providers, modes: modes,
 		tokenPricedCount: tokenPriced, rules: compiled, customRevision: revision,
 	}, nil
 }

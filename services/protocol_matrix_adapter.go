@@ -10,13 +10,14 @@ import (
 
 	"github.com/daodao97/xgo/xrequest"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 func (prs *ProviderRelayService) prepareMatrixExecution(execution *relayForwardExecution) error {
 	var history []map[string]any
 	if execution.RoutePlan.ClientProtocol == relayprotocol.OpenAIResponses {
 		if previousID := codexPreviousResponseIDFromBytes(execution.BodyBytes); previousID != "" {
-			history, _ = prs.codexChatHistory.Load(previousID)
+			history, _ = prs.codexChatHistory.LoadReadOnly(previousID)
 		}
 	}
 	converted, chatMessages, err := convertProtocolRequestWithHistory(
@@ -68,7 +69,7 @@ func convertProtocolRequestWithHistory(body []byte, source, target relayprotocol
 	if err := validateCrossProtocolReasoning(body, source); err != nil {
 		return nil, nil, err
 	}
-	chat, messages, err := requestToCanonicalChatWithHistory(body, source, history)
+	chat, messages, err := requestToCanonicalChatWithHistory(body, source, history, source == relayprotocol.OpenAIResponses)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,25 +92,26 @@ func convertProtocolRequestWithHistory(body []byte, source, target relayprotocol
 }
 
 func requestToCanonicalChat(body []byte, source relayprotocol.Protocol) (map[string]any, error) {
-	chat, _, err := requestToCanonicalChatWithHistory(body, source, nil)
+	chat, _, err := requestToCanonicalChatWithHistory(body, source, nil, false)
 	return chat, err
 }
 
-func requestToCanonicalChatWithHistory(body []byte, source relayprotocol.Protocol, history []map[string]any) (map[string]any, []map[string]any, error) {
+func requestToCanonicalChatWithHistory(body []byte, source relayprotocol.Protocol, history []map[string]any, captureMessages bool) (map[string]any, []map[string]any, error) {
 	switch source {
 	case relayprotocol.OpenAIChat:
 		chat, err := decodeProtocolObject(body, "OpenAI Chat 请求")
-		return chat, chatMessagesFromCanonical(chat), err
-	case relayprotocol.OpenAIResponses:
-		converted, messages, err := ConvertCodexResponsesToOpenAIChatWithHistory(body, history)
-		if err != nil {
-			return nil, nil, err
+		if captureMessages {
+			return chat, chatMessagesFromCanonical(chat), err
 		}
-		chat, decodeErr := decodeProtocolObject(converted, "Responses 转换结果")
-		return chat, messages, decodeErr
+		return chat, nil, err
+	case relayprotocol.OpenAIResponses:
+		return convertCodexResponsesToOpenAIChatObjectWithHistory(body, history)
 	case relayprotocol.AnthropicMessages:
 		chat, err := anthropicRequestToChat(body)
-		return chat, chatMessagesFromCanonical(chat), err
+		if captureMessages {
+			return chat, chatMessagesFromCanonical(chat), err
+		}
+		return chat, nil, err
 	default:
 		return nil, nil, NewClientRequestRejectedError(fmt.Sprintf("不支持的源协议: %s", source))
 	}
@@ -127,46 +129,37 @@ func chatMessagesFromCanonical(chat map[string]any) []map[string]any {
 }
 
 func validateCrossProtocolReasoning(body []byte, source relayprotocol.Protocol) error {
-	request, err := decodeProtocolObject(body, "协议请求")
-	if err != nil {
-		return NewClientRequestRejectedError(err.Error())
+	if !gjson.ValidBytes(body) {
+		return NewClientRequestRejectedError("协议请求不是合法 JSON 对象")
 	}
 	switch source {
 	case relayprotocol.AnthropicMessages:
-		if _, exists := request["thinking"]; exists {
+		if gjson.GetBytes(body, "thinking").Exists() {
 			return NewClientRequestRejectedError("跨协议转换暂不支持 Anthropic thinking；请使用原生 Anthropic 上游")
 		}
-		messages, _ := request["messages"].([]any)
-		for _, rawMessage := range messages {
-			message, _ := rawMessage.(map[string]any)
-			blocks, _ := message["content"].([]any)
-			for _, rawBlock := range blocks {
-				block, _ := rawBlock.(map[string]any)
-				blockType := stringFromMap(block, "type")
+		for _, message := range gjson.GetBytes(body, "messages").Array() {
+			for _, block := range message.Get("content").Array() {
+				blockType := block.Get("type").String()
 				if blockType == "thinking" || blockType == "redacted_thinking" {
 					return NewClientRequestRejectedError("跨协议转换不能保留 Anthropic thinking 内容块")
 				}
 			}
 		}
 	case relayprotocol.OpenAIResponses:
-		if _, exists := request["reasoning"]; exists {
+		if gjson.GetBytes(body, "reasoning").Exists() {
 			return NewClientRequestRejectedError("跨协议转换暂不支持 Responses reasoning；请使用原生 Responses 上游")
 		}
-		input, _ := request["input"].([]any)
-		for _, rawItem := range input {
-			item, _ := rawItem.(map[string]any)
-			if stringFromMap(item, "type") == "reasoning" {
+		for _, item := range gjson.GetBytes(body, "input").Array() {
+			if item.Get("type").String() == "reasoning" {
 				return NewClientRequestRejectedError("跨协议转换不能保留 Responses reasoning 输入项")
 			}
 		}
 	case relayprotocol.OpenAIChat:
-		if _, exists := request["reasoning_effort"]; exists {
+		if gjson.GetBytes(body, "reasoning_effort").Exists() {
 			return NewClientRequestRejectedError("跨协议转换暂不支持 Chat reasoning_effort；请使用原生 Chat 上游")
 		}
-		messages, _ := request["messages"].([]any)
-		for _, rawMessage := range messages {
-			message, _ := rawMessage.(map[string]any)
-			if _, exists := message["reasoning_content"]; exists {
+		for _, message := range gjson.GetBytes(body, "messages").Array() {
+			if message.Get("reasoning_content").Exists() {
 				return NewClientRequestRejectedError("跨协议转换不能保留 Chat reasoning_content")
 			}
 		}

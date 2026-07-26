@@ -4,12 +4,22 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/daodao97/xgo/xdb"
 )
 
+const settingsHotPathCacheTTL = 2 * time.Second
+
 // SettingsService 管理全局配置
-type SettingsService struct{}
+type SettingsService struct {
+	cacheMu                   sync.Mutex
+	blacklistEnabledValue     bool
+	blacklistEnabledUntil     time.Time
+	blacklistLevelConfig      *BlacklistLevelConfig
+	blacklistLevelConfigUntil time.Time
+}
 
 // BlacklistSettings 黑名单配置（基础配置，向后兼容）
 type BlacklistSettings struct {
@@ -115,6 +125,11 @@ func (ss *SettingsService) GetBlacklistSettings() (threshold int, duration int, 
 
 // IsBlacklistEnabled 检查拉黑功能是否启用
 func (ss *SettingsService) IsBlacklistEnabled() bool {
+	ss.cacheMu.Lock()
+	defer ss.cacheMu.Unlock()
+	if time.Now().Before(ss.blacklistEnabledUntil) {
+		return ss.blacklistEnabledValue
+	}
 	db, err := xdb.DB("default")
 	if err != nil {
 		log.Printf("⚠️  获取数据库连接失败: %v，默认关闭拉黑", err)
@@ -131,7 +146,9 @@ func (ss *SettingsService) IsBlacklistEnabled() bool {
 		return false
 	}
 
-	return enabledStr == "true"
+	ss.blacklistEnabledValue = enabledStr == "true"
+	ss.blacklistEnabledUntil = time.Now().Add(settingsHotPathCacheTTL)
+	return ss.blacklistEnabledValue
 }
 
 // UpdateBlacklistEnabled 更新拉黑功能开关
@@ -148,6 +165,10 @@ func (ss *SettingsService) UpdateBlacklistEnabled(enabled bool) error {
 	if err != nil {
 		return fmt.Errorf("更新拉黑开关失败: %w", err)
 	}
+	ss.cacheMu.Lock()
+	ss.blacklistEnabledValue = enabled
+	ss.blacklistEnabledUntil = time.Now().Add(settingsHotPathCacheTTL)
+	ss.cacheMu.Unlock()
 
 	log.Printf("✅ 拉黑功能开关已更新: %v", enabled)
 	return nil
@@ -203,6 +224,7 @@ func (ss *SettingsService) UpdateBlacklistSettings(threshold int, duration int) 
 
 		return fmt.Errorf("更新拉黑时长失败，已回滚失败阈值: %w", err)
 	}
+	ss.invalidateBlacklistLevelConfigCache()
 
 	return nil
 }
@@ -256,8 +278,16 @@ func (ss *SettingsService) SetLevelBlacklistEnabled(enabled bool) error {
 	if err != nil {
 		return fmt.Errorf("设置等级拉黑开关失败: %w", err)
 	}
+	ss.invalidateBlacklistLevelConfigCache()
 
 	return nil
+}
+
+func (ss *SettingsService) invalidateBlacklistLevelConfigCache() {
+	ss.cacheMu.Lock()
+	ss.blacklistLevelConfig = nil
+	ss.blacklistLevelConfigUntil = time.Time{}
+	ss.cacheMu.Unlock()
 }
 
 // GetIntSetting 获取整数类型的配置值（通用方法）

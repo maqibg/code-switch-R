@@ -14,6 +14,7 @@ import (
 
 // ConsoleLog 控制台日志条目
 type ConsoleLog struct {
+	Sequence  uint64    `json:"sequence"`
 	Timestamp time.Time `json:"timestamp"`
 	Level     string    `json:"level"` // INFO, WARN, ERROR
 	Message   string    `json:"message"`
@@ -21,13 +22,23 @@ type ConsoleLog struct {
 
 // ConsoleService 控制台日志服务
 type ConsoleService struct {
-	logs         []ConsoleLog
-	mutex        sync.RWMutex
-	maxLogs      int
-	writer       *consoleWriter
-	oldStdout    *os.File
-	oldStderr    *os.File
-	pauseLogging atomic.Int32 // 大于零时暂停日志捕获，允许并发读取安全嵌套
+	logs          []ConsoleLog
+	head          int
+	size          int
+	nextSequence  uint64
+	clearSequence uint64
+	mutex         sync.RWMutex
+	maxLogs       int
+	writer        *consoleWriter
+	oldStdout     *os.File
+	oldStderr     *os.File
+	pauseLogging  atomic.Int32 // 大于零时暂停日志捕获，允许并发读取安全嵌套
+}
+
+type ConsoleLogBatch struct {
+	Logs           []ConsoleLog `json:"logs"`
+	LatestSequence uint64       `json:"latest_sequence"`
+	Reset          bool         `json:"reset"`
 }
 
 // consoleWriter 自定义 writer，同时写入控制台和缓存
@@ -49,7 +60,7 @@ func (w *consoleWriter) Write(p []byte) (n int, err error) {
 
 func NewConsoleService() *ConsoleService {
 	cs := &ConsoleService{
-		logs:    make([]ConsoleLog, 0, 1000),
+		logs:    make([]ConsoleLog, 1000),
 		maxLogs: 1000, // 最多保留 1000 条日志
 	}
 
@@ -144,42 +155,57 @@ func (cs *ConsoleService) addLog(level, message string) {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
-	log := ConsoleLog{
+	cs.ensureRingLocked()
+	cs.evictOldLogsLocked(time.Now().Add(-72 * time.Hour))
+	cs.nextSequence++
+	entry := ConsoleLog{
+		Sequence:  cs.nextSequence,
 		Timestamp: time.Now(),
 		Level:     level,
 		Message:   message,
 	}
-
-	cs.logs = append(cs.logs, log)
-
-	// 限制日志数量
-	if len(cs.logs) > cs.maxLogs {
-		cs.logs = cs.logs[len(cs.logs)-cs.maxLogs:]
+	index := (cs.head + cs.size) % cs.maxLogs
+	if cs.size == cs.maxLogs {
+		index = cs.head
+		cs.head = (cs.head + 1) % cs.maxLogs
+	} else {
+		cs.size++
 	}
-
-	// 清理3天前的日志
-	cs.cleanOldLogs()
+	cs.logs[index] = entry
 }
 
-// cleanOldLogs 清理3天前的日志
-func (cs *ConsoleService) cleanOldLogs() {
-	// 无需加锁，因为调用者 addLog 已经加锁
-	threeDaysAgo := time.Now().Add(-72 * time.Hour)
+func (cs *ConsoleService) ensureRingLocked() {
+	if cs.maxLogs <= 0 {
+		cs.maxLogs = 1000
+	}
+	if len(cs.logs) == cs.maxLogs {
+		return
+	}
+	existing := append([]ConsoleLog(nil), cs.logs...)
+	cs.logs = make([]ConsoleLog, cs.maxLogs)
+	cs.head = 0
+	cs.size = min(len(existing), cs.maxLogs)
+	copy(cs.logs, existing[len(existing)-cs.size:])
+}
 
-	// 找到第一个在3天内的日志索引
-	cutoffIndex := 0
-	for i, log := range cs.logs {
-		if log.Timestamp.After(threeDaysAgo) {
-			cutoffIndex = i
-			break
+func (cs *ConsoleService) evictOldLogsLocked(cutoff time.Time) {
+	for cs.size > 0 {
+		oldest := cs.logs[cs.head]
+		if !oldest.Timestamp.Before(cutoff) {
+			return
 		}
+		cs.logs[cs.head] = ConsoleLog{}
+		cs.head = (cs.head + 1) % cs.maxLogs
+		cs.size--
 	}
+}
 
-	// 如果有旧日志需要清理
-	if cutoffIndex > 0 {
-		cs.logs = cs.logs[cutoffIndex:]
-		fmt.Printf("[ConsoleService] 清理了 %d 条超过3天的日志\n", cutoffIndex)
+func (cs *ConsoleService) snapshotLocked() []ConsoleLog {
+	result := make([]ConsoleLog, cs.size)
+	for i := 0; i < cs.size; i++ {
+		result[i] = cs.logs[(cs.head+i)%cs.maxLogs]
 	}
+	return result
 }
 
 // GetLogs 获取所有日志
@@ -192,9 +218,37 @@ func (cs *ConsoleService) GetLogs() []ConsoleLog {
 	defer cs.mutex.RUnlock()
 
 	// 返回副本
-	result := make([]ConsoleLog, len(cs.logs))
-	copy(result, cs.logs)
-	return result
+	return cs.snapshotLocked()
+}
+
+func (cs *ConsoleService) GetLogsSince(afterSequence uint64, limit int) ConsoleLogBatch {
+	cs.pauseLogging.Add(1)
+	defer cs.pauseLogging.Add(-1)
+	cs.mutex.RLock()
+	defer cs.mutex.RUnlock()
+
+	if limit <= 0 || limit > cs.maxLogs {
+		limit = cs.maxLogs
+	}
+	reset := afterSequence > 0 && afterSequence <= cs.clearSequence
+	if cs.size > 0 {
+		oldest := cs.logs[cs.head].Sequence
+		if afterSequence > 0 && afterSequence+1 < oldest {
+			reset = true
+		}
+	}
+	logs := make([]ConsoleLog, 0, min(cs.size, limit))
+	for i := 0; i < cs.size; i++ {
+		entry := cs.logs[(cs.head+i)%cs.maxLogs]
+		if !reset && entry.Sequence <= afterSequence {
+			continue
+		}
+		logs = append(logs, entry)
+		if len(logs) == limit {
+			break
+		}
+	}
+	return ConsoleLogBatch{Logs: logs, LatestSequence: cs.nextSequence, Reset: reset}
 }
 
 // GetRecentLogs 获取最近 N 条日志
@@ -210,14 +264,11 @@ func (cs *ConsoleService) GetRecentLogs(count int) []ConsoleLog {
 		count = 100
 	}
 
-	if count > len(cs.logs) {
-		count = len(cs.logs)
+	if count > cs.size {
+		count = cs.size
 	}
-
-	// 返回最后 N 条
-	result := make([]ConsoleLog, count)
-	copy(result, cs.logs[len(cs.logs)-count:])
-	return result
+	all := cs.snapshotLocked()
+	return append([]ConsoleLog(nil), all[len(all)-count:]...)
 }
 
 // ClearLogs 清空日志
@@ -229,7 +280,10 @@ func (cs *ConsoleService) ClearLogs() {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
-	cs.logs = make([]ConsoleLog, 0, 1000)
+	cs.logs = make([]ConsoleLog, cs.maxLogs)
+	cs.head = 0
+	cs.size = 0
+	cs.clearSequence = cs.nextSequence
 }
 
 // shouldFilterLog 判断是否应该过滤这条日志

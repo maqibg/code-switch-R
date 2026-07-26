@@ -101,9 +101,12 @@ func prepareCodexInitialPayload(bodyBytes []byte) ([]byte, map[string]any, error
 }
 
 func buildCodexContinuationPayload(baseBody map[string]any, replayTail []any) ([]byte, error) {
-	body := cloneJSONMap(baseBody)
+	body := make(map[string]any, len(baseBody))
+	for key, value := range baseBody {
+		body[key] = value
+	}
 	input := inputAsSlice(body["input"])
-	input = append(input, cloneJSONValue(replayTail).([]any)...)
+	input = append(input, replayTail...)
 	body["stream"] = true
 	body["input"] = input
 	body["include"] = mergeCodexInclude(body["include"])
@@ -131,9 +134,9 @@ func inputAsSlice(input any) []any {
 	case nil:
 		return []any{}
 	case []any:
-		return cloneJSONValue(v).([]any)
+		return append([]any(nil), v...)
 	default:
-		return []any{cloneJSONValue(v)}
+		return []any{v}
 	}
 }
 

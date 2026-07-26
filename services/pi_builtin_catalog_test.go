@@ -2,12 +2,36 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestPiBuiltinCatalogCachesFailureUntilForcedRefresh(t *testing.T) {
+	calls := 0
+	service := &PiSettingsService{builtinLoader: func() (PiBuiltinCatalogSnapshot, error) {
+		calls++
+		return PiBuiltinCatalogSnapshot{}, errors.New("loader failed")
+	}}
+	if _, err := service.BuiltinModelsCatalog(false); err == nil {
+		t.Fatal("首次加载失败未返回错误")
+	}
+	if _, err := service.BuiltinModelsCatalog(false); err == nil {
+		t.Fatal("负缓存命中未返回错误")
+	}
+	if calls != 1 {
+		t.Fatalf("失败结果未负缓存: calls=%d", calls)
+	}
+	if _, err := service.BuiltinModelsCatalog(true); err == nil {
+		t.Fatal("强制刷新失败未返回错误")
+	}
+	if calls != 2 {
+		t.Fatalf("强制刷新未绕过负缓存: calls=%d", calls)
+	}
+}
 
 func TestPiBuiltinCatalogCachesSuccessfulParseUntilForcedRefresh(t *testing.T) {
 	calls := 0

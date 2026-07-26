@@ -4,13 +4,24 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+
+	"github.com/tidwall/gjson"
 )
+
+const codexChatHistoryMaxBytes = 64 << 20
+
+type codexChatHistoryEntry struct {
+	messages []map[string]any
+	bytes    int
+}
 
 type CodexChatBridgeHistoryStore struct {
 	mu         sync.RWMutex
-	items      map[string][]map[string]any
+	items      map[string]codexChatHistoryEntry
 	order      []string
 	maxEntries int
+	maxBytes   int
+	totalBytes int
 }
 
 func NewCodexChatBridgeHistoryStore(maxEntries int) *CodexChatBridgeHistoryStore {
@@ -18,7 +29,8 @@ func NewCodexChatBridgeHistoryStore(maxEntries int) *CodexChatBridgeHistoryStore
 		maxEntries = 128
 	}
 	return &CodexChatBridgeHistoryStore{
-		items: make(map[string][]map[string]any), order: make([]string, 0, maxEntries), maxEntries: maxEntries,
+		items: make(map[string]codexChatHistoryEntry), order: make([]string, 0, maxEntries),
+		maxEntries: maxEntries, maxBytes: codexChatHistoryMaxBytes,
 	}
 }
 
@@ -28,26 +40,52 @@ func (s *CodexChatBridgeHistoryStore) Load(responseID string) ([]map[string]any,
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	messages, ok := s.items[responseID]
+	entry, ok := s.items[responseID]
 	if !ok {
 		return nil, false
 	}
-	return cloneChatMessages(messages), true
+	return cloneChatMessages(entry.messages), true
+}
+
+func (s *CodexChatBridgeHistoryStore) LoadReadOnly(responseID string) ([]map[string]any, bool) {
+	if s == nil || strings.TrimSpace(responseID) == "" {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entry, ok := s.items[responseID]
+	return entry.messages, ok
 }
 
 func (s *CodexChatBridgeHistoryStore) Store(responseID string, messages []map[string]any) {
+	s.store(responseID, cloneChatMessages(messages))
+}
+
+func (s *CodexChatBridgeHistoryStore) StoreOwned(responseID string, messages []map[string]any) {
+	s.store(responseID, messages)
+}
+
+func (s *CodexChatBridgeHistoryStore) store(responseID string, messages []map[string]any) {
 	if s == nil || strings.TrimSpace(responseID) == "" || len(messages) == 0 {
+		return
+	}
+	raw, err := json.Marshal(messages)
+	if err != nil || len(raw) > s.maxBytes {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.items[responseID]; !exists {
+	if previous, exists := s.items[responseID]; !exists {
 		s.order = append(s.order, responseID)
+	} else {
+		s.totalBytes -= previous.bytes
 	}
-	s.items[responseID] = cloneChatMessages(messages)
-	for len(s.order) > s.maxEntries {
+	s.items[responseID] = codexChatHistoryEntry{messages: messages, bytes: len(raw)}
+	s.totalBytes += len(raw)
+	for len(s.order) > s.maxEntries || s.totalBytes > s.maxBytes {
 		oldest := s.order[0]
 		s.order = s.order[1:]
+		s.totalBytes -= s.items[oldest].bytes
 		delete(s.items, oldest)
 	}
 }
@@ -69,9 +107,5 @@ func codexPreviousResponseID(body map[string]any) string {
 }
 
 func codexPreviousResponseIDFromBytes(bodyBytes []byte) string {
-	var body map[string]any
-	if err := json.Unmarshal(bodyBytes, &body); err != nil {
-		return ""
-	}
-	return codexPreviousResponseID(body)
+	return strings.TrimSpace(gjson.GetBytes(bodyBytes, "previous_response_id").String())
 }

@@ -73,6 +73,8 @@ type PiSettingsService struct {
 	pricingMu         sync.Mutex
 	pricingCache      *piModelPricingCache
 	builtinCatalog    *PiBuiltinCatalogSnapshot
+	builtinCatalogErr error
+	builtinRetryAt    time.Time
 	builtinLoader     func() (PiBuiltinCatalogSnapshot, error)
 	relayAddr         string
 	configDir         string

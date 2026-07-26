@@ -18,7 +18,7 @@ const isTray = computed(() => route.path === '/tray')
     <Sidebar />
     <main class="main-content">
       <RouterView v-slot="{ Component }">
-        <keep-alive>
+        <keep-alive :max="3">
           <component :is="Component" />
         </keep-alive>
       </RouterView>

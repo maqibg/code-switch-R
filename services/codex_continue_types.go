@@ -74,8 +74,13 @@ func (u codexFoldUsage) applyToLog(log *ReqeustLog) {
 
 type codexBufferedItem struct {
 	upstreamIndex any
-	events        []map[string]any
+	events        []codexBufferedEvent
 	item          any
+}
+
+type codexBufferedEvent struct {
+	eventType string
+	data      []byte
 }
 
 type codexRoundResult struct {

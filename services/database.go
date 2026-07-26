@@ -1,6 +1,7 @@
 package services
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 
@@ -65,11 +66,11 @@ func InitDatabase() error {
 	}
 
 	// 5. 预热连接池：强制建立数据库连接，避免首次写入时失败
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_log").Scan(&count); err != nil {
+	var present int
+	if err := db.QueryRow("SELECT 1 FROM request_log LIMIT 1").Scan(&present); err != nil && err != sql.ErrNoRows {
 		fmt.Printf("⚠️  连接池预热查询失败: %v\n", err)
 	} else {
-		fmt.Printf("✅ 数据库连接已预热（request_log 记录数: %d）\n", count)
+		fmt.Println("✅ 数据库连接已预热")
 	}
 
 	return nil
@@ -162,6 +163,5 @@ func ensureProviderAliasTable() error {
 	if _, err := db.Exec(createIndexSQL); err != nil {
 		return fmt.Errorf("创建 provider_alias 索引失败: %w", err)
 	}
-
-	return nil
+	return refreshProviderAliasLookupEnabled(db)
 }

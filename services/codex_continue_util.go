@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/daodao97/xgo/xrequest"
+	"github.com/tidwall/sjson"
 )
 
 func (state *codexFoldState) nextSeq() int64 {
@@ -30,6 +31,22 @@ func writeCodexSSEEvent(w http.ResponseWriter, event map[string]any) {
 	}
 	data, _ := json.Marshal(event)
 	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, data)
+}
+
+func writeCodexSequencedRawEvent(w http.ResponseWriter, data []byte, eventType string, outputIndex int, state *codexFoldState) {
+	updated, err := sjson.SetBytes(data, "output_index", outputIndex)
+	if err != nil {
+		return
+	}
+	updated, err = sjson.SetBytes(updated, "sequence_number", state.nextSeq())
+	if err != nil {
+		return
+	}
+	if eventType == "" {
+		eventType = "message"
+	}
+	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, updated)
+	flushWriter(w)
 }
 
 func writeCodexSSEDone(w http.ResponseWriter) {

@@ -99,7 +99,7 @@ func (prs *ProviderRelayService) prepareCodexResponsesToChatExecution(execution 
 	}
 	var history []map[string]any
 	if previousID := codexPreviousResponseIDFromBytes(execution.BodyBytes); previousID != "" {
-		history, _ = prs.codexChatHistory.Load(previousID)
+		history, _ = prs.codexChatHistory.LoadReadOnly(previousID)
 	}
 	convertedBody, messages, err := ConvertCodexResponsesToOpenAIChatWithHistory(execution.BodyBytes, history)
 	if err != nil {
