@@ -55,8 +55,13 @@ def main():
     # 去除版本号前缀 v
     version_clean = version.lstrip("v")
 
-    # GitHub Release 下载 URL 前缀
-    base_url = f"https://github.com/Rogers-F/code-switch-R/releases/download/v{version_clean}"
+    # GitHub Actions 会注入当前 owner/repo，本地生成时回退到当前发布仓库。
+    repository = os.environ.get("GITHUB_REPOSITORY", "maqibg/code-switch-R").strip("/")
+    repository_parts = repository.split("/")
+    if len(repository_parts) != 2 or not all(repository_parts):
+        print(f"Error: Invalid GITHUB_REPOSITORY: {repository}")
+        sys.exit(1)
+    base_url = f"https://github.com/{repository}/releases/download/v{version_clean}"
 
     # 定义平台资产映射
     platform_configs = {
