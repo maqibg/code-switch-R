@@ -5,3 +5,9 @@ frontend/dist
 bin
 CLAUDE.md
 .ace-tool/
+# 本地构建产物
+codeswitch.exe
+# Go 构建缓存
+.tmp-gocache/
+# 外部参考项目，仅本地查阅
+tmp/
