@@ -46,6 +46,14 @@ var schemaMigrations = []schemaMigration{
 		// 之后启动就不再走列探测。
 		up: migrateBaseline,
 	},
+	{
+		version: 2,
+		name:    "provider-table",
+		// 建 provider 表并从各平台 JSON 导入主数据。
+		// 本迁移只写入新表，不改动现有 JSON 读写路径，
+		// 因此可以先上线验证数据正确性，再切换读写（A1 的后续步骤）。
+		up: migrateProviderTable,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
