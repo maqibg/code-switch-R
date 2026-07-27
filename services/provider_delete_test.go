@@ -39,9 +39,6 @@ func TestSaveProviders_DeleteCleansProviderData(t *testing.T) {
 	seedBlacklist(t, "claude", "DeleteMe")
 	seedBlacklist(t, "claude", "OldDeleteMe")
 	seedBlacklist(t, "claude", "KeepMe")
-	seedHealthCheck(t, "claude", 1, "DeleteMe")
-	seedHealthCheck(t, "claude", 1, "OldDeleteMe")
-	seedHealthCheck(t, "claude", 2, "KeepMe")
 	seedProviderAlias(t, "claude", 1, "OldDeleteMe", "DeleteMe")
 
 	err := ps.SaveProviders("claude", []Provider{
@@ -73,9 +70,6 @@ func assertDeletedProviderDataRemoved(t *testing.T, platform string, providerID 
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE platform = ? AND provider_name IN (?, ?)`, platform, "DeleteMe", "OldDeleteMe"); n != 0 {
 		t.Fatalf("删除供应商的 provider_blacklist 应清空,实际 %d", n)
 	}
-	if n := countRows(t, `SELECT COUNT(*) FROM health_check_history WHERE platform = ? AND (provider_id = ? OR provider_name IN (?, ?))`, platform, providerID, "DeleteMe", "OldDeleteMe"); n != 0 {
-		t.Fatalf("删除供应商的 health_check_history 应清空,实际 %d", n)
-	}
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_alias WHERE platform = ? AND provider_id = ?`, platform, providerID); n != 0 {
 		t.Fatalf("删除供应商的 provider_alias 应清空,实际 %d", n)
 	}
@@ -91,9 +85,6 @@ func assertKeptProviderDataRemains(t *testing.T, platform string, providerID int
 	}
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE platform = ? AND provider_name = ?`, platform, "KeepMe"); n != 1 {
 		t.Fatalf("未删除供应商的 provider_blacklist 应保留,实际 %d", n)
-	}
-	if n := countRows(t, `SELECT COUNT(*) FROM health_check_history WHERE platform = ? AND provider_id = ?`, platform, providerID); n != 1 {
-		t.Fatalf("未删除供应商的 health_check_history 应保留,实际 %d", n)
 	}
 }
 
@@ -133,8 +124,6 @@ func TestGeminiDeleteProvider_CleansProviderData(t *testing.T) {
 	seedRequestLog(t, "gemini", "KeepGemini", 1)
 	seedBlacklist(t, "gemini", "DeleteGemini")
 	seedBlacklist(t, "gemini", "KeepGemini")
-	seedHealthCheck(t, "gemini", 1, "DeleteGemini")
-	seedHealthCheck(t, "gemini", 2, "KeepGemini")
 
 	if err := svc.DeleteProvider("gemini-a"); err != nil {
 		t.Fatalf("删除 Gemini provider 失败: %v", err)
@@ -147,9 +136,6 @@ func TestGeminiDeleteProvider_CleansProviderData(t *testing.T) {
 	}
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE platform = ? AND provider_name = ?`, "gemini", "DeleteGemini"); n != 0 {
 		t.Fatalf("Gemini provider_blacklist 应清空,实际 %d", n)
-	}
-	if n := countRows(t, `SELECT COUNT(*) FROM health_check_history WHERE platform = ? AND provider_name = ?`, "gemini", "DeleteGemini"); n != 0 {
-		t.Fatalf("Gemini health_check_history 应清空,实际 %d", n)
 	}
 	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE platform = ? AND provider = ?`, "gemini", "KeepGemini"); n != 1 {
 		t.Fatalf("未删除 Gemini request_log 应保留,实际 %d", n)

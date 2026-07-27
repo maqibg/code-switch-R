@@ -767,8 +767,9 @@ func (s *CliConfigService) saveClaudeConfig(editable map[string]interface{}) err
 		// 仅当文件非空时解析
 		if len(content) > 0 {
 			if err := json.Unmarshal(content, &data); err != nil {
-				// JSON 解析失败，使用空配置继续（后续会创建备份）
-				fmt.Printf("[警告] settings.json 格式无效，将使用空配置: %v\n", err)
+				// 解析失败必须拒绝：继续下去会用"只含可编辑字段"的内容覆盖整个文件，
+				// 把用户其余配置全部丢掉。有备份也不能作为静默破坏文件的理由。
+				return fmt.Errorf("settings.json 解析失败，已中止保存以避免覆盖现有配置，请修正文件格式后重试: %w", err)
 			}
 		}
 	}
@@ -987,8 +988,8 @@ func (s *CliConfigService) saveCodexConfig(editable map[string]interface{}) erro
 		// 仅当文件非空时解析
 		if len(content) > 0 {
 			if err := toml.Unmarshal(content, &raw); err != nil {
-				// TOML 解析失败，使用空配置继续（后续会创建备份）
-				fmt.Printf("[警告] config.toml 格式无效，将使用空配置: %v\n", err)
+				// 解析失败必须拒绝：继续下去会丢掉用户的 mcp_servers、profiles 等全部配置
+				return fmt.Errorf("config.toml 解析失败，已中止保存以避免覆盖现有配置，请修正文件格式后重试: %w", err)
 			}
 		}
 	}

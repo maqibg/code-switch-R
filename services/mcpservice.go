@@ -490,11 +490,7 @@ func (ms *MCPService) saveStore(platform string, servers map[string]rawMCPServer
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicWriteFile(path, data, 0o644)
 }
 
 func normalizeServerType(value string) string {
@@ -521,17 +517,29 @@ func normalizePlatforms(values []string) []string {
 	return result
 }
 
+// normalizePlatform 把平台写法归一到 MCP store 使用的键。
+//
+// 注意这里的输出值与 provider 平台 ID 故意不同：claude 在 MCP 侧是 "claude-code"，
+// 因为它决定了 mcp-{platform}.json 的文件名，改动会让用户已有的 MCP 配置文件失联。
+// 所以只共享别名匹配（走 resolvePlatformID），不共享输出值。
 func normalizePlatform(value string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "claude", "claude_code", "claude-code":
-		return "claude-code", true
-	case "codex":
-		return "codex", true
+	normalized := strings.ToLower(strings.TrimSpace(value))
+
+	// gemini 不在 provider 注册表里，但有自己的 MCP 配置，单独匹配
+	switch normalized {
 	case "gemini", "gemini-cli", "gemini_cli":
 		return "gemini", true
+	}
+
+	switch resolvePlatformID(normalized) {
+	case "claude":
+		return platClaudeCode, true // MCP store 沿用 "claude-code" 作为键
+	case "codex":
+		return "codex", true
 	case "reasonix":
 		return "reasonix", true
 	default:
+		// pi 没有 MCP 配置，与未知平台一样返回 false
 		return "", false
 	}
 }
@@ -826,7 +834,8 @@ func (ms *MCPService) syncCodexServers(servers []MCPServer) error {
 	}
 	block := buildCodexMCPServersBlock(desired)
 	updated := replaceCodexMCPServersSection(string(content), block)
-	return os.WriteFile(path, []byte(updated), 0o644)
+	// 写用户的 ~/.codex/config.toml，必须原子写入：截断的 TOML 会让 Codex CLI 起不来
+	return atomicWriteFile(path, []byte(updated), 0o644)
 }
 
 func (ms *MCPService) syncGeminiServers(servers []MCPServer) error {
@@ -919,7 +928,7 @@ func writeJSONMCPServersPreservingLayout(path string, key string, desired any, p
 		if marshalErr != nil {
 			return marshalErr
 		}
-		return os.WriteFile(path, fresh, perm)
+		return atomicWriteFile(path, fresh, perm)
 	}
 
 	trimmed := bytes.TrimSpace(data)
@@ -928,7 +937,7 @@ func writeJSONMCPServersPreservingLayout(path string, key string, desired any, p
 		if marshalErr != nil {
 			return marshalErr
 		}
-		return os.WriteFile(path, fresh, perm)
+		return atomicWriteFile(path, fresh, perm)
 	}
 
 	if !json.Valid(trimmed) {
@@ -939,7 +948,9 @@ func writeJSONMCPServersPreservingLayout(path string, key string, desired any, p
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, updated, perm)
+	// 这里写的是用户级 CLI 配置（claude.json / gemini settings.json 等），
+	// 半写会直接损坏用户配置，必须原子写入。
+	return atomicWriteFile(path, updated, perm)
 }
 
 func tomlSectionKey(name string) string {

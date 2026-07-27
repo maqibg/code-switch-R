@@ -34,7 +34,7 @@ type RelayAttemptLog struct {
 	Success          bool
 	ErrorType        string
 	ErrorMessage     string
-	Usage            ReqeustLog
+	Usage            RequestLog
 	Cost             modelpricing.CostBreakdown
 	PricingSource    string
 	PricingVersion   string
@@ -85,7 +85,7 @@ func relayTelemetryFromContext(c *gin.Context) *relayTelemetry {
 	return telemetry
 }
 
-func (t *relayTelemetry) recordAttempt(provider Provider, execution *relayForwardExecution, usage ReqeustLog, started time.Time, success bool, err error) {
+func (t *relayTelemetry) recordAttempt(provider Provider, execution *relayForwardExecution, usage RequestLog, started time.Time, success bool, err error) {
 	if t == nil {
 		return
 	}
@@ -117,7 +117,7 @@ func (t *relayTelemetry) recordAttempt(provider Provider, execution *relayForwar
 	t.Attempts = append(t.Attempts, attempt)
 }
 
-func (t *relayTelemetry) recordGeminiAttempt(provider GeminiProvider, usage ReqeustLog, started time.Time, success bool, err error) {
+func (t *relayTelemetry) recordGeminiAttempt(provider GeminiProvider, usage RequestLog, started time.Time, success bool, err error) {
 	if t == nil {
 		return
 	}
@@ -141,8 +141,8 @@ func (t *relayTelemetry) recordGeminiAttempt(provider GeminiProvider, usage Reqe
 	t.Attempts = append(t.Attempts, attempt)
 }
 
-func (t *relayTelemetry) logicalRequest(status int) ReqeustLog {
-	result := ReqeustLog{
+func (t *relayTelemetry) logicalRequest(status int) RequestLog {
+	result := RequestLog{
 		RequestID: t.RequestID, Platform: t.Platform, SourceID: t.SourceID,
 		RequestedModel: t.RequestedModel, ClientProtocol: string(t.ClientProtocol),
 		IsStream: t.IsStream, DurationSec: time.Since(t.StartedAt).Seconds(),
@@ -191,21 +191,27 @@ func (t *relayTelemetry) logicalRequest(status int) ReqeustLog {
 }
 
 func (t *relayTelemetry) finish(c *gin.Context) {
-	if t == nil || GlobalDBQueueLogs == nil {
+	if t == nil {
 		return
 	}
 	status := t.completionStatus(c)
 	request := t.logicalRequest(status)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := enqueueLogicalRequest(ctx, request); err != nil {
-		fmt.Printf("写入逻辑请求日志失败: %v\n", err)
-		return
-	}
+
+	// 一个逻辑请求的 request_log 与它的所有 relay_attempt 在同一个事务里提交。
+	//
+	// 原实现把它们作为独立任务丢进批量队列，批次边界可能把同一请求的行拆到
+	// 不同事务，崩溃时产生"有 attempt 无 request"的孤儿行；而且每条都要同步
+	// 等待批次提交（最多 100ms），k 次尝试的请求会占住 handler goroutine (k+1)×100ms。
+	statements := make([]dbStatement, 0, 1+len(t.Attempts))
+	statements = append(statements, logicalRequestStatement(request))
 	for _, attempt := range t.Attempts {
-		if err := enqueueRelayAttempt(ctx, t, attempt); err != nil {
-			fmt.Printf("写入 relay_attempt 失败: %v\n", err)
-		}
+		statements = append(statements, relayAttemptStatement(t, attempt))
+	}
+
+	if err := dbExecStatements(ctx, statements); err != nil {
+		fmt.Printf("写入请求日志失败: %v\n", err)
 	}
 }
 
@@ -220,8 +226,8 @@ func (t *relayTelemetry) completionStatus(c *gin.Context) int {
 	return status
 }
 
-func enqueueLogicalRequest(ctx context.Context, log ReqeustLog) error {
-	return GlobalDBQueueLogs.ExecBatchCtx(ctx, `
+func logicalRequestStatement(log RequestLog) dbStatement {
+	return dbStatement{Query: `
 		INSERT INTO request_log (
 			request_id, platform, source_id, client_protocol, upstream_protocol,
 			requested_model, model, provider, http_code, attempt_count, error_type,
@@ -231,31 +237,31 @@ func enqueueLogicalRequest(ctx context.Context, log ReqeustLog) error {
 			cache_create_cost, cache_read_cost, ephemeral_5m_cost, ephemeral_1h_cost,
 			total_cost, has_pricing, cost_calculated, pricing_version, pricing_source, pricing_rule_id
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, log.RequestID, log.Platform, log.SourceID, log.ClientProtocol, log.UpstreamProtocol,
+	`, Args: []any{log.RequestID, log.Platform, log.SourceID, log.ClientProtocol, log.UpstreamProtocol,
 		log.RequestedModel, log.Model, log.Provider, log.HttpCode, log.AttemptCount, log.ErrorType,
 		log.InputTokens, log.OutputTokens, log.CacheCreateTokens, log.CacheReadTokens,
 		log.ReasoningTokens, boolToInt(log.IsStream), log.DurationSec, log.Ephemeral5mTokens,
 		log.Ephemeral1hTokens, log.ServiceTier, log.InputCost, log.OutputCost, log.ReasoningCost,
 		log.CacheCreateCost, log.CacheReadCost, log.Ephemeral5mCost, log.Ephemeral1hCost,
-		log.TotalCost, boolToInt(log.HasPricing), 1, log.PricingVersion, log.PricingSource, log.PricingRuleID)
+		log.TotalCost, boolToInt(log.HasPricing), 1, log.PricingVersion, log.PricingSource, log.PricingRuleID}}
 }
 
-func enqueueRelayAttempt(ctx context.Context, telemetry *relayTelemetry, attempt RelayAttemptLog) error {
-	return GlobalDBQueueLogs.ExecBatchCtx(ctx, `
+func relayAttemptStatement(telemetry *relayTelemetry, attempt RelayAttemptLog) dbStatement {
+	return dbStatement{Query: `
 		INSERT INTO relay_attempt (
 			request_id, attempt_index, platform, source_id, provider, model,
 			upstream_protocol, http_code, success, error_type, error_message,
 			duration_sec, input_tokens, output_tokens, cache_create_tokens,
 			cache_read_tokens, reasoning_tokens, total_cost, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, telemetry.RequestID, attempt.AttemptIndex, telemetry.Platform, telemetry.SourceID,
+	`, Args: []any{telemetry.RequestID, attempt.AttemptIndex, telemetry.Platform, telemetry.SourceID,
 		attempt.Provider, attempt.Model, attempt.UpstreamProtocol, attempt.HTTPCode,
 		boolToInt(attempt.Success), attempt.ErrorType, attempt.ErrorMessage, attempt.DurationSec,
 		attempt.Usage.InputTokens, attempt.Usage.OutputTokens, attempt.Usage.CacheCreateTokens,
-		attempt.Usage.CacheReadTokens, attempt.Usage.ReasoningTokens, attempt.Cost.TotalCost)
+		attempt.Usage.CacheReadTokens, attempt.Usage.ReasoningTokens, attempt.Cost.TotalCost}}
 }
 
-func usageSnapshotFromLog(log ReqeustLog) modelpricing.UsageSnapshot {
+func usageSnapshotFromLog(log RequestLog) modelpricing.UsageSnapshot {
 	snapshot := modelpricing.UsageSnapshot{
 		InputTokens: log.InputTokens, OutputTokens: log.OutputTokens,
 		ReasoningTokens: log.ReasoningTokens, CacheCreateTokens: log.CacheCreateTokens,

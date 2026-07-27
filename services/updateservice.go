@@ -385,7 +385,8 @@ func (us *UpdateService) RequestRestart() error {
 		return err
 	}
 
-	if err := os.WriteFile(pendingPath, data, 0644); err != nil {
+	// pending_apply.json 是更新状态机的持久化点，半写会让下次启动读到损坏状态
+	if err := atomicWriteFile(pendingPath, data, 0o644); err != nil {
 		us.mu.Lock()
 		us.state = StateError
 		us.lastError = fmt.Sprintf("failed to write pending apply: %v", err)
@@ -900,7 +901,7 @@ func (us *UpdateService) setDownloadError(msg string) {
 // saveDownloadState 保存下载状态
 func (us *UpdateService) saveDownloadState(path string, state *DownloadState) {
 	data, _ := json.MarshalIndent(state, "", "  ")
-	_ = os.WriteFile(path, data, 0644)
+	_ = atomicWriteFile(path, data, 0o644)
 }
 
 // launchUpdater 启动更新程序
@@ -931,69 +932,7 @@ func (us *UpdateService) launchWindowsUpdater(pending *PendingApply) error {
 		return err
 	}
 
-	pid := os.Getpid()
-	script := fmt.Sprintf(`
-$ErrorActionPreference = 'Stop'
-$oldExe = '%s'
-$newExe = '%s'
-$pid = %d
-$maxWait = 60
-
-# 等待旧进程退出
-$waited = 0
-while ($waited -lt $maxWait) {
-    try {
-        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
-        if (-not $proc) { break }
-    } catch { break }
-    Start-Sleep -Milliseconds 500
-    $waited += 0.5
-}
-
-if ($waited -ge $maxWait) {
-    Write-Error "Timeout waiting for process to exit"
-    exit 1
-}
-
-# 同卷 staging
-$stagingPath = "$oldExe.new"
-Copy-Item -Path $newExe -Destination $stagingPath -Force
-
-# 验证复制成功
-if (-not (Test-Path $stagingPath)) {
-    Write-Error "Failed to copy new executable"
-    exit 1
-}
-
-# 重命名交换（原子操作）
-$backupPath = "$oldExe.old.exe"
-$retries = 20
-for ($i = 0; $i -lt $retries; $i++) {
-    try {
-        if (Test-Path $backupPath) { Remove-Item $backupPath -Force }
-        Rename-Item -Path $oldExe -NewName (Split-Path $backupPath -Leaf) -Force
-        Rename-Item -Path $stagingPath -NewName (Split-Path $oldExe -Leaf) -Force
-        break
-    } catch {
-        if ($i -eq ($retries - 1)) {
-            # 回滚
-            if (Test-Path $backupPath) {
-                Rename-Item -Path $backupPath -NewName (Split-Path $oldExe -Leaf) -Force -ErrorAction SilentlyContinue
-            }
-            throw
-        }
-        Start-Sleep -Milliseconds 100
-    }
-}
-
-# 启动新版本
-Start-Process -FilePath $oldExe -WorkingDirectory (Split-Path $oldExe)
-
-# 清理（延迟）
-Start-Sleep -Seconds 2
-Remove-Item $backupPath -Force -ErrorAction SilentlyContinue
-Remove-Item $newExe -Force -ErrorAction SilentlyContinue
-`, exePath, pending.FilePath, pid)
+	script := buildWindowsPortableUpdateScript(exePath, pending.FilePath, os.Getpid())
 
 	scriptPath := filepath.Join(us.dataDir, "update.ps1")
 	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {

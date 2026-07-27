@@ -29,7 +29,7 @@ func TestStoredRequestCostRemainsFrozenAfterPricingRulesChange(t *testing.T) {
 		ID: "new-rule", Name: "new", Pattern: "^frozen-model$", Enabled: true, Rates: PricingRates{Input: 999},
 	}})}
 
-	entry := ReqeustLog{}
+	entry := RequestLog{}
 	if !loadStoredCost(&entry, record) {
 		t.Fatal("已计算记录应直接加载落库成本")
 	}

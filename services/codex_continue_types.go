@@ -8,7 +8,7 @@ type codexFoldState struct {
 	replayTail            []any
 	rounds                []any
 	usage                 codexFoldUsage
-	requestLog            *ReqeustLog
+	requestLog            *RequestLog
 }
 
 type codexFoldUsage struct {
@@ -58,7 +58,7 @@ func (u codexFoldUsage) publicUsage() map[string]any {
 	return usage
 }
 
-func (u codexFoldUsage) applyToLog(log *ReqeustLog) {
+func (u codexFoldUsage) applyToLog(log *RequestLog) {
 	if log == nil {
 		return
 	}

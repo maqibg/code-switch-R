@@ -89,16 +89,22 @@ func (css *CodexSettingsService) EnableProxy() error {
 		if readErr != nil {
 			return readErr
 		}
-		// 仅首次启用时创建备份，避免重复 Enable 覆盖基线
+		// 仅首次启用时创建基线备份，避免重复 Enable 覆盖基线
 		if !stateExists {
 			if err := os.WriteFile(backupPath, content, 0o600); err != nil {
 				return err
 			}
 		}
+		// 每次启用都额外留一份带时间戳的快照：基线备份只在首次启用时写，
+		// 之后用户在代理期间的编辑不在基线里，出问题时需要这份快照才能恢复。
+		if err := writeTimestampedBackup(settingsPath, content); err != nil {
+			logWarn(fmt.Sprintf("config.toml 快照备份失败: %v", err))
+		}
 		if err := toml.Unmarshal(content, &raw); err != nil {
-			// TOML 解析失败，使用空配置继续（备份已保存）
-			fmt.Printf("[警告] config.toml 格式无效，已备份到 %s，将使用空配置: %v\n", backupPath, err)
-			raw = make(map[string]any)
+			// 解析失败必须拒绝，不能用空配置继续：
+			// 那样会把用户的 mcp_servers、profiles 等全部配置覆盖掉，
+			// 而基线备份只在首次启用时写过，不含用户后来的编辑，属于不可恢复的数据丢失。
+			return fmt.Errorf("config.toml 解析失败，已中止启用以避免覆盖现有配置，请修正文件格式后重试: %w", err)
 		}
 	} else {
 		raw = make(map[string]any)
@@ -117,7 +123,7 @@ func (css *CodexSettingsService) EnableProxy() error {
 			// 备份 auth.json
 			if authContent, authReadErr := os.ReadFile(authPath); authReadErr == nil {
 				if err := os.WriteFile(authBackupPath, authContent, 0o600); err != nil {
-					fmt.Printf("[警告] auth.json 备份失败: %v\n", err)
+					logWarn(fmt.Sprintf("auth.json 备份失败: %v", err))
 				}
 				// 读取原始 API Key
 				var authPayload map[string]string
@@ -563,7 +569,7 @@ func (css *CodexSettingsService) writeAuthFile() error {
 		if unmarshalErr := json.Unmarshal(data, &payload); unmarshalErr != nil {
 			// JSON 解析失败，可能是格式损坏，使用空 map 继续
 			// 但保留日志以便调试
-			fmt.Printf("[警告] auth.json 解析失败，将使用空配置: %v\n", unmarshalErr)
+			logWarn(fmt.Sprintf("auth.json 解析失败，将使用空配置: %v", unmarshalErr))
 			payload = make(map[string]any)
 		}
 	} else if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {

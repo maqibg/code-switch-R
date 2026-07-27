@@ -99,7 +99,12 @@ export function UpdateBlacklistLevelConfig(config: $models.BlacklistLevelConfig 
 
 /**
  * UpdateBlacklistSettings 更新黑名单配置
- * 使用 Saga 模式保证数据一致性（因队列无法使用事务）
+ * UpdateBlacklistSettings 同时更新失败阈值和拉黑时长。
+ * 
+ * 早先这里是"Saga 模式 + 手工补偿回滚"——两条 UPDATE 分别提交，第二条失败时
+ * 再写一次把第一条改回去。那是因为所有写入都必须过队列，而队列没法开事务。
+ * 去掉队列后，同一张表的两行更新就是一个普通事务，补偿逻辑随之删除：
+ * 事务要么都生效要么都不生效，不存在"改了一半"的中间态。
  */
 export function UpdateBlacklistSettings(threshold: number, duration: number): $CancellablePromise<void> {
     return $Call.ByID(833260620, threshold, duration);

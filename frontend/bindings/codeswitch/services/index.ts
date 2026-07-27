@@ -151,7 +151,7 @@ export {
     ReasonixProxyStatus,
     RecordCleanupResult,
     RecordStorageInfo,
-    ReqeustLog,
+    RequestLog,
     RequestLogPage,
     RetryConfig,
     Skill,

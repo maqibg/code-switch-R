@@ -142,8 +142,8 @@ func (prs *ProviderRelayService) foldCodexResponsesStream(
 	}
 }
 
-func codexContinueRoundRequestLog(provider Provider, model string, response *xrequest.Response, usage map[string]any) ReqeustLog {
-	logEntry := ReqeustLog{Platform: "codex", Provider: provider.Name, Model: model, IsStream: true}
+func codexContinueRoundRequestLog(provider Provider, model string, response *xrequest.Response, usage map[string]any) RequestLog {
+	logEntry := RequestLog{Platform: "codex", Provider: provider.Name, Model: model, IsStream: true}
 	if response != nil {
 		logEntry.HttpCode = response.StatusCode()
 	}

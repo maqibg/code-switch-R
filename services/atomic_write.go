@@ -4,17 +4,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 )
 
-var atomicWriteMutex sync.Mutex
+// atomicWriteLocks 按目标路径分段加锁。
+//
+// 早先这里是一把全局互斥锁，任意两个原子写都会互相串行——写 app.json 会阻塞
+// 写 provider JSON，而它们根本没有共享状态。改为按路径加锁后，只有针对同一个
+// 文件的并发写才需要排队。配置文件路径数量有限且由固定的 path 辅助函数生成，
+// 所以这个 map 不会无界增长。
+var atomicWriteLocks sync.Map // map[string]*sync.Mutex
+
+// atomicWriteLockKey 归一化路径作为锁的 key。
+// Windows 上文件名大小写不敏感，必须统一大小写，否则同一文件的两种写法会拿到两把锁。
+func atomicWriteLockKey(path string) string {
+	cleaned := filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(cleaned)
+	}
+	return cleaned
+}
+
+func atomicWriteLockFor(path string) *sync.Mutex {
+	actual, _ := atomicWriteLocks.LoadOrStore(atomicWriteLockKey(path), &sync.Mutex{})
+	return actual.(*sync.Mutex)
+}
 
 // atomicWriteFile 原子写入文件（跨平台）
 // 策略：写入临时文件 → fsync → 重命名
 // 防止断电或崩溃导致状态文件损坏
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	atomicWriteMutex.Lock()
-	defer atomicWriteMutex.Unlock()
+	mu := atomicWriteLockFor(path)
+	mu.Lock()
+	defer mu.Unlock()
 
 	dir := filepath.Dir(path)
 

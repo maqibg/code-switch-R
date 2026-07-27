@@ -76,46 +76,8 @@ func ensureProviderDeleteTables() error {
 	if err := ensureBlacklistTables(); err != nil {
 		return fmt.Errorf("初始化 provider_blacklist 表失败: %w", err)
 	}
-	if err := ensureHealthCheckHistoryTable(); err != nil {
-		return fmt.Errorf("初始化 health_check_history 表失败: %w", err)
-	}
 	if err := ensureProviderAliasTable(); err != nil {
 		return fmt.Errorf("初始化 provider_alias 表失败: %w", err)
-	}
-	return nil
-}
-
-func ensureHealthCheckHistoryTable() error {
-	db, err := xdb.DB("default")
-	if err != nil {
-		return fmt.Errorf("获取数据库连接失败: %w", err)
-	}
-
-	const createSQL = `CREATE TABLE IF NOT EXISTS health_check_history (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		provider_id INTEGER NOT NULL,
-		provider_name TEXT NOT NULL,
-		platform TEXT NOT NULL,
-		model TEXT,
-		endpoint TEXT,
-		status TEXT NOT NULL,
-		latency_ms INTEGER,
-		error_message TEXT,
-		checked_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`
-	if _, err := db.Exec(createSQL); err != nil {
-		return fmt.Errorf("创建 health_check_history 表失败: %w", err)
-	}
-	return ensureHealthCheckHistoryIndexes(db)
-}
-
-func ensureHealthCheckHistoryIndexes(db *sql.DB) error {
-	const createSQL = `
-		CREATE INDEX IF NOT EXISTS idx_health_provider ON health_check_history(platform, provider_name);
-		CREATE INDEX IF NOT EXISTS idx_health_checked_at ON health_check_history(checked_at);
-	`
-	if _, err := db.Exec(createSQL); err != nil {
-		return fmt.Errorf("创建 health_check_history 索引失败: %w", err)
 	}
 	return nil
 }
@@ -175,12 +137,6 @@ func deleteDeletedProviderNameRows(tx *sql.Tx, platform, name string) error {
 		return fmt.Errorf("删除 provider_blacklist 失败: %w", err)
 	}
 	if _, err := tx.Exec(
-		`DELETE FROM health_check_history WHERE platform = ? AND provider_name = ?`,
-		platform, name,
-	); err != nil {
-		return fmt.Errorf("删除 health_check_history 失败: %w", err)
-	}
-	if _, err := tx.Exec(
 		`DELETE FROM provider_alias WHERE platform = ? AND (alias_name = ? OR canonical_name = ?)`,
 		platform, name, name,
 	); err != nil {
@@ -218,12 +174,6 @@ func deleteRelayAttemptProviderNameRows(tx *sql.Tx, scope providerDataScope, nam
 func deleteDeletedProviderIDRows(tx *sql.Tx, platform string, providerID int64) error {
 	if providerID == 0 {
 		return nil
-	}
-	if _, err := tx.Exec(
-		`DELETE FROM health_check_history WHERE platform = ? AND provider_id = ?`,
-		platform, providerID,
-	); err != nil {
-		return fmt.Errorf("按 provider_id 删除 health_check_history 失败: %w", err)
 	}
 	if _, err := tx.Exec(
 		`DELETE FROM provider_alias WHERE platform = ? AND provider_id = ?`,

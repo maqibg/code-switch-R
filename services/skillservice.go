@@ -913,11 +913,7 @@ func (ss *SkillService) saveStoreLocked(store skillStore) error {
 	if err != nil {
 		return err
 	}
-	tmp := ss.storePath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, ss.storePath)
+	return atomicWriteFile(ss.storePath, data, 0o644)
 }
 
 func (ss *SkillService) prepareRepoSnapshot(repo skillRepoConfig) (string, string, func(), error) {

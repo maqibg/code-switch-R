@@ -176,7 +176,7 @@ func deleteRowsBeforeInBatches(table, cutoff string, count int64) error {
 		return fmt.Errorf("不支持的保留策略表: %s", table)
 	}
 	for remaining := count; remaining > 0; remaining -= retentionDeleteBatch {
-		if err := GlobalDBQueue.Exec(query, cutoff, retentionDeleteBatch); err != nil {
+		if err := dbExec(query, cutoff, retentionDeleteBatch); err != nil {
 			return fmt.Errorf("清理 %s 过期记录失败: %w", table, err)
 		}
 	}

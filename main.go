@@ -101,8 +101,9 @@ func main() {
 	var focusMainWindow func()
 	var showMainWindow func(bool)
 
-	// 【修复】第一步：初始化数据库（必须最先执行）
-	// 解决问题：InitGlobalDBQueue 依赖 xdb.DB("default")，但 xdb.Inits() 在 NewProviderRelayService 中
+	// 第一步：初始化数据库（必须最先执行，其余服务都依赖它）
+	// WAL + DSN 级 busy_timeout 由 InitDatabase 设置并校验，写入直接走短事务，
+	// 不再需要单独的写入队列（见 services/dbwrite.go 的说明）。
 	if err := services.InitDatabase(); err != nil {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
@@ -111,13 +112,7 @@ func main() {
 		log.Printf("清理已移除的 DeepSeekCode 托管配置失败: %v", err)
 	}
 
-	// 【修复】第二步：初始化写入队列（依赖数据库连接）
-	if err := services.InitGlobalDBQueue(); err != nil {
-		log.Fatalf("初始化数据库队列失败: %v", err)
-	}
-	log.Println("✅ 数据库写入队列已启动")
-
-	// 【修复】第三步：创建服务（现在可以安全使用数据库了）
+	// 第二步：创建服务（现在可以安全使用数据库了）
 	suiService, errt := services.NewSuiStore()
 	if errt != nil {
 		log.Fatalf("SuiStore 初始化失败: %v", errt)
@@ -267,19 +262,12 @@ func main() {
 		// 3. 停止代理服务器
 		_ = providerRelay.Stop()
 
-		// 4. 优雅关闭数据库写入队列（10秒超时，双队列架构）
-		if err := services.ShutdownGlobalDBQueue(10 * time.Second); err != nil {
-			log.Printf("⚠️ 队列关闭超时: %v", err)
+		// 4. 关闭数据库连接
+		// 写入不再经过队列，所有写都是同步短事务，进程退出时没有待排空的缓冲。
+		if err := services.CloseDatabase(); err != nil {
+			log.Printf("⚠️ 数据库关闭失败: %v", err)
 		} else {
-			// 单次队列统计
-			stats1 := services.GetGlobalDBQueueStats()
-			log.Printf("✅ 单次队列已关闭，统计：成功=%d 失败=%d 平均延迟=%.2fms",
-				stats1.SuccessWrites, stats1.FailedWrites, stats1.AvgLatencyMs)
-
-			// 批量队列统计
-			stats2 := services.GetGlobalDBQueueLogsStats()
-			log.Printf("✅ 批量队列已关闭，统计：成功=%d 失败=%d 平均延迟=%.2fms（批均分） 批次=%d",
-				stats2.SuccessWrites, stats2.FailedWrites, stats2.AvgLatencyMs, stats2.BatchCommits)
+			log.Println("✅ 数据库已关闭")
 		}
 
 		log.Println("✅ 所有后台服务已停止")

@@ -19,7 +19,7 @@ func (prs *ProviderRelayService) forwardCodexResponsesWithContinue(
 	clientHeaders map[string]string,
 	bodyBytes []byte,
 	model string,
-	requestLog *ReqeustLog,
+	requestLog *RequestLog,
 ) (bool, error) {
 	if execution == nil {
 		return false, fmt.Errorf("Codex relay execution 未初始化")
@@ -73,7 +73,7 @@ func (prs *ProviderRelayService) forwardCodexResponsesWithContinue(
 	}
 	if !isEventStream(resp) {
 		logCodexContinue("WARN", traceID, "上游未返回 SSE，自动续写不会继续 | http=%d", status)
-		_, copyErr := resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, "codex", requestLog))
+		_, copyErr := resp.ToHttpResponseWriter(c.Writer, RequestLogHook(c, "codex", requestLog))
 		prs.recordCodexContinueAttempt(c, provider, execution, *requestLog, attemptStarted, copyErr == nil, copyErr)
 		return copyErr == nil, copyErr
 	}
@@ -94,7 +94,7 @@ func (prs *ProviderRelayService) recordCodexContinueAttempt(
 	c *gin.Context,
 	provider Provider,
 	execution *relayForwardExecution,
-	usage ReqeustLog,
+	usage RequestLog,
 	started time.Time,
 	success bool,
 	err error,

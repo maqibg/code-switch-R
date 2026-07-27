@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -99,7 +100,16 @@ func (prs *ProviderRelayService) prepareCodexResponsesToChatExecution(execution 
 	}
 	var history []map[string]any
 	if previousID := codexPreviousResponseIDFromBytes(execution.BodyBytes); previousID != "" {
-		history, _ = prs.codexChatHistory.LoadReadOnly(previousID)
+		var found bool
+		history, found = prs.codexChatHistory.LoadReadOnly(previousID)
+		if !found {
+			// 未命中不是可以静默忽略的情况：客户端明确带了 previous_response_id，
+			// 说明它认为这是一次续聊。历史缺失（LRU 淘汰或应用重启）会让上游
+			// 只收到最后一轮消息，模型表现为"失忆"而客户端收不到任何错误提示。
+			// 这里至少让它在日志里可见，便于定位"答非所问"类问题。
+			fmt.Printf("[WARN] Codex Chat bridge 未找到 previous_response_id=%s 的会话历史，"+
+				"本轮将不带历史转发（可能由缓存淘汰或应用重启导致）\n", previousID)
+		}
 	}
 	convertedBody, messages, err := ConvertCodexResponsesToOpenAIChatWithHistory(execution.BodyBytes, history)
 	if err != nil {
@@ -173,15 +183,16 @@ func (prs *ProviderRelayService) copyRelayExecutionResponse(
 	c *gin.Context,
 	resp *xrequest.Response,
 	execution *relayForwardExecution,
-	requestLog *ReqeustLog,
+	requestLog *RequestLog,
 ) error {
 	if execution.BufferedMatrixBridge {
 		return prs.writeBufferedMatrixResponse(c, resp, execution, requestLog)
 	}
 	if execution.MatrixSSEConverter != nil && execution.IsStream {
-		_, err := resp.ToHttpResponseWriter(c.Writer, protocolMatrixHook(execution.MatrixSSEConverter, execution.RoutePlan.ClientProtocol, requestLog))
+		tracked := newClientTrackingWriter(c.Writer)
+		_, err := resp.ToHttpResponseWriter(tracked, protocolMatrixHook(execution.MatrixSSEConverter, execution.RoutePlan.ClientProtocol, requestLog))
 		if err != nil {
-			return err
+			return classifyCopyError(err, tracked)
 		}
 		if err := execution.MatrixSSEConverter.Err(); err != nil {
 			return err
@@ -199,9 +210,10 @@ func (prs *ProviderRelayService) copyRelayExecutionResponse(
 	}
 	if execution.RoutePlan.Bridge == relayprotocol.BridgeCodexResponsesToChat && execution.IsStream {
 		converter := NewCodexChatSSEConverter(execution.Model)
-		_, err := resp.ToHttpResponseWriter(c.Writer, codexChatBridgeHook(converter, requestLog))
+		tracked := newClientTrackingWriter(c.Writer)
+		_, err := resp.ToHttpResponseWriter(tracked, codexChatBridgeHook(converter, requestLog))
 		if err != nil {
-			return err
+			return classifyCopyError(err, tracked)
 		}
 		if err := converter.Err(); err != nil {
 			return err
@@ -214,11 +226,12 @@ func (prs *ProviderRelayService) copyRelayExecutionResponse(
 	if execution.RoutePlan.Bridge == relayprotocol.BridgeCodexResponsesToChat {
 		return prs.writeCodexChatBridgeResponse(c, resp, requestLog, execution.CodexChatMessages)
 	}
-	_, err := resp.ToHttpResponseWriter(c.Writer, requestLogProtocolHook(execution.RoutePlan.UpstreamProtocol, requestLog))
-	return err
+	tracked := newClientTrackingWriter(c.Writer)
+	_, err := resp.ToHttpResponseWriter(tracked, requestLogProtocolHook(execution.RoutePlan.UpstreamProtocol, requestLog))
+	return classifyCopyError(err, tracked)
 }
 
-func requestLogProtocolHook(protocol relayprotocol.Protocol, usage *ReqeustLog) func(data []byte) (bool, []byte) {
+func requestLogProtocolHook(protocol relayprotocol.Protocol, usage *RequestLog) func(data []byte) (bool, []byte) {
 	return func(data []byte) (bool, []byte) {
 		payload := strings.TrimSpace(string(data))
 		switch protocol {

@@ -103,6 +103,14 @@ func NewPiSettingsService(relayAddr string, providerService *ProviderService) *P
 	}
 	if providerService != nil {
 		service.providerLoader = func() ([]Provider, error) { return providerService.LoadProviders("pi") }
+		// 装配 pi 平台保存后的网关同步回调。
+		// 不装配的话，任何绕过 PiSettingsService 直接调 ProviderService.SaveProviders("pi", ...)
+		// 的入口（例如 DeepLinkService 导入）都不会同步 ~/.pi/agent/models.json，
+		// 导致应用内配置与 Pi CLI 侧静默漂移。
+		//
+		// 回调只使用传入的 provider 快照，不会反向调用 ProviderService，
+		// 因此在 saveProvidersLocked 持锁期间调用是安全的。
+		providerService.setPiGatewaySync(service.syncGatewayIfEnabledWithProviders)
 	}
 	if state, err := service.loadUIState(); err == nil {
 		setPiDebugLogging(state.DebugLogging)

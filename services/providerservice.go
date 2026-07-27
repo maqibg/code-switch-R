@@ -148,36 +148,24 @@ func NewProviderService() *ProviderService {
 func (ps *ProviderService) Start() error { return nil }
 func (ps *ProviderService) Stop() error  { return nil }
 
+// providerFilePath 返回 provider 配置文件路径，必要时创建目录。
+// kind → 文件名的映射统一由 platform_registry.go 的 providerFileNameFor 提供。
 func providerFilePath(kind string) (string, error) {
 	dir, err := ensureAppConfigDir()
 	if err != nil {
 		return "", err
 	}
-	var filename string
-	switch strings.ToLower(kind) {
-	case "claude", "claude-code", "claude_code":
-		filename = "claude-code.json"
-	case "codex":
-		filename = "codex.json"
-	case "reasonix":
-		filename = "reasonix.json"
-	case "pi":
-		filename = "pi.json"
-	default:
-		// 支持自定义 CLI 工具的供应商存储：custom:{tool-id}
-		if strings.HasPrefix(kind, "custom:") {
-			toolId := strings.TrimPrefix(kind, "custom:")
-			if toolId == "" {
-				return "", fmt.Errorf("invalid custom provider kind: %s", kind)
-			}
-			// 存储在 providers 子目录下
-			providersDir := filepath.Join(dir, "providers")
-			if err := os.MkdirAll(providersDir, 0o755); err != nil {
-				return "", err
-			}
-			return filepath.Join(providersDir, toolId+".json"), nil
+	filename, customToolID, err := providerFileNameFor(kind)
+	if err != nil {
+		return "", err
+	}
+	if customToolID != "" {
+		// 自定义 CLI 的供应商存放在 providers/ 子目录
+		providersDir := filepath.Join(dir, "providers")
+		if err := os.MkdirAll(providersDir, 0o755); err != nil {
+			return "", err
 		}
-		return "", fmt.Errorf("unknown provider type: %s", kind)
+		return filepath.Join(providersDir, filename), nil
 	}
 	return filepath.Join(dir, filename), nil
 }

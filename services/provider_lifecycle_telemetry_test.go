@@ -192,7 +192,6 @@ func TestCustomProviderLifecycleScopesTelemetryBySourceID(t *testing.T) {
 	seedRelayAttempt(t, "custom", "tool-a", "old", 2)
 	seedRelayAttempt(t, "custom", "tool-b", "old", 1)
 	seedBlacklist(t, kind, "old")
-	seedHealthCheck(t, kind, 1, "old")
 
 	if err := service.RenameProvider(kind, 1, "new"); err != nil {
 		t.Fatalf("custom Provider 改名失败: %v", err)

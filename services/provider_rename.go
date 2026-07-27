@@ -290,7 +290,7 @@ func validateProviderSetUnchanged(existingProviders, providers []Provider) error
 }
 
 // doRenameTx 在 tx 内完成 DB 侧所有改动:
-// request_log.provider / provider_blacklist.provider_name / health_check_history + 写 alias。
+// request_log.provider / relay_attempt.provider / provider_blacklist.provider_name + 写 alias。
 func doRenameTx(tx *sql.Tx, scope providerDataScope, providerID int64, oldName, newName string) error {
 	if err := updateRequestLogProviderNameTx(tx, scope, oldName, newName); err != nil {
 		return fmt.Errorf("更新 request_log 失败: %w", err)
@@ -304,13 +304,6 @@ func doRenameTx(tx *sql.Tx, scope providerDataScope, providerID int64, oldName, 
 		newName, scope.identityPlatform, oldName,
 	); err != nil {
 		return fmt.Errorf("更新 provider_blacklist 失败: %w", err)
-	}
-
-	if _, err := tx.Exec(
-		`UPDATE health_check_history SET provider_name = ? WHERE platform = ? AND provider_id = ?`,
-		newName, scope.identityPlatform, providerID,
-	); err != nil {
-		return fmt.Errorf("更新 health_check_history 失败: %w", err)
 	}
 
 	expiresAt := time.Now().Add(aliasTTL).UTC().Format("2006-01-02 15:04:05")
@@ -467,26 +460,28 @@ func ResolveProviderAlias(platform, name string) string {
 }
 
 // resolvePlatform 把 kind 归一到 DB 使用的 platform 值(与 request_log/blacklist 一致)。
+//
+// 别名匹配统一交给 platform_registry.go 的 resolvePlatformID，
+// 不再在这里重复维护一份别名列表——之前 claude 的三种写法在多个文件里各写一遍，
+// 新增平台时漏改任何一处都会让同一平台在日志和黑名单里出现两个不同的 scope key。
+//
+// gemini 不在 provider 注册表里（它由独立的 GeminiService 管理，不走
+// ProviderService 的 JSON 存储），但 DB 侧仍用 "gemini" 作为 platform 值，
+// 所以这里单独处理。
 func resolvePlatform(kind string) (string, error) {
 	trimmed := strings.TrimSpace(kind)
 	normalized := strings.ToLower(trimmed)
-	switch normalized {
-	case "claude", "claude-code", "claude_code":
-		return "claude", nil
-	case "codex":
-		return "codex", nil
-	case "gemini":
-		return "gemini", nil
-	case "reasonix":
-		return "reasonix", nil
-	case "pi":
-		return "pi", nil
-	default:
-		if strings.HasPrefix(normalized, "custom:") && len(normalized) > len("custom:") {
-			return "custom:" + strings.TrimSpace(trimmed[len("custom:"):]), nil
-		}
-		return "", fmt.Errorf("不支持的 provider kind: %s", kind)
+
+	if id := resolvePlatformID(normalized); id != "" {
+		return id, nil
 	}
+	if normalized == "gemini" {
+		return "gemini", nil
+	}
+	if strings.HasPrefix(normalized, customProviderKindPrefix) && len(normalized) > len(customProviderKindPrefix) {
+		return customProviderKindPrefix + strings.TrimSpace(trimmed[len(customProviderKindPrefix):]), nil
+	}
+	return "", fmt.Errorf("不支持的 provider kind: %s", kind)
 }
 
 // serializeProviders 按 saveProvidersLocked 相同的 MarshalIndent 格式输出。

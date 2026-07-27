@@ -441,7 +441,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 		// 如果未指定模型，记录警告但不拦截
 		if requestedModel == "" {
-			fmt.Printf("[WARN] 请求未指定模型名，无法执行模型智能降级\n")
+			logWarn("请求未指定模型名，无法执行模型智能降级")
 		}
 
 		providers, err := prs.providerService.LoadProviders(kind)
@@ -463,7 +463,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 			// 配置验证：失败则自动跳过
 			if errs := provider.CachedValidationErrors(); len(errs) > 0 {
-				fmt.Printf("[WARN] Provider %s 配置验证失败，已自动跳过: %v\n", provider.Name, errs)
+				logWarn(fmt.Sprintf("Provider %s 配置验证失败，已自动跳过: %v", provider.Name, errs))
 				skippedCount++
 				continue
 			}
@@ -500,7 +500,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		}
 
 		if relayDebugLogging {
-			fmt.Printf("[INFO] 找到 %d 个可用的 provider（已过滤 %d 个）：", len(active), skippedCount)
+			logInfo(fmt.Sprintf("找到 %d 个可用的 provider（已过滤 %d 个）：", len(active), skippedCount))
 			for _, p := range active {
 				fmt.Printf("%s ", p.Name)
 			}
@@ -584,7 +584,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						relayDebugf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
 						modifiedBody, modifiedEndpoint, err := applyPiAwareModelMapping(bodyBytes, effectiveEndpoint, requestedModel, effectiveModel, clientProtocol)
 						if err != nil {
-							fmt.Printf("[ERROR] 模型映射失败: %v，跳过此 Provider\n", err)
+							logError(fmt.Sprintf("模型映射失败: %v，跳过此 Provider", err))
 							continue
 						}
 						currentBodyBytes = modifiedBody
@@ -612,7 +612,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 							relayDebugf("[INFO] ✓ 成功: %s | 重试 %d 次 | 耗时: %.2fs\n",
 								provider.Name, retryCount+1, duration.Seconds())
 							if err := prs.blacklistService.RecordSuccess(relayScope, provider.Name); err != nil {
-								fmt.Printf("[WARN] 清零失败计数失败: %v\n", err)
+								logWarn(fmt.Sprintf("清零失败计数失败: %v", err))
 							}
 							prs.setLastUsedProvider(relayScope, provider.Name)
 							return
@@ -626,8 +626,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						if err != nil {
 							errorMsg = err.Error()
 						}
-						fmt.Printf("[WARN] ✗ 失败: %s | 重试 %d/%d | 错误: %s | 耗时: %.2fs\n",
-							provider.Name, retryCount+1, maxRetryPerProvider, errorMsg, duration.Seconds())
+						logWarn("转发失败",
+							"provider", provider.Name,
+							"retry", fmt.Sprintf("%d/%d", retryCount+1, maxRetryPerProvider),
+							"error", errorMsg,
+							"duration_sec", fmt.Sprintf("%.2f", duration.Seconds()))
 
 						// 客户端请求被拒绝（不支持的格式/功能）：直接返回 400，不重试不拉黑
 						if errors.Is(err, ErrClientRequestRejected) {
@@ -646,13 +649,19 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 							return
 						}
 						if errors.Is(err, errResponseCommitted) {
-							fmt.Printf("[WARN] 响应已发送，停止重试和 Provider 降级: %v\n", err)
+							// 响应已提交：不能再切换 Provider（否则客户端会收到拼接的两段响应），
+							// 但失败仍要计入 provider 记账——否则"上游每次都在流中途断开"
+							// 这类坏 provider 永远攒不够失败次数，拉黑对它完全失效。
+							logWarn(fmt.Sprintf("响应已发送，停止重试和 Provider 降级（仍计失败）: %v", err))
+							if recordErr := prs.blacklistService.RecordFailure(relayScope, provider.Name); recordErr != nil {
+								logError(fmt.Sprintf("记录失败到黑名单失败: %v", recordErr))
+							}
 							return
 						}
 
 						// 记录失败次数（可能触发拉黑）
 						if err := prs.blacklistService.RecordFailure(relayScope, provider.Name); err != nil {
-							fmt.Printf("[ERROR] 记录失败到黑名单失败: %v\n", err)
+							logError(fmt.Sprintf("记录失败到黑名单失败: %v", err))
 						}
 
 						// 检查是否刚被拉黑
@@ -673,7 +682,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			}
 
 			// 所有 Provider 都失败或被拉黑
-			fmt.Printf("[ERROR] 💥 拉黑模式：所有 Provider 都失败或被拉黑（共尝试 %d 次）\n", totalAttempts)
+			logError(fmt.Sprintf("💥 拉黑模式：所有 Provider 都失败或被拉黑（共尝试 %d 次）", totalAttempts))
 
 			errorMsg := "未知错误"
 			if lastError != nil {
@@ -726,7 +735,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 					modifiedBody, modifiedEndpoint, err := applyPiAwareModelMapping(bodyBytes, effectiveEndpoint, requestedModel, effectiveModel, clientProtocol)
 					if err != nil {
-						fmt.Printf("[ERROR] 替换模型名失败: %v\n", err)
+						logError(fmt.Sprintf("替换模型名失败: %v", err))
 						// 映射失败不应阻止尝试其他 provider
 						continue
 					}
@@ -746,7 +755,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 					// 成功：清零连续失败计数
 					if err := prs.blacklistService.RecordSuccess(relayScope, provider.Name); err != nil {
-						fmt.Printf("[WARN] 清零失败计数失败: %v\n", err)
+						logWarn(fmt.Sprintf("清零失败计数失败: %v", err))
 					}
 
 					// 记录最后使用的供应商
@@ -764,8 +773,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				if err != nil {
 					errorMsg = err.Error()
 				}
-				fmt.Printf("[WARN]   ✗ Level %d 失败: %s | 错误: %s | 耗时: %.2fs\n",
-					level, provider.Name, errorMsg, duration.Seconds())
+				logWarn("Level 内转发失败",
+					"level", level,
+					"provider", provider.Name,
+					"error", errorMsg,
+					"duration_sec", fmt.Sprintf("%.2f", duration.Seconds()))
 
 				// 客户端请求被拒绝（不支持的格式/功能）：直接返回 400，不重试不拉黑
 				if errors.Is(err, ErrClientRequestRejected) {
@@ -778,7 +790,13 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					return
 				}
 				if errors.Is(err, errResponseCommitted) {
-					fmt.Printf("[WARN] 响应已发送，停止 Provider 降级: %v\n", err)
+					// 响应已提交后不能再降级，但上游侧失败仍要记账（见拉黑模式分支的同类处理）
+					logWarn(fmt.Sprintf("响应已发送，停止 Provider 降级: %v", err))
+					if errors.Is(err, errClientAbort) {
+						relayDebugf("[INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
+					} else if recordErr := prs.blacklistService.RecordFailure(relayScope, provider.Name); recordErr != nil {
+						logError(fmt.Sprintf("记录失败到黑名单失败: %v", recordErr))
+					}
 					return
 				}
 
@@ -786,7 +804,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				if errors.Is(err, errClientAbort) {
 					relayDebugf("[INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
 				} else if err := prs.blacklistService.RecordFailure(relayScope, provider.Name); err != nil {
-					fmt.Printf("[ERROR] 记录失败到黑名单失败: %v\n", err)
+					logError(fmt.Sprintf("记录失败到黑名单失败: %v", err))
 				}
 
 				// 发送切换通知：检查是否有下一个可用的 provider
@@ -815,7 +833,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				}
 			}
 
-			fmt.Printf("[WARN] Level %d 的所有 %d 个 provider 均失败，尝试下一 Level\n", level, len(providersInLevel))
+			logWarn(fmt.Sprintf("Level %d 的所有 %d 个 provider 均失败，尝试下一 Level", level, len(providersInLevel)))
 		}
 
 		// 所有 provider 都失败，返回 502
@@ -823,8 +841,10 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		if lastError != nil {
 			errorMsg = lastError.Error()
 		}
-		fmt.Printf("[ERROR] 所有 %d 个 provider 均失败，最后尝试: %s | 错误: %s\n",
-			totalAttempts, lastProvider, errorMsg)
+		logError("所有 provider 均失败",
+			"total_attempts", totalAttempts,
+			"last_provider", lastProvider,
+			"error", errorMsg)
 
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error":          fmt.Sprintf("所有 %d 个 provider 均失败，最后错误: %s", totalAttempts, errorMsg),
@@ -860,7 +880,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	isStream bool,
 	model string,
 ) (success bool, forwardErr error) {
-	requestLog := ReqeustLog{Platform: kind, Provider: provider.Name, Model: model, IsStream: isStream}
+	requestLog := RequestLog{Platform: kind, Provider: provider.Name, Model: model, IsStream: isStream}
 	attemptStarted := time.Now()
 	var execution *relayForwardExecution
 	defer func() {
@@ -901,6 +921,10 @@ func (prs *ProviderRelayService) forwardRequest(
 	}
 
 	req := xrequest.New().
+		// 绑定客户端请求 context：客户端断开时立即释放上游连接。
+		// 否则配合下面 32 小时的超时，非流式请求会在客户端离开后继续占用
+		// goroutine 和上游连接，最长可达 32 小时。
+		WithContext(c.Request.Context()).
 		SetHeaders(headers).
 		SetQueryParams(query).
 		SetRetry(0, 0).
@@ -976,19 +1000,10 @@ func (prs *ProviderRelayService) forwardRequest(
 
 	// 状态码为 0 且无错误：当作成功处理
 	if status == 0 {
-		fmt.Printf("[WARN] Provider %s 返回状态码 0，但无错误，当作成功处理\n", provider.Name)
+		logWarn(fmt.Sprintf("Provider %s 返回状态码 0，但无错误，当作成功处理", provider.Name))
 		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, &requestLog)
 		if copyErr != nil {
-			if c.Request.Context().Err() != nil {
-				return false, fmt.Errorf("%w: %v", errClientAbort, copyErr)
-			}
-			if execution.RoutePlan.NeedsTransform {
-				if c.Writer.Written() {
-					return false, fmt.Errorf("%w: 协议响应转换失败: %v", errResponseCommitted, copyErr)
-				}
-				return false, fmt.Errorf("协议响应转换失败: %w", copyErr)
-			}
-			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
+			return prs.judgeResponseCopyFailure(c, provider, execution, copyErr)
 		}
 		return true, nil
 	}
@@ -996,18 +1011,8 @@ func (prs *ProviderRelayService) forwardRequest(
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
 		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, &requestLog)
 		if copyErr != nil {
-			if c.Request.Context().Err() != nil {
-				return false, fmt.Errorf("%w: %v", errClientAbort, copyErr)
-			}
-			if execution.RoutePlan.NeedsTransform {
-				if c.Writer.Written() {
-					return false, fmt.Errorf("%w: 协议响应转换失败: %v", errResponseCommitted, copyErr)
-				}
-				return false, fmt.Errorf("协议响应转换失败: %w", copyErr)
-			}
-			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
+			return prs.judgeResponseCopyFailure(c, provider, execution, copyErr)
 		}
-		// 只要provider返回了2xx状态码，就算成功（复制失败是客户端问题，不是provider问题）
 		return true, nil
 	}
 
@@ -1027,6 +1032,12 @@ func extractUpstreamError(resp *xrequest.Response) string {
 	body := resp.String()
 	// SSE 流式响应时 String() 返回空，回退到直接读取 RawResponse.Body（带超时防御）
 	if body == "" && resp.RawResponse != nil && resp.RawResponse.Body != nil {
+		// 这里的 Body 只用于提取错误摘要，读完即弃。
+		// 无论读取成功、失败还是超时都必须关闭：这是失败降级路径，
+		// 上游持续 429/5xx 时每次失败都会走到这里，不关闭会持续泄漏连接和
+		// http transport 的后台读循环 goroutine。
+		defer resp.RawResponse.Body.Close()
+
 		done := make(chan []byte, 1)
 		go func() {
 			raw, err := io.ReadAll(io.LimitReader(resp.RawResponse.Body, 512))
@@ -1042,8 +1053,7 @@ func extractUpstreamError(resp *xrequest.Response) string {
 				body = string(raw)
 			}
 		case <-time.After(500 * time.Millisecond):
-			// 超时放弃，关闭 Body 中断后台读取，避免 goroutine 泄漏
-			resp.RawResponse.Body.Close()
+			// 超时放弃，交给 defer 关闭 Body 以中断后台读取
 		}
 	}
 	if body == "" {
@@ -1263,7 +1273,7 @@ func ensureRelayAttemptTable(db *sql.DB) error {
 	return err
 }
 
-func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []byte) (bool, []byte) { // SSE 钩子：累计字节和解析 token 用量
+func RequestLogHook(c *gin.Context, kind string, usage *RequestLog) func(data []byte) (bool, []byte) { // SSE 钩子：累计字节和解析 token 用量
 	return func(data []byte) (bool, []byte) {
 		payload := strings.TrimSpace(string(data))
 
@@ -1282,7 +1292,7 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 	}
 }
 
-func parseEventPayload(payload string, parser func(string, *ReqeustLog), usage *ReqeustLog) {
+func parseEventPayload(payload string, parser func(string, *RequestLog), usage *RequestLog) {
 	hasData := false
 	for _, line := range strings.Split(payload, "\n") {
 		line = strings.TrimSpace(line)
@@ -1300,7 +1310,7 @@ func parseEventPayload(payload string, parser func(string, *ReqeustLog), usage *
 	}
 }
 
-type ReqeustLog struct {
+type RequestLog struct {
 	ID                int64  `json:"id"`
 	RequestID         string `json:"request_id,omitempty"`
 	Platform          string `json:"platform"` // claude、codex 或 gemini
@@ -1350,7 +1360,7 @@ type ReqeustLog struct {
 //
 // 对每个字段取 max,既兼容 message_delta 的累计语义,也兼容多事件重复出现的字段,避免重复计费。
 // 参考 https://docs.anthropic.com/en/api/messages-streaming
-func ClaudeCodeParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+func ClaudeCodeParseTokenUsageFromResponse(data string, usage *RequestLog) {
 	if !strings.Contains(data, `"usage"`) {
 		return
 	}
@@ -1371,7 +1381,7 @@ func waitForRetry(ctx context.Context, delay time.Duration) bool {
 }
 
 // collectAnthropicUsage 从指定前缀(message.usage 或 usage)提取 Anthropic 字段,取 max 避免 += 累计导致的翻倍。
-func collectAnthropicUsage(data, prefix string, usage *ReqeustLog) {
+func collectAnthropicUsage(data, prefix string, usage *RequestLog) {
 	maxIntInto(&usage.InputTokens, int(gjson.Get(data, prefix+".input_tokens").Int()))
 	maxIntInto(&usage.OutputTokens, int(gjson.Get(data, prefix+".output_tokens").Int()))
 	maxIntInto(&usage.CacheCreateTokens, int(gjson.Get(data, prefix+".cache_creation_input_tokens").Int()))
@@ -1391,7 +1401,7 @@ func maxIntInto(dst *int, candidate int) {
 }
 
 // codex usage parser(OpenAI Responses API)
-func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+func CodexParseTokenUsageFromResponse(data string, usage *RequestLog) {
 	for _, prefix := range []string{"response.usage", "usage"} {
 		maxIntInto(&usage.InputTokens, int(gjson.Get(data, prefix+".input_tokens").Int()))
 		maxIntInto(&usage.OutputTokens, int(gjson.Get(data, prefix+".output_tokens").Int()))
@@ -1408,7 +1418,7 @@ func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 }
 
 // reasonix usage parser(DeepSeek OpenAI-compatible Chat Completions API)
-func ReasonixParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+func ReasonixParseTokenUsageFromResponse(data string, usage *RequestLog) {
 	maxIntInto(&usage.InputTokens, int(gjson.Get(data, "usage.prompt_tokens").Int()))
 	maxIntInto(&usage.OutputTokens, int(gjson.Get(data, "usage.completion_tokens").Int()))
 	maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, "usage.prompt_cache_hit_tokens").Int()))
@@ -1418,7 +1428,7 @@ func ReasonixParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 // clampCacheEphemerals 兜底 Anthropic ephemeral 拆分的异常情况:
 // 若 5m+1h > total,打印一次警告并截断到 total(保留 5m 优先级,1h 截掉超出部分)。
 // 若 split 非零但 total 为 0,把 total 回填为 split 之和,避免 total 被漏传导致 create cost 计 0。
-func clampCacheEphemerals(usage *ReqeustLog) {
+func clampCacheEphemerals(usage *RequestLog) {
 	if usage == nil {
 		return
 	}
@@ -1451,7 +1461,7 @@ func clampCacheEphemerals(usage *ReqeustLog) {
 
 // gemini usage parser (流式响应专用)
 // Gemini SSE 流中每个 chunk 都会携带完整的 usageMetadata，需取最大值而非累加
-func GeminiParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+func GeminiParseTokenUsageFromResponse(data string, usage *RequestLog) {
 	usageResult := gjson.Get(data, "usageMetadata")
 	if !usageResult.Exists() {
 		return
@@ -1459,9 +1469,9 @@ func GeminiParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 	mergeGeminiUsageMetadata(usageResult, usage)
 }
 
-// mergeGeminiUsageMetadata 合并 Gemini usageMetadata 到 ReqeustLog（取最大值去重）
+// mergeGeminiUsageMetadata 合并 Gemini usageMetadata 到 RequestLog（取最大值去重）
 // Gemini 流式响应特点：每个 chunk 包含截止当前的累计用量，因此取最大值即可
-func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog) {
+func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *RequestLog) {
 	if !usage.Exists() || reqLog == nil {
 		return
 	}
@@ -1492,7 +1502,7 @@ func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog) {
 // streamGeminiResponseWithHook 流式传输 Gemini 响应并通过 Hook 提取 token 用量
 // 【修复】维护跨 chunk 缓冲，确保完整 SSE 事件解析
 // Gemini SSE 格式: "data: {json}\n\n" 或 "data: [DONE]\n\n"
-func streamGeminiResponseWithHook(body io.Reader, writer io.Writer, requestLog *ReqeustLog) error {
+func streamGeminiResponseWithHook(body io.Reader, writer io.Writer, requestLog *RequestLog) error {
 	buf := make([]byte, 8192)   // 增大缓冲区减少系统调用
 	var lineBuf strings.Builder // 跨 chunk 行缓冲
 
@@ -1527,7 +1537,7 @@ func streamGeminiResponseWithHook(body io.Reader, writer io.Writer, requestLog *
 
 // parseGeminiSSEWithBuffer 使用缓冲处理跨 chunk 的 SSE 事件
 // 【修复】解决 JSON 被 TCP 分割到多个 chunk 导致解析失败的问题
-func parseGeminiSSEWithBuffer(chunk string, lineBuf *strings.Builder, requestLog *ReqeustLog) {
+func parseGeminiSSEWithBuffer(chunk string, lineBuf *strings.Builder, requestLog *RequestLog) {
 	// 将当前 chunk 追加到缓冲
 	lineBuf.WriteString(chunk)
 	content := lineBuf.String()
@@ -1563,7 +1573,7 @@ func parseGeminiSSEWithBuffer(chunk string, lineBuf *strings.Builder, requestLog
 
 // parseGeminiSSELine 解析单个 SSE 事件提取 usageMetadata
 // 【优化】只在包含 usageMetadata 时才调用 gjson 解析
-func parseGeminiSSELine(event string, requestLog *ReqeustLog) {
+func parseGeminiSSELine(event string, requestLog *RequestLog) {
 	lines := strings.Split(event, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -1879,7 +1889,7 @@ func (prs *ProviderRelayService) forwardGeminiRequest(
 	endpoint string,
 	bodyBytes []byte,
 	isStream bool,
-	requestLog *ReqeustLog,
+	requestLog *RequestLog,
 ) (success bool, errMsg string, responseWritten bool) {
 	providerStart := time.Now()
 
@@ -1998,7 +2008,7 @@ func (prs *ProviderRelayService) forwardGeminiAttempt(
 	bodyBytes []byte,
 	isStream bool,
 ) (success bool, errMsg string, responseWritten bool) {
-	requestLog := &ReqeustLog{Platform: "gemini", IsStream: isStream}
+	requestLog := &RequestLog{Platform: "gemini", IsStream: isStream}
 	started := time.Now()
 	success, errMsg, responseWritten = prs.forwardGeminiRequest(c, provider, endpoint, bodyBytes, isStream, requestLog)
 	var attemptErr error
@@ -2013,7 +2023,7 @@ func (prs *ProviderRelayService) forwardGeminiAttempt(
 
 // parseGeminiUsageMetadata 从 Gemini 非流式响应中提取用量，填充 request_log
 // 复用 mergeGeminiUsageMetadata 统一解析逻辑
-func parseGeminiUsageMetadata(body []byte, reqLog *ReqeustLog) {
+func parseGeminiUsageMetadata(body []byte, reqLog *RequestLog) {
 	if len(body) == 0 || reqLog == nil {
 		return
 	}

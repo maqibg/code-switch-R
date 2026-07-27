@@ -16,7 +16,7 @@ type DashboardBundle struct {
 	PlatformStats map[string]LogStats `json:"platform_stats"`
 	ProviderRanks []ProviderDailyStat `json:"provider_ranks"`
 	ModelRanks    []ModelDailyStat    `json:"model_ranks"`
-	RecentLogs    []ReqeustLog        `json:"recent_logs"`
+	RecentLogs    []RequestLog        `json:"recent_logs"`
 }
 
 type aggregateSnapshot struct {
@@ -416,7 +416,7 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 	return results, rows.Err()
 }
 
-func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]ReqeustLog, error) {
+func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]RequestLog, error) {
 	query := `
 		SELECT
 			id, platform, model, provider, http_code,
@@ -433,16 +433,16 @@ func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]ReqeustLog, e
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		if isNoSuchTableErr(err) {
-			return []ReqeustLog{}, nil
+			return []RequestLog{}, nil
 		}
 		return nil, err
 	}
 	defer rows.Close()
 
-	results := make([]ReqeustLog, 0, limit)
+	results := make([]RequestLog, 0, limit)
 	for rows.Next() {
 		var (
-			logItem    ReqeustLog
+			logItem    RequestLog
 			streamFlag int
 			hasPricing int
 		)

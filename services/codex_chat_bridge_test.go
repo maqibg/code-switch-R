@@ -269,7 +269,7 @@ func TestConvertOpenAIChatToCodexResponseToolCalls(t *testing.T) {
 }
 
 func TestCodexParseTokenUsageFromResponseReadsRootUsage(t *testing.T) {
-	var usage ReqeustLog
+	var usage RequestLog
 	CodexParseTokenUsageFromResponse(`{
 		"usage":{
 			"input_tokens":10,
@@ -319,7 +319,7 @@ func TestCodexChatSSEConverter(t *testing.T) {
 		t.Fatalf("completed snapshot 文本期望 hello，实际 %s", got)
 	}
 
-	var usage ReqeustLog
+	var usage RequestLog
 	parseEventPayload(out, CodexParseTokenUsageFromResponse, &usage)
 	if usage.InputTokens != 2 || usage.OutputTokens != 1 {
 		t.Fatalf("SSE usage 期望 input=2 output=1，实际 input=%d output=%d", usage.InputTokens, usage.OutputTokens)
@@ -345,7 +345,7 @@ func TestCodexChatSSEConverterUsageOnlyFinalChunk(t *testing.T) {
 	if got := gjson.GetBytes(completed, "response.usage.input_tokens").Int(); got != 2 {
 		t.Fatalf("completed usage input_tokens 期望 2，实际 %d", got)
 	}
-	var usage ReqeustLog
+	var usage RequestLog
 	parseEventPayload(out, CodexParseTokenUsageFromResponse, &usage)
 	if usage.InputTokens != 2 || usage.OutputTokens != 1 {
 		t.Fatalf("usage-only final chunk 期望 input=2 output=1，实际 input=%d output=%d", usage.InputTokens, usage.OutputTokens)

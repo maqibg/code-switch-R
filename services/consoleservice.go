@@ -64,7 +64,13 @@ func NewConsoleService() *ConsoleService {
 		maxLogs: 1000, // 最多保留 1000 条日志
 	}
 
-	// 捕获标准输出和标准错误
+	// 结构化日志（slog）直接送进环形缓冲，级别是字段而不是从文本猜的。
+	// 见 applog.go。
+	registerConsoleLogSink(cs)
+
+	// 仍然捕获 stdout/stderr：项目里还有大量既有的 fmt.Printf，
+	// 以及第三方库（gin、wails）的输出，这些只能从管道拿。
+	// slog 走 registerConsoleLogSink 直达，不经过管道。
 	cs.captureStdout()
 
 	return cs
@@ -84,6 +90,10 @@ func (cs *ConsoleService) captureStdout() {
 	os.Stdout = stdoutWriter
 	os.Stderr = stderrWriter
 	log.SetOutput(stdoutWriter)
+
+	// 结构化日志写截获前的原始 stdout：它已经通过 sink 直达环形缓冲，
+	// 若再写被替换的 os.Stdout 会被 readPipe 读回来重复计入一次
+	setAppLogRawOutput(cs.oldStdout)
 
 	// 启动 goroutine 读取管道内容
 	go cs.readPipe(stdoutReader, "INFO", cs.oldStdout)

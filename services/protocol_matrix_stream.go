@@ -98,7 +98,7 @@ func (c *ProtocolMatrixSSEConverter) AssistantChatMessage() map[string]any {
 	return nil
 }
 
-func protocolMatrixHook(converter *ProtocolMatrixSSEConverter, target relayprotocol.Protocol, usage *ReqeustLog) func([]byte) (bool, []byte) {
+func protocolMatrixHook(converter *ProtocolMatrixSSEConverter, target relayprotocol.Protocol, usage *RequestLog) func([]byte) (bool, []byte) {
 	return func(data []byte) (bool, []byte) {
 		converted := converter.ProcessLine(string(data))
 		if converted == "" {
@@ -109,7 +109,7 @@ func protocolMatrixHook(converter *ProtocolMatrixSSEConverter, target relayproto
 	}
 }
 
-func protocolUsageParser(protocol relayprotocol.Protocol) func(string, *ReqeustLog) {
+func protocolUsageParser(protocol relayprotocol.Protocol) func(string, *RequestLog) {
 	switch protocol {
 	case relayprotocol.OpenAIChat:
 		return ReasonixParseTokenUsageFromResponse

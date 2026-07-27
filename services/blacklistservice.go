@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -86,7 +87,7 @@ func (bs *BlacklistService) RecordSuccess(platform string, providerName string) 
 
 	// 如果功能关闭，只清零失败计数
 	if !levelConfig.EnableLevelBlacklist {
-		err = GlobalDBQueue.Exec(`
+		err = dbExec(`
 			UPDATE provider_blacklist
 			SET failure_count = 0
 			WHERE id = ?
@@ -134,11 +135,16 @@ func (bs *BlacklistService) RecordSuccess(platform string, providerName string) 
 	}
 
 	// 更新数据库
+	//
+	// last_recovered_at 用 COALESCE 保护：这个字段是降级计时的起点，
+	// AutoRecoverExpired 定时器也会写它。两边都是"读旧值再写回"，
+	// 并发时后写的会覆盖先写的，把计时起点不断往后推，
+	// 导致等级降级和宽恕永远不触发。COALESCE 让首次写入生效、后续写入不覆盖。
 	updateSQL := `
 		UPDATE provider_blacklist
 		SET failure_count = 0,
 			blacklist_level = ?,
-			last_recovered_at = ?,
+			last_recovered_at = COALESCE(last_recovered_at, ?),
 			last_degrade_hour = ?
 		WHERE id = ?
 	`
@@ -150,9 +156,7 @@ func (bs *BlacklistService) RecordSuccess(platform string, providerName string) 
 		lastRecoveredTime = nil
 	}
 
-	err = GlobalDBQueue.Exec(updateSQL, newLevel, lastRecoveredTime, newLastDegradeHour, id)
-
-	if err != nil {
+	if err := dbExec(updateSQL, newLevel, lastRecoveredTime, newLastDegradeHour, id); err != nil {
 		return fmt.Errorf("更新成功记录失败: %w", err)
 	}
 
@@ -176,11 +180,6 @@ func (bs *BlacklistService) RecordFailure(platform string, providerName string) 
 		return nil
 	}
 
-	db, err := xdb.DB("default")
-	if err != nil {
-		return fmt.Errorf("获取数据库连接失败: %w", err)
-	}
-
 	// 获取等级拉黑配置
 	levelConfig, err := bs.settingsService.GetBlacklistLevelConfig()
 	if err != nil {
@@ -202,37 +201,99 @@ func (bs *BlacklistService) RecordFailure(platform string, providerName string) 
 
 	now := time.Now()
 
-	// 查询现有记录
-	var id int
-	var failureCount int
-	var blacklistedUntil sql.NullTime
-	var blacklistLevel int
-	var lastRecoveredAt sql.NullTime
-	var lastFailureWindowStart sql.NullTime
+	// 整个"读当前计数 → 判断 → 写回"必须在一个 BEGIN IMMEDIATE 事务里完成。
+	//
+	// 原实现是直连读 + Go 侧 +1 + 异步写回，两个并发失败会读到同一个旧值、
+	// 各自写回同样的新值，导致真实失败次数被低估、坏 provider 迟迟到不了拉黑阈值；
+	// 30 秒去重窗口的判断读的也是旧值，并发时两次都能通过。
+	var (
+		notify       bool
+		notifyLevel  int
+		notifyMinute int
+	)
+	txErr := dbExecInImmediateTx(context.Background(), func(tx dbTxExecutor) error {
+		var (
+			id                     int
+			failureCount           int
+			blacklistedUntil       sql.NullTime
+			blacklistLevel         int
+			lastRecoveredAt        sql.NullTime
+			lastFailureWindowStart sql.NullTime
+		)
 
-	err = db.QueryRow(`
-		SELECT id, failure_count, blacklisted_until, blacklist_level, last_recovered_at, last_failure_window_start
-		FROM provider_blacklist
-		WHERE platform = ? AND provider_name = ?
-	`, platform, providerName).Scan(&id, &failureCount, &blacklistedUntil, &blacklistLevel, &lastRecoveredAt, &lastFailureWindowStart)
+		err := tx.QueryRowContext(context.Background(), `
+			SELECT id, failure_count, blacklisted_until, blacklist_level, last_recovered_at, last_failure_window_start
+			FROM provider_blacklist
+			WHERE platform = ? AND provider_name = ?
+		`, platform, providerName).Scan(&id, &failureCount, &blacklistedUntil, &blacklistLevel, &lastRecoveredAt, &lastFailureWindowStart)
 
-	if err == sql.ErrNoRows {
-		// 首次失败，插入新记录
-		err = GlobalDBQueue.Exec(`
-			INSERT INTO provider_blacklist
-				(platform, provider_name, failure_count, last_failure_at, last_failure_window_start, blacklist_level)
-			VALUES (?, ?, 1, ?, ?, 0)
-		`, platform, providerName, now, now)
-
-		if err != nil {
-			return fmt.Errorf("插入失败记录失败: %w", err)
+		if err == sql.ErrNoRows {
+			// 首次失败：UPSERT 避免并发下两条 INSERT 撞 UNIQUE(platform, provider_name)
+			if _, err := tx.ExecContext(context.Background(), `
+				INSERT INTO provider_blacklist
+					(platform, provider_name, failure_count, last_failure_at, last_failure_window_start, blacklist_level)
+				VALUES (?, ?, 1, ?, ?, 0)
+				ON CONFLICT(platform, provider_name) DO UPDATE SET
+					failure_count = failure_count + 1,
+					last_failure_at = excluded.last_failure_at
+			`, platform, providerName, now, now); err != nil {
+				return fmt.Errorf("插入失败记录失败: %w", err)
+			}
+			log.Printf("📊 Provider %s/%s 失败计数: 1/%d（等级拉黑模式）", platform, providerName, levelConfig.FailureThreshold)
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("查询黑名单记录失败: %w", err)
 		}
 
-		log.Printf("📊 Provider %s/%s 失败计数: 1/%d（等级拉黑模式）", platform, providerName, levelConfig.FailureThreshold)
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("查询黑名单记录失败: %w", err)
+		return bs.applyLevelFailureLocked(tx, levelFailureInput{
+			platform:               platform,
+			providerName:           providerName,
+			id:                     id,
+			failureCount:           failureCount,
+			blacklistedUntil:       blacklistedUntil,
+			blacklistLevel:         blacklistLevel,
+			lastRecoveredAt:        lastRecoveredAt,
+			lastFailureWindowStart: lastFailureWindowStart,
+			now:                    now,
+			levelConfig:            levelConfig,
+		}, &notify, &notifyLevel, &notifyMinute)
+	})
+	if txErr != nil {
+		return txErr
 	}
+
+	// 通知放在事务外：避免在持有写锁时调用外部服务
+	if notify && bs.notificationService != nil {
+		bs.notificationService.NotifyProviderBlacklisted(platform, providerName, notifyLevel, notifyMinute)
+	}
+	return nil
+}
+
+type levelFailureInput struct {
+	platform               string
+	providerName           string
+	id                     int
+	failureCount           int
+	blacklistedUntil       sql.NullTime
+	blacklistLevel         int
+	lastRecoveredAt        sql.NullTime
+	lastFailureWindowStart sql.NullTime
+	now                    time.Time
+	levelConfig            *BlacklistLevelConfig
+}
+
+// applyLevelFailureLocked 在已持有写锁的事务内完成等级拉黑判定与写入。
+func (bs *BlacklistService) applyLevelFailureLocked(
+	tx dbTxExecutor,
+	in levelFailureInput,
+	notify *bool,
+	notifyLevel *int,
+	notifyMinute *int,
+) error {
+	ctx := context.Background()
+	platform, providerName, now, levelConfig := in.platform, in.providerName, in.now, in.levelConfig
+	id, failureCount, blacklistLevel := in.id, in.failureCount, in.blacklistLevel
+	blacklistedUntil, lastRecoveredAt, lastFailureWindowStart := in.blacklistedUntil, in.lastRecoveredAt, in.lastFailureWindowStart
 
 	// 如果已经拉黑且未过期，不重复计数
 	if blacklistedUntil.Valid && blacklistedUntil.Time.After(now) {
@@ -289,7 +350,7 @@ func (bs *BlacklistService) RecordFailure(platform string, providerName string) 
 		blacklistedAt := now
 		blacklistedUntil := now.Add(time.Duration(duration) * time.Minute)
 
-		err = GlobalDBQueue.Exec(`
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE provider_blacklist
 			SET failure_count = 0,
 				last_failure_at = ?,
@@ -299,29 +360,25 @@ func (bs *BlacklistService) RecordFailure(platform string, providerName string) 
 				auto_recovered = 0,
 				last_failure_window_start = ?
 			WHERE id = ?
-		`, now, blacklistedAt, blacklistedUntil, newLevel, now, id)
-
-		if err != nil {
+		`, now, blacklistedAt, blacklistedUntil, newLevel, now, id); err != nil {
 			return fmt.Errorf("更新拉黑状态失败: %w", err)
 		}
 
 		log.Printf("⛔ Provider %s/%s 已拉黑（L%d → L%d，%d 分钟），过期时间: %s",
 			platform, providerName, blacklistLevel, newLevel, duration, blacklistedUntil.Format("15:04:05"))
 
-		// 发送拉黑通知
-		if bs.notificationService != nil {
-			bs.notificationService.NotifyProviderBlacklisted(platform, providerName, newLevel, duration)
-		}
+		// 通知延迟到事务提交后再发，避免持有写锁时调用外部服务
+		*notify = true
+		*notifyLevel = newLevel
+		*notifyMinute = duration
 
 	} else {
-		// 未达到阈值，仅更新失败计数和窗口起始时间
-		err = GlobalDBQueue.Exec(`
+		// 未达到阈值，用 SQL 侧自增写回，不依赖 Go 侧读到的旧值
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE provider_blacklist
-			SET failure_count = ?, last_failure_at = ?, last_failure_window_start = ?
+			SET failure_count = failure_count + 1, last_failure_at = ?, last_failure_window_start = ?
 			WHERE id = ?
-		`, failureCount, now, now, id)
-
-		if err != nil {
+		`, now, now, id); err != nil {
 			return fmt.Errorf("更新失败计数失败: %w", err)
 		}
 
@@ -360,7 +417,7 @@ func (bs *BlacklistService) recordFailureFixedMode(platform string, providerName
 
 	if err == sql.ErrNoRows {
 		// 首次失败，插入新记录
-		err = GlobalDBQueue.Exec(`
+		err = dbExec(`
 			INSERT INTO provider_blacklist
 				(platform, provider_name, failure_count, last_failure_at)
 			VALUES (?, ?, 1, ?)
@@ -390,7 +447,7 @@ func (bs *BlacklistService) recordFailureFixedMode(platform string, providerName
 		blacklistedAt := now
 		blacklistedUntil := now.Add(time.Duration(fallbackDuration) * time.Minute)
 
-		err = GlobalDBQueue.Exec(`
+		err = dbExec(`
 			UPDATE provider_blacklist
 			SET failure_count = ?,
 				last_failure_at = ?,
@@ -409,7 +466,7 @@ func (bs *BlacklistService) recordFailureFixedMode(platform string, providerName
 
 	} else {
 		// 更新失败计数
-		err = GlobalDBQueue.Exec(`
+		err = dbExec(`
 			UPDATE provider_blacklist
 			SET failure_count = ?, last_failure_at = ?
 			WHERE id = ?
@@ -507,7 +564,7 @@ func (bs *BlacklistService) ManualUnblockAndReset(platform string, providerName 
 	}
 
 	// 【重要】保留 blacklist_level，让降级/宽恕机制逐渐降低等级
-	err = GlobalDBQueue.Exec(`
+	err = dbExec(`
 		UPDATE provider_blacklist
 		SET blacklisted_at = NULL,
 			blacklisted_until = NULL,
@@ -552,7 +609,7 @@ func (bs *BlacklistService) ManualResetLevel(platform string, providerName strin
 		return fmt.Errorf("查询黑名单记录失败: %w", err)
 	}
 
-	err = GlobalDBQueue.Exec(`
+	err = dbExec(`
 		UPDATE provider_blacklist
 		SET blacklist_level = 0,
 			last_degrade_hour = 0
@@ -624,15 +681,19 @@ func (bs *BlacklistService) AutoRecoverExpired() error {
 	var recovered []string
 	var failed []string
 
-	// 批量更新所有过期的 provider（使用队列）
+	// 批量更新所有过期的 provider
 	// 【重要】保留 blacklist_level，让 RecordSuccess 中的降级/宽恕机制逐渐降低等级
+	//
+	// last_recovered_at 同样用 COALESCE：若 RecordSuccess 已经写过恢复时间，
+	// 这里不能再覆盖，否则降级计时起点被重置，等级永远降不下来。
+	// last_degrade_hour 只在真正写入恢复时间时才归零，与之保持一致。
 	for _, item := range toRecover {
-		err := GlobalDBQueue.Exec(`
+		err := dbExec(`
 			UPDATE provider_blacklist
 			SET auto_recovered = 1,
 				failure_count = 0,
-				last_recovered_at = ?,
-				last_degrade_hour = 0
+				last_degrade_hour = CASE WHEN last_recovered_at IS NULL THEN 0 ELSE last_degrade_hour END,
+				last_recovered_at = COALESCE(last_recovered_at, ?)
 			WHERE platform = ? AND provider_name = ?
 		`, now, item.Platform, item.ProviderName)
 

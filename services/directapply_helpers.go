@@ -8,25 +8,24 @@ import (
 )
 
 // providerFilePathNoCreate 返回 provider 配置文件路径（不创建目录）
-// 用于只读操作场景，避免副作用
+// 用于只读操作场景，避免副作用。
+//
+// kind → 文件名的映射与 providerFilePath 共用 providerFileNameFor，
+// 不再各自维护一份 switch——之前这里漏了 pi 和 custom，遇到它们返回空路径，
+// 调用方当成"无配置"静默跳过，导致直连应用对这些平台失效且不报错。
 func providerFilePathNoCreate(kind string) (string, error) {
 	dir, err := getAppConfigDir()
 	if err != nil {
 		return "", err
 	}
-	var filename string
-
-	switch strings.ToLower(kind) {
-	case "claude", "claude-code", "claude_code":
-		filename = "claude-code.json"
-	case "codex":
-		filename = "codex.json"
-	case "reasonix":
-		filename = "reasonix.json"
-	default:
+	filename, customToolID, err := providerFileNameFor(kind)
+	if err != nil {
+		// 未知平台：保持原有的"返回空路径"契约，由调用方判空处理
 		return "", nil
 	}
-
+	if customToolID != "" {
+		return filepath.Join(dir, "providers", filename), nil
+	}
 	return filepath.Join(dir, filename), nil
 }
 

@@ -52,7 +52,7 @@ type LogService struct {
 }
 
 type RequestLogPage struct {
-	Logs     []ReqeustLog `json:"logs"`
+	Logs     []RequestLog `json:"logs"`
 	Total    int64        `json:"total"`
 	Page     int          `json:"page"`
 	PageSize int          `json:"page_size"`
@@ -350,11 +350,11 @@ func NewLogServiceWithPricingAndSettings(providerService *ProviderService, prici
 	}
 }
 
-func (ls *LogService) ListRequestLogs(platform string, provider string, limit int) ([]ReqeustLog, error) {
+func (ls *LogService) ListRequestLogs(platform string, provider string, limit int) ([]RequestLog, error) {
 	return ls.ListRequestLogsByRange(platform, provider, "", limit)
 }
 
-func (ls *LogService) ListRequestLogsByRange(platform string, provider string, rangeKey string, limit int) ([]ReqeustLog, error) {
+func (ls *LogService) ListRequestLogsByRange(platform string, provider string, rangeKey string, limit int) ([]RequestLog, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -385,11 +385,11 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 	records, err := model.Selects(options...)
 	if err != nil {
 		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
-			return []ReqeustLog{}, nil
+			return []RequestLog{}, nil
 		}
 		return nil, err
 	}
-	logs := make([]ReqeustLog, 0, len(records))
+	logs := make([]RequestLog, 0, len(records))
 	for _, record := range records {
 		if !recordInWindow(record, window.currentStart, window.currentEnd) {
 			continue
@@ -432,7 +432,7 @@ func (ls *LogService) ListRequestLogsPage(platform string, provider string, rang
 	total, err := model.Count(filters...)
 	if err != nil {
 		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
-			return RequestLogPage{Logs: []ReqeustLog{}, Page: page, PageSize: pageSize}, nil
+			return RequestLogPage{Logs: []RequestLog{}, Page: page, PageSize: pageSize}, nil
 		}
 		return RequestLogPage{}, err
 	}
@@ -441,19 +441,19 @@ func (ls *LogService) ListRequestLogsPage(platform string, provider string, rang
 	records, err := model.Selects(options...)
 	if err != nil {
 		if errors.Is(err, xdb.ErrNotFound) {
-			return RequestLogPage{Logs: []ReqeustLog{}, Total: total, Page: page, PageSize: pageSize}, nil
+			return RequestLogPage{Logs: []RequestLog{}, Total: total, Page: page, PageSize: pageSize}, nil
 		}
 		return RequestLogPage{}, err
 	}
-	logs := make([]ReqeustLog, 0, len(records))
+	logs := make([]RequestLog, 0, len(records))
 	for _, record := range records {
 		logs = append(logs, ls.requestLogFromRecord(record))
 	}
 	return RequestLogPage{Logs: logs, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
-func (ls *LogService) requestLogFromRecord(record xdb.Record) ReqeustLog {
-	logEntry := ReqeustLog{
+func (ls *LogService) requestLogFromRecord(record xdb.Record) RequestLog {
+	logEntry := RequestLog{
 		ID:                record.GetInt64("id"),
 		Platform:          record.GetString("platform"),
 		SourceID:          record.GetString("source_id"),
@@ -647,11 +647,6 @@ func (ls *LogService) GetRecordStorageInfo() (RecordStorageInfo, error) {
 	if err != nil {
 		return info, err
 	}
-	healthCount, err := countTableRows(db, "health_check_history")
-	if err != nil {
-		return info, err
-	}
-
 	configDir, err := ensureAppConfigDir()
 	if err != nil {
 		return info, fmt.Errorf("获取配置目录失败: %w", err)
@@ -664,7 +659,6 @@ func (ls *LogService) GetRecordStorageInfo() (RecordStorageInfo, error) {
 	info.TotalBytes = info.DBBytes + info.WALBytes + info.SHMBytes
 	info.RequestLogCount = requestCount
 	info.RelayAttemptCount = relayAttemptCount
-	info.HealthCheckCount = healthCount
 	return info, nil
 }
 
@@ -689,10 +683,6 @@ func (ls *LogService) ClearStoredRecords() (RecordCleanupResult, error) {
 	if err != nil {
 		return result, err
 	}
-	deletedHealthChecks, err := deleteAllRows(tx, "health_check_history")
-	if err != nil {
-		return result, err
-	}
 	if err := tx.Commit(); err != nil {
 		return result, fmt.Errorf("提交记录清理事务失败: %w", err)
 	}
@@ -714,7 +704,6 @@ func (ls *LogService) ClearStoredRecords() (RecordCleanupResult, error) {
 	}
 	result.DeletedRequestLogs = deletedRequestLogs
 	result.DeletedRelayAttempts = deletedRelayAttempts
-	result.DeletedHealthChecks = deletedHealthChecks
 	result.Storage = info
 	return result, nil
 }
@@ -784,7 +773,7 @@ func fileSize(path string) int64 {
 	return info.Size()
 }
 
-func loadStoredCost(logEntry *ReqeustLog, record xdb.Record) bool {
+func loadStoredCost(logEntry *RequestLog, record xdb.Record) bool {
 	if record.GetInt("cost_calculated") == 0 {
 		return false
 	}
@@ -912,7 +901,7 @@ func (ls *LogService) backfillStoredRequestCostsBatch(limit int) (int, error) {
 	return updated, nil
 }
 
-func (ls *LogService) decorateCost(logEntry *ReqeustLog) {
+func (ls *LogService) decorateCost(logEntry *RequestLog) {
 	if ls == nil || logEntry == nil {
 		return
 	}
@@ -1188,13 +1177,11 @@ type RecordStorageInfo struct {
 	SHMBytes          int64 `json:"shm_bytes"`
 	RequestLogCount   int64 `json:"request_log_count"`
 	RelayAttemptCount int64 `json:"relay_attempt_count"`
-	HealthCheckCount  int64 `json:"health_check_count"`
 }
 
 type RecordCleanupResult struct {
 	DeletedRequestLogs   int64             `json:"deleted_request_logs"`
 	DeletedRelayAttempts int64             `json:"deleted_relay_attempts"`
-	DeletedHealthChecks  int64             `json:"deleted_health_checks"`
 	Storage              RecordStorageInfo `json:"storage"`
 	Warning              string            `json:"warning"`
 }

@@ -47,6 +47,17 @@ type AppSettings struct {
 	GlobalProxyHost           string  `json:"global_proxy_host"`
 	GlobalProxyPort           int     `json:"global_proxy_port"`
 	LogRetentionDays          int     `json:"log_retention_days"`
+	// LogRetentionInitialized 标记保留策略是否已经对用户明确过。
+	//
+	// LogRetentionDays 的 0 表示"永不清理"，但旧版本 app.json 里根本没有这个字段，
+	// 反序列化后同样是 0——两者无法区分。直接把默认值改成 90 天会让老用户在
+	// 升级后某天突然丢失历史数据。因此用这个标记区分：
+	//   false = 从未明确过（老配置或全新安装），需要走一次默认值决策并提示用户
+	//   true  = 用户或迁移逻辑已确认过，此后 0 就是字面意义上的"永不清理"
+	LogRetentionInitialized bool `json:"log_retention_initialized"`
+	// LogRetentionNotice 一次性提示文案，非空表示需要向用户说明保留策略的变化。
+	// 前端读取并展示后调用 AcknowledgeLogRetentionNotice 清除。
+	LogRetentionNotice string `json:"log_retention_notice,omitempty"`
 }
 
 type AppSettingsService struct {
@@ -168,7 +179,8 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 		GlobalProxyProtocol:       defaultGlobalProxyProtocol,
 		GlobalProxyHost:           defaultGlobalProxyHost,
 		GlobalProxyPort:           defaultGlobalProxyPort,
-		LogRetentionDays:          0,
+		LogRetentionDays:          defaultLogRetentionDays,
+		LogRetentionInitialized:   true, // 全新安装：默认值即为已确认，无需提示
 	}
 }
 
@@ -238,6 +250,22 @@ func (as *AppSettingsService) loadLocked() (AppSettings, error) {
 		return settings, err
 	}
 	settings = normalizeAppSettings(settings)
+
+	// 老配置迁移：文件里没有 log_retention_initialized 说明是升级上来的用户。
+	// 此时保留他们当前的行为（LogRetentionDays 原样，通常是 0 = 永不清理），
+	// 只写入一条提示，让用户自己决定是否开启保留策略——不能替他们删历史数据。
+	if migrated, changed := migrateLogRetentionSettings(settings, data); changed {
+		settings = migrated
+		if err := as.saveLocked(settings); err != nil {
+			// 迁移落盘失败不阻塞读取，下次启动会再试一次
+			logWarn(fmt.Sprintf("写入日志保留策略迁移标记失败: %v", err))
+			as.storeCacheLocked(settings, info)
+			return settings, nil
+		}
+		// saveLocked 内部已更新缓存
+		return settings, nil
+	}
+
 	as.storeCacheLocked(settings, info)
 	return settings, nil
 }
@@ -251,7 +279,9 @@ func (as *AppSettingsService) saveLocked(settings AppSettings) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(as.path, data, 0o644); err != nil {
+	// app.json 是应用主设置文件，必须原子写入：
+	// 裸 os.WriteFile 在写入途中崩溃或断电会留下截断的 JSON，下次启动直接读不出设置。
+	if err := atomicWriteFile(as.path, data, 0o644); err != nil {
 		return err
 	}
 	info, err := os.Stat(as.path)

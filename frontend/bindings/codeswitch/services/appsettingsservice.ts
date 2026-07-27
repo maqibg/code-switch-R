@@ -10,6 +10,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * AcknowledgeLogRetentionNotice 清除日志保留策略的一次性提示。
+ * 前端展示过提示后调用。
+ */
+export function AcknowledgeLogRetentionNotice(): $CancellablePromise<$models.AppSettings> {
+    return $Call.ByID(1031303574).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * GetAppSettings returns the persisted app settings or defaults if the file does not exist.
  */
 export function GetAppSettings(): $CancellablePromise<$models.AppSettings> {

@@ -19,10 +19,10 @@ func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
 		RequestedModel: "primary/gpt-5", IsStream: true, StartedAt: time.Now(),
 	}
 	telemetry.Attempts = []RelayAttemptLog{
-		{Provider: "first", Model: "gpt-5", HTTPCode: 500, Success: false, Usage: ReqeustLog{}, ErrorType: "upstream_5xx"},
+		{Provider: "first", Model: "gpt-5", HTTPCode: 500, Success: false, Usage: RequestLog{}, ErrorType: "upstream_5xx"},
 		{
 			Provider: "second", Model: "gpt-5", HTTPCode: 200, Success: true, UpstreamProtocol: "openai_chat",
-			Usage:         ReqeustLog{InputTokens: 10, OutputTokens: 5},
+			Usage:         RequestLog{InputTokens: 10, OutputTokens: 5},
 			Cost:          modelpricing.CostBreakdown{InputCost: 0.1, OutputCost: 0.2, TotalCost: 0.3, HasPricing: true},
 			PricingSource: pricingSourceCustom, PricingVersion: "custom:abc", PricingRuleID: "rule-1",
 		},
@@ -49,7 +49,7 @@ func TestRelayTelemetryRedactsProviderSecretsAndURLTokens(t *testing.T) {
 	telemetry := &relayTelemetry{RequestID: "req-redact", Platform: "pi", StartedAt: time.Now()}
 	provider := Provider{Name: "secret", APIKey: "super-secret-key"}
 	err := errors.New("GET https://example.test/v1?token=url-token&api_key=super-secret-key failed: Bearer super-secret-key")
-	telemetry.recordAttempt(provider, nil, ReqeustLog{HttpCode: 502}, time.Now(), false, err)
+	telemetry.recordAttempt(provider, nil, RequestLog{HttpCode: 502}, time.Now(), false, err)
 	message := telemetry.Attempts[0].ErrorMessage
 	for _, secret := range []string{"super-secret-key", "url-token"} {
 		if strings.Contains(message, secret) {

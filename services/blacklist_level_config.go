@@ -92,14 +92,10 @@ func (ss *SettingsService) SaveBlacklistLevelConfig(config *BlacklistLevelConfig
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
 
-	// 原子写入：先写临时文件，再重命名
-	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return fmt.Errorf("写入临时配置文件失败: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, configPath); err != nil {
-		return fmt.Errorf("重命名配置文件失败: %w", err)
+	// 统一走 atomicWriteFile：自建的 temp+rename 缺少 fsync，
+	// 断电时 rename 可能已持久化而数据还没落盘，得到一个空文件或旧内容。
+	if err := atomicWriteFile(configPath, data, 0o644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %w", err)
 	}
 	ss.invalidateBlacklistLevelConfigCache()
 

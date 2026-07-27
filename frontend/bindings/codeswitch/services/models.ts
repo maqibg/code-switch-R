@@ -44,6 +44,23 @@ export class AppSettings {
     "global_proxy_port": number;
     "log_retention_days": number;
 
+    /**
+     * LogRetentionInitialized 标记保留策略是否已经对用户明确过。
+     * 
+     * LogRetentionDays 的 0 表示"永不清理"，但旧版本 app.json 里根本没有这个字段，
+     * 反序列化后同样是 0——两者无法区分。直接把默认值改成 90 天会让老用户在
+     * 升级后某天突然丢失历史数据。因此用这个标记区分：
+     *   false = 从未明确过（老配置或全新安装），需要走一次默认值决策并提示用户
+     *   true  = 用户或迁移逻辑已确认过，此后 0 就是字面意义上的"永不清理"
+     */
+    "log_retention_initialized": boolean;
+
+    /**
+     * LogRetentionNotice 一次性提示文案，非空表示需要向用户说明保留策略的变化。
+     * 前端读取并展示后调用 AcknowledgeLogRetentionNotice 清除。
+     */
+    "log_retention_notice"?: string;
+
     /** Creates a new AppSettings instance. */
     constructor($$source: Partial<AppSettings> = {}) {
         if (!("show_heatmap" in $$source)) {
@@ -132,6 +149,9 @@ export class AppSettings {
         }
         if (!("log_retention_days" in $$source)) {
             this["log_retention_days"] = 0;
+        }
+        if (!("log_retention_initialized" in $$source)) {
+            this["log_retention_initialized"] = false;
         }
 
         Object.assign(this, $$source);
@@ -971,7 +991,7 @@ export class DashboardBundle {
     "platform_stats": { [_ in string]?: LogStats };
     "provider_ranks": ProviderDailyStat[];
     "model_ranks": ModelDailyStat[];
-    "recent_logs": ReqeustLog[];
+    "recent_logs": RequestLog[];
 
     /** Creates a new DashboardBundle instance. */
     constructor($$source: Partial<DashboardBundle> = {}) {
@@ -3724,7 +3744,6 @@ export class ProjectTransferResult {
     "copied_file_count": number;
     "copied_bytes": number;
     "imported_request_logs": number;
-    "imported_health_checks": number;
     "imported_blacklist_rows": number;
     "imported_app_settings": number;
     "imported_hotkeys": number;
@@ -3746,9 +3765,6 @@ export class ProjectTransferResult {
         }
         if (!("imported_request_logs" in $$source)) {
             this["imported_request_logs"] = 0;
-        }
-        if (!("imported_health_checks" in $$source)) {
-            this["imported_health_checks"] = 0;
         }
         if (!("imported_blacklist_rows" in $$source)) {
             this["imported_blacklist_rows"] = 0;
@@ -4331,7 +4347,6 @@ export class ReasonixProxyStatus {
 export class RecordCleanupResult {
     "deleted_request_logs": number;
     "deleted_relay_attempts": number;
-    "deleted_health_checks": number;
     "storage": RecordStorageInfo;
     "warning": string;
 
@@ -4342,9 +4357,6 @@ export class RecordCleanupResult {
         }
         if (!("deleted_relay_attempts" in $$source)) {
             this["deleted_relay_attempts"] = 0;
-        }
-        if (!("deleted_health_checks" in $$source)) {
-            this["deleted_health_checks"] = 0;
         }
         if (!("storage" in $$source)) {
             this["storage"] = (new RecordStorageInfo());
@@ -4360,10 +4372,10 @@ export class RecordCleanupResult {
      * Creates a new RecordCleanupResult instance from a string or object.
      */
     static createFrom($$source: any = {}): RecordCleanupResult {
-        const $$createField3_0 = $$createType73;
+        const $$createField2_0 = $$createType73;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storage" in $$parsedSource) {
-            $$parsedSource["storage"] = $$createField3_0($$parsedSource["storage"]);
+            $$parsedSource["storage"] = $$createField2_0($$parsedSource["storage"]);
         }
         return new RecordCleanupResult($$parsedSource as Partial<RecordCleanupResult>);
     }
@@ -4376,7 +4388,6 @@ export class RecordStorageInfo {
     "shm_bytes": number;
     "request_log_count": number;
     "relay_attempt_count": number;
-    "health_check_count": number;
 
     /** Creates a new RecordStorageInfo instance. */
     constructor($$source: Partial<RecordStorageInfo> = {}) {
@@ -4398,9 +4409,6 @@ export class RecordStorageInfo {
         if (!("relay_attempt_count" in $$source)) {
             this["relay_attempt_count"] = 0;
         }
-        if (!("health_check_count" in $$source)) {
-            this["health_check_count"] = 0;
-        }
 
         Object.assign(this, $$source);
     }
@@ -4414,7 +4422,7 @@ export class RecordStorageInfo {
     }
 }
 
-export class ReqeustLog {
+export class RequestLog {
     "id": number;
     "request_id"?: string;
 
@@ -4469,8 +4477,8 @@ export class ReqeustLog {
     "pricing_source"?: string;
     "pricing_rule_id"?: string;
 
-    /** Creates a new ReqeustLog instance. */
-    constructor($$source: Partial<ReqeustLog> = {}) {
+    /** Creates a new RequestLog instance. */
+    constructor($$source: Partial<RequestLog> = {}) {
         if (!("id" in $$source)) {
             this["id"] = 0;
         }
@@ -4551,16 +4559,16 @@ export class ReqeustLog {
     }
 
     /**
-     * Creates a new ReqeustLog instance from a string or object.
+     * Creates a new RequestLog instance from a string or object.
      */
-    static createFrom($$source: any = {}): ReqeustLog {
+    static createFrom($$source: any = {}): RequestLog {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ReqeustLog($$parsedSource as Partial<ReqeustLog>);
+        return new RequestLog($$parsedSource as Partial<RequestLog>);
     }
 }
 
 export class RequestLogPage {
-    "logs": ReqeustLog[];
+    "logs": RequestLog[];
     "total": number;
     "page": number;
     "page_size": number;
@@ -5024,7 +5032,7 @@ const $$createType16 = ProviderDailyStat.createFrom;
 const $$createType17 = $Create.Array($$createType16);
 const $$createType18 = ModelDailyStat.createFrom;
 const $$createType19 = $Create.Array($$createType18);
-const $$createType20 = ReqeustLog.createFrom;
+const $$createType20 = RequestLog.createFrom;
 const $$createType21 = $Create.Array($$createType20);
 const $$createType22 = $Create.Array($Create.Any);
 const $$createType23 = LogStatsSeries.createFrom;

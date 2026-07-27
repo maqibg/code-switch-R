@@ -50,7 +50,7 @@
 
 | 文件或目录 | 用途 |
 |---|---|
-| `.code-switch-R/app.db` | `request_log`、`provider_blacklist`、`provider_alias`、`health_check_history`、`app_settings` 等 SQLite 表 |
+| `.code-switch-R/app.db` | `request_log`、`relay_attempt`、`provider_blacklist`、`provider_alias`、`app_settings` 等 SQLite 表 |
 | `.code-switch-R/suidemo.db` | 快捷键数据库，旧路径来自用户配置目录下的 `SuiNest` |
 | `.code-switch-R/claude-code.json` | Claude Code provider 配置 |
 | `.code-switch-R/codex.json` | Codex provider 配置 |
@@ -74,7 +74,7 @@
 - `ProviderRelayService`：代理核心，在 `services/providerrelay.go`。负责路由注册、Provider 选择、Level 分组、轮询、失败降级、黑名单集成、请求转发、日志写入、模型列表代理、Gemini 和自定义 CLI 特殊路径。
 - `ProviderService`：Provider JSON 文件读写、迁移、验证、复制、删除清理和改名，并维护 Pi 协议模板 CRUD。单独改名走 `RenameProvider()`；编辑页需要同时保存字段和改名时走 `SaveProvidersWithRename()`，由后端统一回滚配置文件、数据库和 Pi 网关。Pi 模板 ID 创建后不可修改，仍被供应商引用的模板不得删除；同一协议模板下标准化后的相同 API URL 只能对应一个供应商。
 - `PiSettingsService`：只自动检测当前用户的 `~/.pi/agent`。目录存在但 `models.json` 缺失或没有 Provider 时写入脱敏默认平台；已有 Provider 原样解析为 Pi 平台。每个平台可独立托管：开启时备份该 Provider 及同名 `auth.json` 条目，导入原始 URL 和有效 API Key 为平台首个网关供应商，再把该平台改到 `/pi/providers/{provider}`；关闭时只恢复该平台。`ModelsCatalog()` 返回脱敏目录、托管状态与外部修改冲突，不得暴露 API Key 或请求头。
-- `provider_delete.go`：删除 provider 时清理 `request_log`、`provider_blacklist`、`health_check_history`、`provider_alias`。清理失败会回滚 provider JSON，避免配置和数据库状态分裂。
+- `provider_delete.go`：删除 provider 时清理 `request_log`、`relay_attempt`、`provider_blacklist`、`provider_alias`。清理失败会回滚 provider JSON，避免配置和数据库状态分裂。
 - `provider_rename.go`：改名时事务更新历史表，并写入 48 小时 `provider_alias`，用于承接仍使用旧名的 in-flight 请求。禁止 48 小时内链式改名。
 - `Protocol Adapter`：`services/protocol_matrix_adapter.go` 与 `services/protocol_matrix_stream.go` 负责 Anthropic Messages、OpenAI Chat Completions 和 OpenAI Responses 的双向矩阵转换。无法保持 reasoning、工具选择或流式事件语义时必须显式失败；流式响应一旦提交就不得再切换 Provider 或追加 JSON 错误。
 - `BlacklistService`：管理请求失败拉黑和过期自动恢复。

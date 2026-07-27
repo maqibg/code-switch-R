@@ -492,69 +492,35 @@ func isValidEnvKey(key string) bool {
 }
 
 // buildGeminiEnvContent 构建 .env 文件内容（用于预览，不写入磁盘）
-// 与 writeGeminiEnv 保持一致的格式和顺序
+// 与 writeGeminiEnv 走同一套手术式编辑逻辑，保证预览与实际写入一致
 func buildGeminiEnvContent(envConfig map[string]string) string {
-	var lines []string
-	// 按固定顺序写入
-	keys := []string{"GOOGLE_GEMINI_BASE_URL", "GEMINI_API_KEY", "GEMINI_MODEL"}
-	for _, key := range keys {
-		if value, ok := envConfig[key]; ok && value != "" {
-			lines = append(lines, fmt.Sprintf("%s=%s", key, value))
-		}
+	existing := ""
+	if data, err := os.ReadFile(getGeminiEnvPath()); err == nil {
+		existing = string(data)
 	}
-	// 写入其他键
-	for key, value := range envConfig {
-		if key != "GOOGLE_GEMINI_BASE_URL" && key != "GEMINI_API_KEY" && key != "GEMINI_MODEL" {
-			if value != "" {
-				lines = append(lines, fmt.Sprintf("%s=%s", key, value))
-			}
-		}
-	}
-
-	content := strings.Join(lines, "\n")
-	if len(lines) > 0 {
-		content += "\n"
-	}
-	return content
+	return applyEnvFileEdits(existing, envConfig)
 }
 
-// writeGeminiEnv 写入 .env 文件（原子操作）
+// writeGeminiEnv 按行手术式更新 .env 文件（原子写入）。
+//
+// 只改动 envConfig 涉及的键，注释、空行、`export KEY=x` 等内容原样保留。
+// 早先的实现是"整体重建文件"，会静默丢掉用户手写的注释、export 行和空值键。
 func writeGeminiEnv(envConfig map[string]string) error {
 	dir := getGeminiDir()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
-	// 构建 .env 内容
-	var lines []string
-	// 按固定顺序写入
-	keys := []string{"GOOGLE_GEMINI_BASE_URL", "GEMINI_API_KEY", "GEMINI_MODEL"}
-	for _, key := range keys {
-		if value, ok := envConfig[key]; ok && value != "" {
-			lines = append(lines, fmt.Sprintf("%s=%s", key, value))
-		}
-	}
-	// 写入其他键
-	for key, value := range envConfig {
-		if key != "GOOGLE_GEMINI_BASE_URL" && key != "GEMINI_API_KEY" && key != "GEMINI_MODEL" {
-			if value != "" {
-				lines = append(lines, fmt.Sprintf("%s=%s", key, value))
-			}
-		}
-	}
-
-	content := strings.Join(lines, "\n")
-	if len(lines) > 0 {
-		content += "\n"
-	}
-
-	// 原子写入
 	path := getGeminiEnvPath()
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0600); err != nil {
-		return err
+	existing := ""
+	if data, err := os.ReadFile(path); err == nil {
+		existing = string(data)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("读取 .env 失败: %w", err)
 	}
-	return os.Rename(tmpPath, path)
+
+	content := applyEnvFileEdits(existing, envConfig)
+	return atomicWriteFile(path, []byte(content), 0600)
 }
 
 // readGeminiSettings 读取 settings.json
@@ -597,11 +563,7 @@ func writeGeminiSettings(newSettings map[string]any) error {
 		return err
 	}
 
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	return atomicWriteFile(path, data, 0o600)
 }
 
 // deepMerge 深度合并两个 map
@@ -657,11 +619,7 @@ func (s *GeminiService) saveProviders() error {
 		return err
 	}
 
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	return atomicWriteFile(path, data, 0o644)
 }
 
 // CreateProviderFromPreset 从预设创建供应商

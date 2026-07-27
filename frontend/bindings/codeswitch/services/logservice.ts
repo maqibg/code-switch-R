@@ -67,13 +67,13 @@ export function ListProviders(platform: string): $CancellablePromise<string[]> {
     });
 }
 
-export function ListRequestLogs(platform: string, provider: string, limit: number): $CancellablePromise<$models.ReqeustLog[]> {
+export function ListRequestLogs(platform: string, provider: string, limit: number): $CancellablePromise<$models.RequestLog[]> {
     return $Call.ByID(1199056012, platform, provider, limit).then(($result: any) => {
         return $$createType8($result);
     });
 }
 
-export function ListRequestLogsByRange(platform: string, provider: string, rangeKey: string, limit: number): $CancellablePromise<$models.ReqeustLog[]> {
+export function ListRequestLogsByRange(platform: string, provider: string, rangeKey: string, limit: number): $CancellablePromise<$models.RequestLog[]> {
     return $Call.ByID(2369484854, platform, provider, rangeKey, limit).then(($result: any) => {
         return $$createType8($result);
     });
@@ -155,7 +155,7 @@ const $$createType3 = $models.RecordStorageInfo.createFrom;
 const $$createType4 = $models.HeatmapStat.createFrom;
 const $$createType5 = $Create.Array($$createType4);
 const $$createType6 = $Create.Array($Create.Any);
-const $$createType7 = $models.ReqeustLog.createFrom;
+const $$createType7 = $models.RequestLog.createFrom;
 const $$createType8 = $Create.Array($$createType7);
 const $$createType9 = $models.RequestLogPage.createFrom;
 const $$createType10 = $models.ModelDailyStat.createFrom;

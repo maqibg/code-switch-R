@@ -400,15 +400,9 @@ func (s *PromptService) writePromptFile(path, content string) error {
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	// 原子写入
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("写入临时文件失败: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath) // 清理临时文件
-		return fmt.Errorf("重命名文件失败: %w", err)
+	// 原子写入（统一实现，含 fsync）
+	if err := atomicWriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("写入提示词文件失败: %w", err)
 	}
 
 	// 记录写入时间，用于回环检测
@@ -548,13 +542,7 @@ func (s *PromptService) save() error {
 		return err
 	}
 
-	// 原子写入
-	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpPath, configPath)
+	return atomicWriteFile(configPath, data, 0o644)
 }
 
 // deepCopyMap 深拷贝提示词映射

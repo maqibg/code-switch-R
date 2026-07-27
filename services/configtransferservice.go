@@ -32,7 +32,6 @@ type ProjectTransferResult struct {
 	CopiedFileCount       int    `json:"copied_file_count"`
 	CopiedBytes           int64  `json:"copied_bytes"`
 	ImportedRequestLogs   int64  `json:"imported_request_logs"`
-	ImportedHealthChecks  int64  `json:"imported_health_checks"`
 	ImportedBlacklistRows int64  `json:"imported_blacklist_rows"`
 	ImportedAppSettings   int64  `json:"imported_app_settings"`
 	ImportedHotkeys       int64  `json:"imported_hotkeys"`
@@ -206,7 +205,6 @@ func (is *ImportService) importProjectDirectory(sourceDir string) (ProjectTransf
 			result.ImportedAppSettings = imported["app_settings"]
 			result.ImportedBlacklistRows = imported["provider_blacklist"]
 			result.ImportedRequestLogs = imported["request_log"]
-			result.ImportedHealthChecks = imported["health_check_history"]
 		}
 	}
 
@@ -396,7 +394,7 @@ func replaceMainDatabaseTables(sourcePath string) (map[string]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	tables := []string{"app_settings", "provider_blacklist", "request_log", "relay_attempt", "health_check_history"}
+	tables := []string{"app_settings", "provider_blacklist", "request_log", "relay_attempt"}
 	return replaceSQLiteTables(db, sourcePath, tables)
 }
 

@@ -494,7 +494,7 @@ func chatToolChoiceToResponses(value any) (any, error) {
 	}
 }
 
-func (prs *ProviderRelayService) writeBufferedMatrixResponse(c *gin.Context, resp *xrequest.Response, execution *relayForwardExecution, requestLog *ReqeustLog) error {
+func (prs *ProviderRelayService) writeBufferedMatrixResponse(c *gin.Context, resp *xrequest.Response, execution *relayForwardExecution, requestLog *RequestLog) error {
 	upstreamBody := []byte(resp.String())
 	converted, err := convertProtocolResponse(
 		upstreamBody,
@@ -878,7 +878,7 @@ func synthesizeResponsesStream(body []byte) ([]byte, error) {
 	return out, nil
 }
 
-func parseConvertedUsage(body []byte, protocol relayprotocol.Protocol, usage *ReqeustLog) {
+func parseConvertedUsage(body []byte, protocol relayprotocol.Protocol, usage *RequestLog) {
 	switch protocol {
 	case relayprotocol.OpenAIChat:
 		ReasonixParseTokenUsageFromResponse(string(body), usage)

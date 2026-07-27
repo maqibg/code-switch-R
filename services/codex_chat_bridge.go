@@ -124,7 +124,7 @@ func rewriteCodexResponsesEndpointToChat(endpoint string) string {
 	return rewriteOpenAIChatEndpoint(endpoint)
 }
 
-func codexChatBridgeHook(converter *CodexChatSSEConverter, requestLog *ReqeustLog) func(data []byte) (bool, []byte) {
+func codexChatBridgeHook(converter *CodexChatSSEConverter, requestLog *RequestLog) func(data []byte) (bool, []byte) {
 	return func(data []byte) (bool, []byte) {
 		converted := converter.ProcessPayload(string(data))
 		if converted != "" {
@@ -134,7 +134,7 @@ func codexChatBridgeHook(converter *CodexChatSSEConverter, requestLog *ReqeustLo
 	}
 }
 
-func (prs *ProviderRelayService) writeCodexChatBridgeResponse(c *gin.Context, resp *xrequest.Response, requestLog *ReqeustLog, chatMessages []map[string]any) error {
+func (prs *ProviderRelayService) writeCodexChatBridgeResponse(c *gin.Context, resp *xrequest.Response, requestLog *RequestLog, chatMessages []map[string]any) error {
 	chatBody := []byte(resp.String())
 	assistantMessage := assistantChatMessageFromChatResponse(chatBody)
 	converted, err := ConvertOpenAIChatToCodexResponse(chatBody)

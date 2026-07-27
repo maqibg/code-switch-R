@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strconv"
@@ -158,7 +159,7 @@ func (ss *SettingsService) UpdateBlacklistEnabled(enabled bool) error {
 		enabledStr = "true"
 	}
 
-	err := GlobalDBQueue.Exec(`
+	err := dbExec(`
 		UPDATE app_settings SET value = ? WHERE key = 'enable_blacklist'
 	`, enabledStr)
 
@@ -175,7 +176,12 @@ func (ss *SettingsService) UpdateBlacklistEnabled(enabled bool) error {
 }
 
 // UpdateBlacklistSettings 更新黑名单配置
-// 使用 Saga 模式保证数据一致性（因队列无法使用事务）
+// UpdateBlacklistSettings 同时更新失败阈值和拉黑时长。
+//
+// 早先这里是"Saga 模式 + 手工补偿回滚"——两条 UPDATE 分别提交，第二条失败时
+// 再写一次把第一条改回去。那是因为所有写入都必须过队列，而队列没法开事务。
+// 去掉队列后，同一张表的两行更新就是一个普通事务，补偿逻辑随之删除：
+// 事务要么都生效要么都不生效，不存在"改了一半"的中间态。
 func (ss *SettingsService) UpdateBlacklistSettings(threshold int, duration int) error {
 	// 验证参数
 	if threshold < 1 || threshold > 9 {
@@ -186,46 +192,20 @@ func (ss *SettingsService) UpdateBlacklistSettings(threshold int, duration int) 
 		return fmt.Errorf("拉黑时长只支持 5/15/30/60 分钟")
 	}
 
-	// Saga 步骤 1：读取旧值（用于回滚）
-	db, err := xdb.DB("default")
-	if err != nil {
-		return fmt.Errorf("获取数据库连接失败: %w", err)
+	if err := dbExecStatements(context.Background(), []dbStatement{
+		{
+			Query: `UPDATE app_settings SET value = ? WHERE key = 'blacklist_failure_threshold'`,
+			Args:  []any{strconv.Itoa(threshold)},
+		},
+		{
+			Query: `UPDATE app_settings SET value = ? WHERE key = 'blacklist_duration_minutes'`,
+			Args:  []any{strconv.Itoa(duration)},
+		},
+	}); err != nil {
+		return fmt.Errorf("更新拉黑配置失败: %w", err)
 	}
 
-	var oldThresholdStr string
-	err = db.QueryRow(`SELECT value FROM app_settings WHERE key = 'blacklist_failure_threshold'`).Scan(&oldThresholdStr)
-	if err != nil {
-		return fmt.Errorf("读取旧失败阈值失败: %w", err)
-	}
-
-	// Saga 步骤 2：尝试第一次写入
-	err = GlobalDBQueue.Exec(`
-		UPDATE app_settings SET value = ? WHERE key = 'blacklist_failure_threshold'
-	`, strconv.Itoa(threshold))
-
-	if err != nil {
-		return fmt.Errorf("更新失败阈值失败: %w", err)
-	}
-
-	// Saga 步骤 3：尝试第二次写入
-	err = GlobalDBQueue.Exec(`
-		UPDATE app_settings SET value = ? WHERE key = 'blacklist_duration_minutes'
-	`, strconv.Itoa(duration))
-
-	if err != nil {
-		// 第二次失败，回滚第一次（补偿逻辑）
-		rollbackErr := GlobalDBQueue.Exec(`
-			UPDATE app_settings SET value = ? WHERE key = 'blacklist_failure_threshold'
-		`, oldThresholdStr)
-
-		if rollbackErr != nil {
-			return fmt.Errorf("更新拉黑时长失败且回滚失败: %w (原始错误: %v)", rollbackErr, err)
-		}
-
-		return fmt.Errorf("更新拉黑时长失败，已回滚失败阈值: %w", err)
-	}
 	ss.invalidateBlacklistLevelConfigCache()
-
 	return nil
 }
 
@@ -270,7 +250,7 @@ func (ss *SettingsService) SetLevelBlacklistEnabled(enabled bool) error {
 	}
 
 	// 使用 UPSERT 模式：如果存在则更新，不存在则插入
-	err := GlobalDBQueue.Exec(`
+	err := dbExec(`
 		INSERT INTO app_settings (key, value) VALUES ('blacklist_level_enabled', ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value
 	`, enabledStr)
@@ -314,7 +294,7 @@ func (ss *SettingsService) GetIntSetting(key string) int {
 
 // SetIntSetting 设置整数类型的配置值（通用方法）
 func (ss *SettingsService) SetIntSetting(key string, value int) error {
-	err := GlobalDBQueue.Exec(`
+	err := dbExec(`
 		INSERT INTO app_settings (key, value) VALUES (?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value
 	`, key, strconv.Itoa(value))
