@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -17,7 +16,6 @@ import (
 	modelpricing "codeswitch/resources/model-pricing"
 	relayprotocol "codeswitch/services/protocol"
 
-	"github.com/daodao97/xgo/xdb"
 	"github.com/daodao97/xgo/xrequest"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -1107,171 +1105,6 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-func ensureRequestLogColumn(db *sql.DB, column string, definition string) error {
-	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('request_log') WHERE name = '%s'", column)
-	var count int
-	if err := db.QueryRow(query).Scan(&count); err != nil {
-		return err
-	}
-	if count == 0 {
-		alter := fmt.Sprintf("ALTER TABLE request_log ADD COLUMN %s %s", column, definition)
-		if _, err := db.Exec(alter); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func ensureRequestLogIndex(db *sql.DB, name string, definition string) error {
-	query := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON request_log (%s)", name, definition)
-	_, err := db.Exec(query)
-	return err
-}
-
-func ensureRequestLogTable() error {
-	db, err := xdb.DB("default")
-	if err != nil {
-		return err
-	}
-	return ensureRequestLogTableWithDB(db)
-}
-
-func ensureRequestLogTableWithDB(db *sql.DB) error {
-	const createTableSQL = `CREATE TABLE IF NOT EXISTS request_log (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		platform TEXT,
-		model TEXT,
-		provider TEXT,
-		http_code INTEGER,
-		input_tokens INTEGER,
-		output_tokens INTEGER,
-		cache_create_tokens INTEGER,
-		cache_read_tokens INTEGER,
-		reasoning_tokens INTEGER,
-		is_stream INTEGER DEFAULT 0,
-		duration_sec REAL DEFAULT 0,
-		input_cost REAL DEFAULT 0,
-		output_cost REAL DEFAULT 0,
-		reasoning_cost REAL DEFAULT 0,
-		cache_create_cost REAL DEFAULT 0,
-		cache_read_cost REAL DEFAULT 0,
-		ephemeral_5m_cost REAL DEFAULT 0,
-		ephemeral_1h_cost REAL DEFAULT 0,
-		total_cost REAL DEFAULT 0,
-		has_pricing INTEGER DEFAULT 0,
-		cost_calculated INTEGER DEFAULT 0,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`
-
-	if _, err := db.Exec(createTableSQL); err != nil {
-		return err
-	}
-
-	// 历史新增列按声明顺序补齐,旧库也能顺利升级。新增列只需在末尾追加一行。
-	migrations := []struct {
-		column     string
-		definition string
-	}{
-		{"created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"},
-		{"is_stream", "INTEGER DEFAULT 0"},
-		{"duration_sec", "REAL DEFAULT 0"},
-		{"ephemeral_5m_tokens", "INTEGER DEFAULT 0"},
-		{"ephemeral_1h_tokens", "INTEGER DEFAULT 0"},
-		{"service_tier", "TEXT DEFAULT ''"},
-		{"request_id", "TEXT DEFAULT ''"},
-		{"source_id", "TEXT DEFAULT ''"},
-		{"client_protocol", "TEXT DEFAULT ''"},
-		{"upstream_protocol", "TEXT DEFAULT ''"},
-		{"requested_model", "TEXT DEFAULT ''"},
-		{"attempt_count", "INTEGER DEFAULT 1"},
-		{"error_type", "TEXT DEFAULT ''"},
-		{"pricing_version", "TEXT DEFAULT ''"},
-		{"pricing_source", "TEXT DEFAULT ''"},
-		{"pricing_rule_id", "TEXT DEFAULT ''"},
-	}
-	for _, m := range migrations {
-		if err := ensureRequestLogColumn(db, m.column, m.definition); err != nil {
-			return err
-		}
-	}
-	if err := ensureRequestLogColumn(db, "input_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "output_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "reasoning_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "cache_create_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "cache_read_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "ephemeral_5m_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "ephemeral_1h_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "total_cost", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "has_pricing", "INTEGER DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogColumn(db, "cost_calculated", "INTEGER DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogIndex(db, "idx_request_log_created_at", "created_at"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogIndex(db, "idx_request_log_platform_created_at", "platform, created_at"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogIndex(db, "idx_request_log_provider_created_at", "provider, created_at"); err != nil {
-		return err
-	}
-	if err := ensureRequestLogIndex(db, "idx_request_log_model_created_at", "model, created_at"); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_request_log_pending_cost ON request_log(id) WHERE cost_calculated = 0`); err != nil {
-		return err
-	}
-	return ensureRelayAttemptTable(db)
-}
-
-func ensureRelayAttemptTable(db *sql.DB) error {
-	const createSQL = `CREATE TABLE IF NOT EXISTS relay_attempt (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		request_id TEXT NOT NULL,
-		attempt_index INTEGER NOT NULL,
-		platform TEXT,
-		source_id TEXT DEFAULT '',
-		provider TEXT,
-		model TEXT,
-		upstream_protocol TEXT,
-		http_code INTEGER,
-		success INTEGER DEFAULT 0,
-		error_type TEXT DEFAULT '',
-		error_message TEXT DEFAULT '',
-		duration_sec REAL DEFAULT 0,
-		input_tokens INTEGER DEFAULT 0,
-		output_tokens INTEGER DEFAULT 0,
-		cache_create_tokens INTEGER DEFAULT 0,
-		cache_read_tokens INTEGER DEFAULT 0,
-		reasoning_tokens INTEGER DEFAULT 0,
-		total_cost REAL DEFAULT 0,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(request_id, attempt_index)
-	)`
-	if _, err := db.Exec(createSQL); err != nil {
-		return err
-	}
-	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_relay_attempt_provider_created_at ON relay_attempt(platform, provider, created_at)`)
-	return err
-}
 
 func RequestLogHook(c *gin.Context, kind string, usage *RequestLog) func(data []byte) (bool, []byte) { // SSE 钩子：累计字节和解析 token 用量
 	return func(data []byte) (bool, []byte) {

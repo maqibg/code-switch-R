@@ -62,8 +62,8 @@ func TestEnsureRequestLogTableCreatesPendingCostIndex(t *testing.T) {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
 	defer db.Close()
-	if err := ensureRequestLogTableWithDB(db); err != nil {
-		t.Fatalf("ensureRequestLogTableWithDB() error = %v", err)
+	if err := runMigrationsOn(db); err != nil {
+		t.Fatalf("runMigrationsOn() error = %v", err)
 	}
 	var sqlText string
 	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_request_log_pending_cost'`).Scan(&sqlText); err != nil {

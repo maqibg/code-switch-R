@@ -69,8 +69,11 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 	if strings.EqualFold(strings.TrimSpace(kind), "pi") && strings.Contains(newName, "/") {
 		return fmt.Errorf("Pi Provider 名称不能包含 '/'")
 	}
-	if err := ensureRequestLogTable(); err != nil {
-		return fmt.Errorf("初始化请求统计表失败: %w", err)
+	// 幂等兜底：正常启动已由 InitDatabase 跑过迁移。
+	// 早先这里只 ensure 了 request_log，而 rename 事务还要更新其他表，
+	// 于是全新安装（从未删除过 provider）首次改名必失败。现在统一走迁移。
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("应用数据库迁移失败: %w", err)
 	}
 
 	// 清理过期 alias(MVP:不起后台 job,借 rename 顺手 GC)
@@ -184,8 +187,8 @@ func (ps *ProviderService) SaveProvidersWithRename(kind string, providerID int64
 			return fmt.Errorf("同 kind 下已存在名为 %q 的 provider", nextProvider.Name)
 		}
 	}
-	if err := ensureRequestLogTable(); err != nil {
-		return fmt.Errorf("初始化请求统计表失败: %w", err)
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("应用数据库迁移失败: %w", err)
 	}
 	if err := cleanupExpiredAliases(); err != nil {
 		return fmt.Errorf("清理过期 alias 失败: %w", err)

@@ -76,10 +76,11 @@ func DefaultBlacklistLevelConfig() *BlacklistLevelConfig {
 }
 
 func NewSettingsService() *SettingsService {
-	// 确保数据库表存在
-	if err := ensureBlacklistTables(); err != nil {
+	// 幂等兜底：正常启动已由 InitDatabase 跑过迁移，
+	// 这里覆盖不经 InitDatabase 直接构造服务的场景（主要是测试）。
+	if err := RunMigrations(); err != nil {
 		// 记录错误但不阻止服务创建
-		fmt.Printf("[SettingsService] 初始化数据库表失败: %v\n", err)
+		logError("SettingsService 应用数据库迁移失败", "error", err)
 	}
 	return &SettingsService{}
 }

@@ -13,8 +13,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// setupRenameTestEnv 把 HOME 指到临时目录并初始化独立的 app.db,
-// 同时初始化 request_log / provider_blacklist / provider_alias 表。
+// setupRenameTestEnv 把 HOME 指到临时目录并初始化独立的 app.db，
+// schema 由迁移框架建立。
 func setupRenameTestEnv(t *testing.T) string {
 	t.Helper()
 
@@ -35,46 +35,9 @@ func setupRenameTestEnv(t *testing.T) string {
 	dbPath := filepath.Join(configDir, "app.db?cache=shared&mode=rwc")
 	db := initDefaultTestDB(t, dbPath)
 
-	schemas := []string{
-		`CREATE TABLE IF NOT EXISTS request_log (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			platform TEXT, model TEXT, provider TEXT,
-			http_code INTEGER, input_tokens INTEGER, output_tokens INTEGER,
-			cache_create_tokens INTEGER, cache_read_tokens INTEGER,
-			ephemeral_5m_tokens INTEGER DEFAULT 0,
-			ephemeral_1h_tokens INTEGER DEFAULT 0,
-			service_tier TEXT DEFAULT '',
-			reasoning_tokens INTEGER, is_stream INTEGER DEFAULT 0,
-			duration_sec REAL DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE TABLE IF NOT EXISTS provider_blacklist (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			platform TEXT NOT NULL, provider_name TEXT NOT NULL,
-			failure_count INTEGER DEFAULT 0,
-			blacklisted_at DATETIME, blacklisted_until DATETIME,
-			last_failure_at DATETIME, blacklist_level INTEGER DEFAULT 0,
-			last_recovered_at DATETIME, last_degrade_hour INTEGER DEFAULT 0,
-			last_failure_window_start DATETIME, auto_recovered INTEGER DEFAULT 0,
-			UNIQUE(platform, provider_name)
-		)`,
-		`CREATE TABLE IF NOT EXISTS provider_alias (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			platform TEXT NOT NULL, provider_id INTEGER NOT NULL,
-			alias_name TEXT NOT NULL COLLATE NOCASE,
-			canonical_name TEXT NOT NULL,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			expires_at DATETIME NOT NULL,
-			UNIQUE(platform, alias_name)
-		)`,
-	}
-	for _, s := range schemas {
-		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("建表失败: %v", err)
-		}
-	}
-	if err := ensureRequestLogTable(); err != nil {
-		t.Fatalf("初始化请求统计表失败: %v", err)
+	// schema 统一由迁移建立，测试不再手写一份（手写副本会与生产 schema 漂移）
+	if err := runMigrationsOn(db); err != nil {
+		t.Fatalf("建立测试库 schema 失败: %v", err)
 	}
 
 	return tmpHome
@@ -126,14 +89,8 @@ func resetDefaultTestDB(t *testing.T) {
 	t.Helper()
 	closeDefaultTestDB()
 	initDefaultTestDB(t, "file:codeswitch-test-default?mode=memory&cache=shared")
-	if err := ensureRequestLogTable(); err != nil {
-		t.Fatalf("重置 request_log 表失败: %v", err)
-	}
-	if err := ensureBlacklistTables(); err != nil {
-		t.Fatalf("重置黑名单表失败: %v", err)
-	}
-	if err := ensureProviderAliasTable(); err != nil {
-		t.Fatalf("重置 provider_alias 表失败: %v", err)
+	if err := RunMigrations(); err != nil {
+		t.Fatalf("重建测试库 schema 失败: %v", err)
 	}
 }
 

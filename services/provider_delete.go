@@ -69,15 +69,15 @@ func cleanupDeletedProviders(platform string, providers []deletedProvider) error
 	return nil
 }
 
+// ensureProviderDeleteTables 保证删除路径依赖的表已就绪。
+//
+// 正常启动时 InitDatabase 已经跑过迁移，这里是幂等的兜底（迁移已应用时
+// 只读一次 schema_version）。保留它是因为部分测试不经 InitDatabase 直接
+// 构造服务；生产路径不再依赖这种惰性建表——那正是"全新安装首次改名失败"
+// 的成因：rename 依赖的表只在删除路径被创建。
 func ensureProviderDeleteTables() error {
-	if err := ensureRequestLogTable(); err != nil {
-		return fmt.Errorf("初始化 request_log 表失败: %w", err)
-	}
-	if err := ensureBlacklistTables(); err != nil {
-		return fmt.Errorf("初始化 provider_blacklist 表失败: %w", err)
-	}
-	if err := ensureProviderAliasTable(); err != nil {
-		return fmt.Errorf("初始化 provider_alias 表失败: %w", err)
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("应用数据库迁移失败: %w", err)
 	}
 	return nil
 }

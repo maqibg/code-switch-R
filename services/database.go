@@ -45,15 +45,9 @@ func InitDatabase() error {
 		return err
 	}
 
-	// 4. 确保表结构存在
-	if err := ensureRequestLogTable(); err != nil {
-		return fmt.Errorf("初始化 request_log 表失败: %w", err)
-	}
-	if err := ensureBlacklistTables(); err != nil {
-		return fmt.Errorf("初始化黑名单表失败: %w", err)
-	}
-	if err := ensureProviderAliasTable(); err != nil {
-		return fmt.Errorf("初始化 provider_alias 表失败: %w", err)
+	// 4. 应用 schema 迁移（建表与加列的唯一入口，见 migrations.go）
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("应用数据库迁移失败: %w", err)
 	}
 
 	// 5. 预热连接池：强制建立数据库连接，避免首次写入时失败
