@@ -142,10 +142,40 @@ B8(黑名单计数竞态)**不在第 0 批**:根因是队列强制读-改-写,�
 - 有意未迁的 54 处:`[CustomCLI]` 与 `[Gemini]` 前缀是模块名不是级别,且全部位于 A3 将要合并掉的两个重复 handler 内,现在迁等于改马上要重写的代码。留给 A3 一并处理。
 - stdout 捕获保留:项目里仍有大量既有 `fmt.Printf`,以及 gin / wails 的第三方输出,这些只能从管道拿。
 
-### 待完成
+### M3 迁移框架(完成)
 
-- [ ] **M3 迁移框架** —— 下面所有工作的闸门。当前无 `schema_version`,request_log 的 34 列靠启动时逐列 `pragma_table_info` 探测 + `ALTER TABLE`,其余表连加列机制都没有。
-- [ ] **A1 Provider 主数据入 SQLite** —— 收益最高的一刀。alias 表 + 48h TTL、禁止链式改名、文件-DB 补偿 Saga 全部是"主数据在 JSON、关联数据在 DB 且按 name 字符串关联"这一个决定的连锁成本。含 Gemini 类型统一(string ID → int64)与两处双源真相收敛(`blacklist_level_config`、app 设置分裂)。
+新增 `migrations.go` + `migrations_baseline.go`:`schema_version` 表、有序迁移列表、每个迁移单事务(失败整条回滚且不记版本以便重试)。`InitDatabase` 成为建表唯一入口,业务路径上的 `ensure*` 改为幂等兜底。
+
+实现中被自己写的测试抓到一个缺陷:SQLite 不允许 `ALTER TABLE ADD COLUMN` 带非常量默认值,表内有数据时直接失败。`created_at` 因此保留在建表语句里,旧库缺该列时补一个可空版本 —— 原实现把它放在 `CREATE TABLE` 中正是这个原因。
+
+副作用:services 测试套件耗时由约 42 秒降到约 10-20 秒(消除了每列一次 pragma 探测)。
+
+### A1 Provider 入库(前两步完成,第三步未开工)
+
+**已完成 · 第 1 步:`provider` 表 + 从 JSON 导入**(迁移 v2)
+
+- 会被查询/排序的字段做列,其余约 30 个长尾配置进 `config_json`(`provider_config_json.go`)。
+- 导入保留现有 int64 ID(不重编号 —— 紧接着要按这些 ID 关联日志行),`sort_order` 保留 JSON 原始顺序。
+- 覆盖注册平台四个文件 + `providers/{toolId}.json`。
+- 测试含一个字段覆盖检查:比对 `Provider` 与 `providerConfigPayload` 的 JSON 标签集合,将来给 Provider 加字段却忘记同步时会失败。已用临时探针验证该机制真能检出遗漏(37 字段 = 6 列 + 30 config_json + 1 个有意丢弃的 `piTemplate`)。
+
+**已完成 · 第 2 步:日志表加 `provider_id` 并回填**(迁移 v3)
+
+- 按 `(platform, source_id, provider 名)` 回填,匹配不上的留 NULL(早已删除的供应商)。
+- `name` 列有意保留:它记录请求发生当时该供应商叫什么,这个历史事实本身有价值 —— `provider_alias` 机制其实是在勉强模拟这件事。
+- 同一迁移归一化 `platform='custom:<toolId>'` 历史行。顺序是先归一 platform 再回填,否则旧格式行匹配不上。
+
+**未开工 · 第 3 步:切换读写路径**
+
+这是真正的切换点,也是风险集中处。范围:`LoadProviders` / `SaveProviders` / `loadProvidersRaw` / `SaveProvidersWithRename` 改走 DB,涉及 **85 处调用点(生产 42 + 测试 43)**。做完才能进第 4 步删 alias 全套。
+
+未在本轮开工的原因:半途停下会留下"读走 DB、写走 JSON"的中间态,比不开工更糟。这一步需要一个完整会话。
+
+**未开工 · 第 4 步:删除 alias 机制** —— `provider_alias` 表、`aliasTTL`、`ResolveProviderAlias`、`checkAliasConstraints`、`cleanupExpiredAliases`、`commitProviderRenameLocked`、`rollbackFile`、禁止链式改名限制。改名缩成 `UPDATE provider SET name=? WHERE id=?`。
+
+**未开工 · 第 5 步:Gemini 类型统一** —— `GeminiProvider`(string ID)并入 `Provider`(int64),连带删掉 `roundRobinOrderGemini` 与 `provider_delete.go`/`provider_rename.go` 里的 gemini 特判。这一步同时是 A3 阶段 1。
+
+**未开工 · 顺带项** —— 回填完成后删除统计 SQL 里的 `custom:` 兼容 OR(`logservice.go:197`、`logdashboardbundle.go:497`);`blacklist_level_config` 双源真相收敛;app 设置分裂定归宿。
 - [ ] **A3 主体** —— 阶段 1 是 Gemini 类型归一(建议随 A1 迁移一起做),阶段 2 抽 `dispatchWithFailover`。动手前必须先补 failover 主循环的表驱动测试(对着现在的 `proxyHandler` 写,确认通过后再在下面重构)。
 - [ ] **A4/A5 拆包** —— 按域拆子包 + 小接口;删 `SetPricingService` 与 `LogService` 三个构造变体(它们是"同进程三套定价引擎并存、计费口径可分叉"的原因);Pi 的 `Supplier` 改名 `Provider`。
 - [ ] **前端 F1-F3** —— Main/Index.vue 4592 行拆分、引入状态层、`Call.ByName` 收敛到 bindings。
