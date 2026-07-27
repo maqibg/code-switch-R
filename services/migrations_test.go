@@ -122,24 +122,43 @@ func TestMigrationsAdoptExistingDatabase(t *testing.T) {
 	}
 }
 
-// 版本记录后不应重复执行：把版本手工写入，迁移体不应再跑
+// 版本记录后不应重复执行。
+//
+// 用一个隔离的迁移列表验证：真实列表里后续迁移依赖 baseline 建的表，
+// 若在这里跳过 baseline 再跑全部迁移，失败的会是依赖关系而不是跳过语义。
 func TestMigrationsSkipAlreadyAppliedVersions(t *testing.T) {
 	db := openMigrationTestDB(t)
 	if err := ensureSchemaVersionTable(db); err != nil {
 		t.Fatalf("建版本表失败: %v", err)
 	}
-	// 假装 baseline 已应用，但实际没建表
-	if _, err := db.Exec(`INSERT INTO schema_version (version, name) VALUES (1, 'baseline')`); err != nil {
-		t.Fatalf("写入版本失败: %v", err)
+
+	// 临时替换包级迁移列表。本包内没有任何测试调用 t.Parallel()，
+	// 测试串行执行，因此这样替换是安全的；若将来引入并行测试需要改为注入。
+	executed := 0
+	original := schemaMigrations
+	schemaMigrations = []schemaMigration{{
+		version: 1,
+		name:    "probe",
+		up: func(tx sqlExecutor) error {
+			executed++
+			_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS probe_marker (id INTEGER)`)
+			return err
+		},
+	}}
+	t.Cleanup(func() { schemaMigrations = original })
+
+	// 连跑三次，迁移体只应执行一次
+	for i := 0; i < 3; i++ {
+		if err := runMigrationsOn(db); err != nil {
+			t.Fatalf("第 %d 次迁移失败: %v", i+1, err)
+		}
 	}
 
-	if err := runMigrationsOn(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+	if executed != 1 {
+		t.Errorf("已记录的版本不应重复执行，实际执行 %d 次", executed)
 	}
-	// 因为版本已记录，baseline 不该执行，request_log 应不存在。
-	// 这验证的是"跳过已应用版本"的语义本身。
-	if tableExists(t, db, "request_log") {
-		t.Error("已记录的版本不应重复执行")
+	if !tableExists(t, db, "probe_marker") {
+		t.Error("首次迁移应已生效")
 	}
 }
 

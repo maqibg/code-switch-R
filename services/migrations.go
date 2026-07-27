@@ -54,6 +54,13 @@ var schemaMigrations = []schemaMigration{
 		// 因此可以先上线验证数据正确性，再切换读写（A1 的后续步骤）。
 		up: migrateProviderTable,
 	},
+	{
+		version: 3,
+		name:    "log-provider-id",
+		// 日志表加 provider_id 并回填，同时归一化 platform='custom:<id>' 历史格式。
+		// 读取侧仍按 name 查询，本迁移只是把关联键准备好。
+		up: migrateLogProviderID,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
