@@ -11,7 +11,7 @@ import {
 import { formatBeijingDateTime } from '../utils/beijingTime'
 import { useActivePolling } from './useActivePolling'
 
-const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode', 'reasonix', 'pi', 'custom']
+const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'gemini', 'reasonix', 'pi', 'custom']
 const REFRESH_INTERVAL = 60
 const RANGE_CACHE_TTL_MS = 45_000
 
@@ -64,7 +64,6 @@ export function useStatsDashboard() {
     claude: emptyStats(),
     codex: emptyStats(),
     gemini: emptyStats(),
-    deepseekcode: emptyStats(),
     reasonix: emptyStats(),
     pi: emptyStats(),
     custom: emptyStats(),

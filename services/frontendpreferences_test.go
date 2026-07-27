@@ -15,7 +15,7 @@ func TestNormalizeFrontendPreferencesPlatformOrder(t *testing.T) {
 		PiPlatformOrder:   []string{" anthropic ", "", "anthropic", "openai-codex"},
 	})
 
-	wantHome := []string{"codex", "claude", "gemini", "deepseekcode", "reasonix", "others"}
+	wantHome := []string{"codex", "claude", "gemini", "reasonix", "others"}
 	if !slices.Equal(prefs.HomePlatformOrder, wantHome) {
 		t.Fatalf("home platform order = %#v, want %#v", prefs.HomePlatformOrder, wantHome)
 	}

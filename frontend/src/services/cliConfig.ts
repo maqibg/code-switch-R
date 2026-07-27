@@ -1,7 +1,7 @@
 import { Call } from '@wailsio/runtime'
 
 // CLI 平台类型
-export type CLIPlatform = 'claude' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix'
+export type CLIPlatform = 'claude' | 'codex' | 'gemini' | 'reasonix'
 
 // 配置字段信息
 export interface CLIConfigField {

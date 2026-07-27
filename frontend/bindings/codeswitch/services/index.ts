@@ -10,7 +10,6 @@ import * as ConnectivityTestService from "./connectivitytestservice.js";
 import * as ConsoleService from "./consoleservice.js";
 import * as CustomCliService from "./customcliservice.js";
 import * as DeepLinkService from "./deeplinkservice.js";
-import * as DeepSeekCodeSettingsService from "./deepseekcodesettingsservice.js";
 import * as EnvCheckService from "./envcheckservice.js";
 import * as FrontendPreferencesService from "./frontendpreferencesservice.js";
 import * as GeminiService from "./geminiservice.js";
@@ -38,7 +37,6 @@ export {
     ConsoleService,
     CustomCliService,
     DeepLinkService,
-    DeepSeekCodeSettingsService,
     EnvCheckService,
     FrontendPreferencesService,
     GeminiService,
@@ -82,7 +80,6 @@ export {
     DashboardBundle,
     DashboardOverview,
     DeepLinkImportRequest,
-    DeepSeekCodeProxyStatus,
     DiscoveredModel,
     EnvConflict,
     FrontendPreferences,

@@ -11,7 +11,7 @@ export const DISMISSED_UPDATE_VERSION_KEY = 'dismissed-update-version'
 export const HOME_PLATFORM_ORDER_KEY = 'home-platform-order'
 export const PI_PLATFORM_ORDER_KEY = 'pi-platform-order'
 
-export const DEFAULT_HOME_PLATFORM_ORDER = ['claude', 'codex', 'gemini', 'deepseekcode', 'reasonix', 'others'] as const
+export const DEFAULT_HOME_PLATFORM_ORDER = ['claude', 'codex', 'gemini', 'reasonix', 'others'] as const
 
 export const normalizeThemeMode = (value: unknown): FrontendThemeMode => {
   if (value === 'light' || value === 'dark' || value === 'systemdefault') {

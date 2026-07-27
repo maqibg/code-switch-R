@@ -41,7 +41,6 @@
             <option value="claude">Claude Code</option>
             <option value="codex">Codex</option>
             <option value="gemini">Gemini</option>
-            <option value="deepseekcode">DeepSeekCode</option>
             <option value="reasonix">Reasonix</option>
             <option value="pi">Pi</option>
             <option value="custom">{{ t('stats.platforms.custom') }}</option>

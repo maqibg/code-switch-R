@@ -76,3 +76,21 @@ func TestPiIsExcludedFromBackgroundChecks(t *testing.T) {
 		t.Fatalf("Pi 直接连通性测试应被拒绝: %#v", result)
 	}
 }
+
+func TestDeepSeekCodePlatformIsRemoved(t *testing.T) {
+	if slices.Contains(providerPlatformIDs(), "deepseekcode") {
+		t.Fatalf("DeepSeekCode 不应继续注册为 Provider 平台: %#v", providerPlatformIDs())
+	}
+	if _, ok := platformDefinition("deepseekcode"); ok {
+		t.Fatal("DeepSeekCode 不应存在协议平台注册")
+	}
+	if _, err := providerFilePath("deepseekcode"); err == nil {
+		t.Fatal("DeepSeekCode Provider 文件类型应被拒绝")
+	}
+
+	service := NewDeepLinkService(NewProviderService())
+	_, err := service.ParseDeepLinkURL("ccswitch://v1/import?resource=provider&app=deepseekcode&name=removed")
+	if err == nil || !strings.Contains(err.Error(), "无效的 app 类型") {
+		t.Fatalf("DeepSeekCode 深链应被拒绝: %v", err)
+	}
+}

@@ -378,10 +378,6 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/gemini/v1beta/*any", prs.geminiProxyHandler("/v1beta"))
 	router.POST("/gemini/v1/*any", prs.geminiProxyHandler("/v1"))
 
-	// DeepSeekCode 端点 — 请求格式为标准 Anthropic Messages API
-	router.POST("/deepseekcode/v1/messages", prs.proxyHandler("deepseekcode", "/v1/messages"))
-	router.GET("/deepseekcode/v1/models", prs.modelsHandler("deepseekcode"))
-
 	// Reasonix 端点 — 请求格式为 OpenAI Chat Completions
 	router.POST("/reasonix/chat/completions", prs.proxyHandler("reasonix", "/chat/completions"))
 	router.GET("/reasonix/models", prs.modelsHandler("reasonix"))

@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-`code-switch-R` 是一个 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP 代理管理 AI CLI 工具的供应商配置。应用启动后在本机 `127.0.0.1:18100` 代理 Claude Code、Codex、Gemini CLI、DeepSeekCode、Reasonix 和自定义 CLI 请求，按供应商优先级、模型白名单和黑名单状态执行降级转发，并记录请求、Token 和成本数据。
+`code-switch-R` 是一个 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP 代理管理 AI CLI 工具的供应商配置。应用启动后在本机 `127.0.0.1:18100` 代理 Claude Code、Codex、Gemini CLI、Reasonix 和自定义 CLI 请求，按供应商优先级、模型白名单和黑名单状态执行降级转发，并记录请求、Token 和成本数据。
 
 当前主要技术栈：
 
@@ -54,7 +54,6 @@
 | `.code-switch-R/suidemo.db` | 快捷键数据库，旧路径来自用户配置目录下的 `SuiNest` |
 | `.code-switch-R/claude-code.json` | Claude Code provider 配置 |
 | `.code-switch-R/codex.json` | Codex provider 配置 |
-| `.code-switch-R/deepseekcode.json` | DeepSeekCode provider 配置 |
 | `.code-switch-R/reasonix.json` | Reasonix provider 配置 |
 | `.code-switch-R/pi.json` | Pi 应用侧供应商、`piTemplate` 模板标识、完整模型定义、模型覆盖、请求头和 `metadataUserId` 配置 |
 | `.code-switch-R/pi-provider-templates.json` | Pi 网关协议模板；模板只提供协议与模型元数据，不包含供应商 URL；文件不存在时加载内置 Anthropic、OpenAI Chat 与 OpenAI Codex / Responses 模板 |
@@ -80,7 +79,7 @@
 - `Protocol Adapter`：`services/protocol_matrix_adapter.go` 与 `services/protocol_matrix_stream.go` 负责 Anthropic Messages、OpenAI Chat Completions 和 OpenAI Responses 的双向矩阵转换。无法保持 reasoning、工具选择或流式事件语义时必须显式失败；流式响应一旦提交就不得再切换 Provider 或追加 JSON 错误。
 - `BlacklistService`：管理请求失败拉黑和过期自动恢复。
 - `LogService` 与 `resources/model-pricing`：读取请求日志、聚合统计、热力图、成本估算、模型定价匹配。
-- `MCPService`：管理 Claude、Codex、Gemini、DeepSeekCode、Reasonix 的 MCP 配置，并同步到对应平台文件。
+- `MCPService`：管理 Claude、Codex、Gemini、Reasonix 的 MCP 配置，并同步到对应平台文件。
 - `SkillService`：扫描、安装、卸载、启停用户级和项目级 Skills，支持 GitHub 仓库来源。
 - `PromptService`：管理各平台提示词，写入平台原始提示词文件前会检测外部修改。
 - `NetworkService`：管理本机、WSL、LAN、自定义监听地址，能写入 WSL 内的 Claude/Codex/Gemini 配置。
@@ -96,8 +95,6 @@ POST /responses                    -> Codex Responses
 GET  /v1/models                    -> Claude/Codex compatible models
 POST /gemini/v1beta/*any           -> Gemini v1beta
 POST /gemini/v1/*any               -> Gemini v1
-POST /deepseekcode/v1/messages     -> DeepSeekCode Anthropic Messages
-GET  /deepseekcode/v1/models       -> DeepSeekCode models
 POST /reasonix/chat/completions    -> Reasonix OpenAI Chat Completions
 GET  /reasonix/models              -> Reasonix models
 POST /pi/providers/:provider/*any  -> Pi 平台级协议网关
@@ -107,7 +104,7 @@ GET  /custom/:toolId/v1/models     -> 自定义 CLI models
 
 Provider 选择顺序是：启用状态、URL/API Key、配置校验、模型支持、黑名单状态、Level 分组、同 Level 轮询设置。黑名单固定模式开启时，同一 provider 会按阈值重试直到拉黑再切换；未开启时每个 provider 单次失败后降级到下一个。
 
-认证默认值由 `defaultConnectivityAuthType(platform)` 决定：`deepseekcode` 使用 `x-api-key`，其他平台默认 `bearer`。显式填写 `Provider.AuthScheme` 或兼容字段 `Provider.ConnectivityAuthType` 时以配置为准，协议类型只控制 `anthropic-version` 等协议专属头，不得把显式 `x-api-key` 改写成 Bearer。转发前会删除客户端传来的认证头，避免占位 Key 污染上游请求。
+认证默认值由 `defaultConnectivityAuthType(platform)` 决定，当前平台默认使用 `bearer`。显式填写 `Provider.AuthScheme` 或兼容字段 `Provider.ConnectivityAuthType` 时以配置为准，协议类型只控制 `anthropic-version` 等协议专属头，不得把显式 `x-api-key` 改写成 Bearer。转发前会删除客户端传来的认证头，避免占位 Key 污染上游请求。
 
 Pi 的一个 `models.json.providers.<id>` 就是页面中的一个平台；应用侧 `pi.json` 可在该平台下保存多个网关供应商，但这些供应商不得作为额外 Pi Provider 写回 `models.json`。托管只改平台级 `baseUrl`、`apiKey` 和同名 `auth.json` 条目，保留 `api`、`headers`、`compat`、`models`、`modelOverrides` 及未知字段；模型级 `baseUrl` 会绕过平台网关，因此有此配置的平台不得开启托管。关闭托管前必须校验注入内容哈希，外部修改时显式报告冲突，禁止静默覆盖。导入的 Pi 配置值按 Pi 语义解析 `$ENV`、`${ENV}`、`!command`、`$$` 和 `$!`，`auth.json` 的 `api_key` 凭证优先于 `models.json.apiKey`，暂不支持无损导入 OAuth 条目。
 
@@ -121,7 +118,7 @@ Provider 自定义 Header 在兼容预设之后应用，可以覆盖 User-Agent 
 
 | 路由 | 页面 |
 |---|---|
-| `/` | Provider 管理主界面，Claude/Codex/Gemini/DeepSeekCode/Reasonix/自定义 CLI |
+| `/` | Provider 管理主界面，Claude/Codex/Gemini/Reasonix/自定义 CLI |
 | `/pi` | 实时解析 `models.json` 平台和模型，管理平台 CRUD、平台级独立托管、平台下网关供应商、模型抓取/映射及完整 JSON 预览 |
 | `/stats` | 用量统计、趋势和请求排行 |
 | `/logs` | 请求日志、筛选、成本展示 |

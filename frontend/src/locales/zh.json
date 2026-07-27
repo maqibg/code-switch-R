@@ -769,7 +769,6 @@
       "claude": "Claude Code",
       "codex": "Codex",
       "gemini": "Gemini",
-      "deepseekcode": "DeepSeekCode",
       "reasonix": "Reasonix",
       "pi": "Pi",
       "custom": "自定义 CLI"
@@ -1018,7 +1017,6 @@
         "hostClaude": "托管 Claude Code",
         "hostCodex": "托管 Codex",
         "hostGemini": "托管 Gemini CLI",
-        "hostDeepSeekCode": "托管 DeepSeekCode",
         "hostReasonix": "托管 Reasonix",
         "hostPi": "托管 Pi",
         "hostOthers": "托管自定义 CLI",
@@ -1552,7 +1550,6 @@
         "claude": "Claude Code",
         "codex": "Codex",
         "gemini": "Gemini CLI",
-        "deepseekcode": "DeepSeekCode",
         "reasonix": "Reasonix"
       },
       "form": {
@@ -1685,7 +1682,6 @@
       "platform": {
         "claude": "Claude Code",
         "codex": "Codex",
-        "deepseekcode": "DeepSeekCode",
         "reasonix": "Reasonix"
       },
       "groups": {

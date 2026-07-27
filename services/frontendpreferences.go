@@ -41,7 +41,7 @@ func defaultFrontendPreferences() FrontendPreferences {
 	}
 }
 
-var defaultHomePlatformOrder = []string{"claude", "codex", "gemini", "deepseekcode", "reasonix", "others"}
+var defaultHomePlatformOrder = []string{"claude", "codex", "gemini", "reasonix", "others"}
 
 func normalizeFrontendPreferences(prefs FrontendPreferences) FrontendPreferences {
 	switch prefs.Theme {

@@ -769,7 +769,6 @@
       "claude": "Claude Code",
       "codex": "Codex",
       "gemini": "Gemini",
-      "deepseekcode": "DeepSeekCode",
       "reasonix": "Reasonix",
       "pi": "Pi",
       "custom": "Custom CLI"
@@ -1017,7 +1016,6 @@
         "hostClaude": "Host Claude Code",
         "hostCodex": "Host Codex",
         "hostGemini": "Host Gemini CLI",
-        "hostDeepSeekCode": "Host DeepSeekCode",
         "hostReasonix": "Host Reasonix",
         "hostPi": "Host Pi",
         "hostOthers": "Host Custom CLI",
@@ -1551,7 +1549,6 @@
         "claude": "Claude Code",
         "codex": "Codex",
         "gemini": "Gemini CLI",
-        "deepseekcode": "DeepSeekCode",
         "reasonix": "Reasonix"
       },
       "form": {
@@ -1683,7 +1680,6 @@
       "platform": {
         "claude": "Claude Code",
         "codex": "Codex",
-        "deepseekcode": "DeepSeekCode",
         "reasonix": "Reasonix"
       },
       "groups": {

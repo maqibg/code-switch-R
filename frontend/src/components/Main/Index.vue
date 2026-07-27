@@ -1199,7 +1199,6 @@ const proxyStates = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
-  deepseekcode: false,
   reasonix: false,
   pi: false,
   others: false,
@@ -1208,7 +1207,6 @@ const proxyBusy = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
-  deepseekcode: false,
   reasonix: false,
   pi: false,
   others: false,
@@ -1219,7 +1217,6 @@ const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
   claude: null,
   codex: null,
   gemini: null,
-  deepseekcode: null,
   reasonix: null,
   pi: null,
   others: null,
@@ -1236,8 +1233,6 @@ const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) =>
       id = await Call.ByName('codeswitch/services.CodexSettingsService.GetDirectAppliedProviderID')
     } else if (tab === 'gemini') {
       id = await Call.ByName('codeswitch/services.GeminiService.GetDirectAppliedProviderID')
-    } else if (tab === 'deepseekcode') {
-      id = await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.GetDirectAppliedProviderID')
     } else if (tab === 'reasonix') {
       id = await Call.ByName('codeswitch/services.ReasonixSettingsService.GetDirectAppliedProviderID')
     }
@@ -1263,8 +1258,6 @@ const handleDirectApply = async (card: AutomationCard) => {
       }
       const realId = geminiProvidersCache.value[index].id
       await Call.ByName('codeswitch/services.GeminiService.ApplySingleProvider', realId)
-    } else if (tab === 'deepseekcode') {
-      await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.ApplySingleProvider', card.id)
     } else if (tab === 'reasonix') {
       await Call.ByName('codeswitch/services.ReasonixSettingsService.ApplySingleProvider', card.id)
     } else {
@@ -1294,7 +1287,6 @@ const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDai
   claude: {},
   codex: {},
   gemini: {},
-  deepseekcode: {},
   reasonix: {},
   pi: {},
   others: {},
@@ -1303,7 +1295,6 @@ const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
-  deepseekcode: false,
   reasonix: false,
   pi: false,
   others: false,
@@ -1312,7 +1303,6 @@ const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
   gemini: false,
-  deepseekcode: false,
   reasonix: false,
   pi: false,
   others: false,
@@ -1346,7 +1336,6 @@ const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, Blacklist
   claude: {},
   codex: {},
   gemini: {},
-  deepseekcode: {},
   reasonix: {},
   pi: {},
   others: {},
@@ -1364,7 +1353,6 @@ const lastUsedProviders = reactive<Record<string, LastUsedProvider | null>>({
   claude: null,
   codex: null,
   gemini: null,
-  deepseekcode: null,
   reasonix: null,
   pi: null,
   others: null,
@@ -1607,7 +1595,6 @@ const defaultTabs = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'codex', label: 'Codex' },
   { id: 'gemini', label: 'Gemini' },
-  { id: 'deepseekcode', label: 'DeepSeekCode' },
   { id: 'reasonix', label: 'Reasonix' },
   { id: 'others', label: '其他' },
 ] as const
@@ -1683,7 +1670,6 @@ const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: createAutomationCards(automationCardGroups.claude),
   codex: createAutomationCards(automationCardGroups.codex),
   gemini: [],
-  deepseekcode: [],
   reasonix: [],
   pi: [],
   others: [],
@@ -1908,7 +1894,7 @@ const refreshProxyState = async (tab: ProviderTab) => {
       const status = await Call.ByName('codeswitch/services.PiSettingsService.ProxyStatus')
       proxyStates[tab] = Boolean(status?.enabled)
     } else {
-      const status = await fetchProxyStatus(tab as 'claude' | 'codex' | 'deepseekcode' | 'reasonix')
+      const status = await fetchProxyStatus(tab as 'claude' | 'codex' | 'reasonix')
       proxyStates[tab] = Boolean(status?.enabled)
     }
   } catch (error) {
@@ -1949,9 +1935,9 @@ const onProxyToggle = async () => {
       }
     } else {
       if (nextState) {
-        await enableProxy(tab as 'claude' | 'codex' | 'deepseekcode' | 'reasonix')
+        await enableProxy(tab as 'claude' | 'codex' | 'reasonix')
       } else {
-        await disableProxy(tab as 'claude' | 'codex' | 'deepseekcode' | 'reasonix')
+        await disableProxy(tab as 'claude' | 'codex' | 'reasonix')
       }
     }
     proxyStates[tab] = nextState
@@ -2375,7 +2361,6 @@ const getDefaultEndpoint = (platform: string) => {
   const defaults: Record<string, string> = {
     claude: '/v1/messages',
     codex: '/responses',
-    deepseekcode: '/v1/messages',
     reasonix: '/chat/completions',
     pi: '/v1/chat/completions',
   }
@@ -2383,12 +2368,7 @@ const getDefaultEndpoint = (platform: string) => {
 }
 
 // 获取平台默认认证方式
-const getDefaultAuthType = (platform: string) => {
-  if (platform === 'deepseekcode') {
-    return 'x-api-key'
-  }
-  return 'bearer'
-}
+const getDefaultAuthType = (_platform: string) => 'bearer'
 
 useActivePolling(() => {
 	mainPollingActive = true
@@ -2453,8 +2433,6 @@ const currentProxyLabel = computed(() => {
     return t('components.main.relayToggle.hostGemini')
   } else if (tab === 'reasonix') {
     return t('components.main.relayToggle.hostReasonix')
-  } else if (tab === 'deepseekcode') {
-    return t('components.main.relayToggle.hostDeepSeekCode')
   } else if (tab === 'pi') {
     return t('components.main.relayToggle.hostPi')
   } else if (tab === 'others') {
@@ -2645,7 +2623,7 @@ const userAgentOptions = computed(() => [
 ])
 
 // 上游协议类型选项
-const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'deepseekcode', 'reasonix', 'pi', 'others'])
+const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'pi', 'others'])
 const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
 const isCodexChatProtocol = computed(() =>
   modalState.tabId === 'codex' && modalState.form.upstreamProtocol === 'openai_chat'
@@ -3037,7 +3015,7 @@ const submitModal = async (): Promise<boolean> => {
 
   // 保存 CLI 配置
   const cliConfig = modalState.form.cliConfig
-  const supportedPlatforms: CLIPlatform[] = ['claude', 'codex', 'gemini', 'deepseekcode', 'reasonix']
+  const supportedPlatforms: CLIPlatform[] = ['claude', 'codex', 'gemini', 'reasonix']
   if (cliConfig && Object.keys(cliConfig).length > 0 && supportedPlatforms.includes(modalState.tabId as CLIPlatform)) {
     try {
       await saveCLIConfig(modalState.tabId as CLIPlatform, cliConfig)
@@ -3086,8 +3064,6 @@ const submitAndApplyModal = async () => {
       } else {
         throw new Error('Gemini provider cache entry not found')
       }
-    } else if (tabId === 'deepseekcode') {
-      await Call.ByName('codeswitch/services.DeepSeekCodeSettingsService.ApplySingleProvider', editingId)
     } else if (tabId === 'reasonix') {
       await Call.ByName('codeswitch/services.ReasonixSettingsService.ApplySingleProvider', editingId)
     } else {

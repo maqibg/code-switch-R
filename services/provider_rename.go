@@ -477,8 +477,6 @@ func resolvePlatform(kind string) (string, error) {
 		return "codex", nil
 	case "gemini":
 		return "gemini", nil
-	case "deepseekcode", "deepseek_code", "deepseek-code":
-		return "deepseekcode", nil
 	case "reasonix":
 		return "reasonix", nil
 	case "pi":

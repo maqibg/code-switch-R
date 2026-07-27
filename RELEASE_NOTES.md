@@ -1,3 +1,13 @@
+# Code Switch v2.6.55
+
+## 更新亮点
+- **移除 DeepSeekCode 平台支持**：下线 DeepSeekCode 的供应商管理页签、本地代理路由（`/deepseekcode/v1/*`）、MCP、提示词、环境检查与 WSL 写入入口。
+
+## 修复
+- 启动时自动检测旧 DeepSeekCode 托管状态：仅恢复代理注入的 `DEEPSEEK_BASE_URL`、`DEEPSEEK_API_KEY` 字段并清理残留状态文件，不改动用户 `settings.json` 中的其他内容。
+
+---
+
 # Code Switch v2.6.54
 
 ## 更新亮点

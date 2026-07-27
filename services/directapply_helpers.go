@@ -21,8 +21,6 @@ func providerFilePathNoCreate(kind string) (string, error) {
 		filename = "claude-code.json"
 	case "codex":
 		filename = "codex.json"
-	case "deepseekcode", "deepseek_code", "deepseek-code":
-		filename = "deepseekcode.json"
 	case "reasonix":
 		filename = "reasonix.json"
 	default:

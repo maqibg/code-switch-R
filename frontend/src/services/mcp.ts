@@ -1,6 +1,6 @@
 import { Call } from '@wailsio/runtime'
 
-export type McpPlatform = 'claude-code' | 'codex' | 'gemini' | 'deepseekcode' | 'reasonix'
+export type McpPlatform = 'claude-code' | 'codex' | 'gemini' | 'reasonix'
 export type McpServerType = 'stdio' | 'http'
 
 export type McpServer = {

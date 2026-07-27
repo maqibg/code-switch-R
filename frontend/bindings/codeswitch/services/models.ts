@@ -1213,31 +1213,6 @@ export class DeepLinkImportRequest {
     }
 }
 
-export class DeepSeekCodeProxyStatus {
-    "enabled": boolean;
-    "base_url": string;
-
-    /** Creates a new DeepSeekCodeProxyStatus instance. */
-    constructor($$source: Partial<DeepSeekCodeProxyStatus> = {}) {
-        if (!("enabled" in $$source)) {
-            this["enabled"] = false;
-        }
-        if (!("base_url" in $$source)) {
-            this["base_url"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new DeepSeekCodeProxyStatus instance from a string or object.
-     */
-    static createFrom($$source: any = {}): DeepSeekCodeProxyStatus {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new DeepSeekCodeProxyStatus($$parsedSource as Partial<DeepSeekCodeProxyStatus>);
-    }
-}
-
 export class DiscoveredModel {
     "id": string;
     "name"?: string;
@@ -1850,7 +1825,6 @@ export class MCPServer {
     "enabled_in_claude": boolean;
     "enabled_in_codex": boolean;
     "enabled_in_gemini": boolean;
-    "enabled_in_deepseekcode": boolean;
     "enabled_in_reasonix": boolean;
     "missing_placeholders": string[];
 
@@ -1877,9 +1851,6 @@ export class MCPServer {
         if (!("enabled_in_gemini" in $$source)) {
             this["enabled_in_gemini"] = false;
         }
-        if (!("enabled_in_deepseekcode" in $$source)) {
-            this["enabled_in_deepseekcode"] = false;
-        }
         if (!("enabled_in_reasonix" in $$source)) {
             this["enabled_in_reasonix"] = false;
         }
@@ -1897,7 +1868,7 @@ export class MCPServer {
         const $$createField3_0 = $$createType22;
         const $$createField4_0 = $$createType4;
         const $$createField9_0 = $$createType22;
-        const $$createField15_0 = $$createType22;
+        const $$createField14_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("args" in $$parsedSource) {
             $$parsedSource["args"] = $$createField3_0($$parsedSource["args"]);
@@ -1909,7 +1880,7 @@ export class MCPServer {
             $$parsedSource["enable_platform"] = $$createField9_0($$parsedSource["enable_platform"]);
         }
         if ("missing_placeholders" in $$parsedSource) {
-            $$parsedSource["missing_placeholders"] = $$createField15_0($$parsedSource["missing_placeholders"]);
+            $$parsedSource["missing_placeholders"] = $$createField14_0($$parsedSource["missing_placeholders"]);
         }
         return new MCPServer($$parsedSource as Partial<MCPServer>);
     }
@@ -3892,7 +3863,7 @@ export class Provider {
 
     /**
      * 认证方式 - bearer / x-api-key / 自定义 Header 名
-     * 空值时使用平台默认（claude/codex/reasonix: bearer, deepseekcode: x-api-key）
+     * 空值时使用平台默认 bearer。
      */
     "connectivityAuthType"?: string;
 
@@ -4747,7 +4718,6 @@ export class TargetCli {
     "claudeCode": boolean;
     "codex": boolean;
     "gemini": boolean;
-    "deepseekCode": boolean;
 
     /** Creates a new TargetCli instance. */
     constructor($$source: Partial<TargetCli> = {}) {
@@ -4759,9 +4729,6 @@ export class TargetCli {
         }
         if (!("gemini" in $$source)) {
             this["gemini"] = false;
-        }
-        if (!("deepseekCode" in $$source)) {
-            this["deepseekCode"] = false;
         }
 
         Object.assign(this, $$source);

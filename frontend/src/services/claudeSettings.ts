@@ -6,12 +6,11 @@ export interface ClaudeProxyStatus {
   base_url: string
 }
 
-type Platform = 'claude' | 'codex' | 'deepseekcode' | 'reasonix'
+type Platform = 'claude' | 'codex' | 'reasonix'
 
 const serviceNames: Record<Platform, string> = {
   claude: 'codeswitch/services.ClaudeSettingsService',
   codex: 'codeswitch/services.CodexSettingsService',
-  deepseekcode: 'codeswitch/services.DeepSeekCodeSettingsService',
   reasonix: 'codeswitch/services.ReasonixSettingsService',
 }
 

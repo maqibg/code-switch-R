@@ -443,7 +443,6 @@ const platformLabels: Record<CLIPlatform, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   gemini: 'Gemini',
-  deepseekcode: 'DeepSeekCode',
   reasonix: 'Reasonix',
 }
 

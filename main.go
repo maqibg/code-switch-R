@@ -107,6 +107,9 @@ func main() {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
 	log.Println("✅ 数据库已初始化")
+	if err := services.CleanupRemovedDeepSeekCodeProxy(); err != nil {
+		log.Printf("清理已移除的 DeepSeekCode 托管配置失败: %v", err)
+	}
 
 	// 【修复】第二步：初始化写入队列（依赖数据库连接）
 	if err := services.InitGlobalDBQueue(); err != nil {
@@ -133,7 +136,6 @@ func main() {
 	providerRelay.SetPricingService(pricingService)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
-	deepseekCodeSettings := services.NewDeepSeekCodeSettingsService(providerRelay.Addr())
 	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
 	providerModelDiscovery := services.NewProviderModelDiscoveryService(appSettings)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
@@ -151,7 +153,7 @@ func main() {
 	updateService := services.NewUpdateService(AppVersion)
 	consoleService := services.NewConsoleService()
 	customCliService := services.NewCustomCliService(providerRelay.Addr())
-	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService, deepseekCodeSettings)
+	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService)
 	frontendPreferencesService := services.NewFrontendPreferencesService()
 
 	go func() {
@@ -234,7 +236,6 @@ func main() {
 			application.NewService(consoleService),
 			application.NewService(customCliService),
 			application.NewService(networkService),
-			application.NewService(deepseekCodeSettings),
 			application.NewService(reasonixSettings),
 			application.NewService(piSettings),
 			application.NewService(pricingService),

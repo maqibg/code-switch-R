@@ -54,7 +54,7 @@ type Provider struct {
 	AvailabilityConfig         *AvailabilityConfig `json:"availabilityConfig,omitempty"`
 
 	// 认证方式 - bearer / x-api-key / 自定义 Header 名
-	// 空值时使用平台默认（claude/codex/reasonix: bearer, deepseekcode: x-api-key）
+	// 空值时使用平台默认 bearer。
 	ConnectivityAuthType string `json:"connectivityAuthType,omitempty"`
 
 	// 上游协议类型 - anthropic / openai_chat / auto
@@ -117,13 +117,8 @@ type providerEnvelope struct {
 	Providers []Provider `json:"providers"`
 }
 
-func defaultConnectivityAuthType(platform string) string {
-	switch strings.ToLower(strings.TrimSpace(platform)) {
-	case "deepseekcode", "deepseek_code", "deepseek-code":
-		return "x-api-key"
-	default:
-		return "bearer"
-	}
+func defaultConnectivityAuthType(_ string) string {
+	return "bearer"
 }
 
 func (p Provider) piPlatformKey() string {
@@ -164,8 +159,6 @@ func providerFilePath(kind string) (string, error) {
 		filename = "claude-code.json"
 	case "codex":
 		filename = "codex.json"
-	case "deepseekcode", "deepseek_code", "deepseek-code":
-		filename = "deepseekcode.json"
 	case "reasonix":
 		filename = "reasonix.json"
 	case "pi":

@@ -24,13 +24,11 @@ const (
 	codexDirName       = ".codex"
 	codexConfigFile    = "config.toml"
 	geminiDirName      = ".gemini"
-	geminiConfigFile       = "settings.json"
-	deepseekCodeDirName    = ".deepseek-code"
-	platClaudeCode         = "claude-code"
-	platCodex              = "codex"
-	platGemini             = "gemini"
-	platDeepSeekCode       = "deepseekcode"
-	platReasonix           = "reasonix"
+	geminiConfigFile   = "settings.json"
+	platClaudeCode     = "claude-code"
+	platCodex          = "codex"
+	platGemini         = "gemini"
+	platReasonix       = "reasonix"
 )
 
 var builtInServers = map[string]rawMCPServer{
@@ -84,9 +82,8 @@ type MCPServer struct {
 	EnablePlatform      []string          `json:"enable_platform"`
 	EnabledInClaude     bool              `json:"enabled_in_claude"`
 	EnabledInCodex      bool              `json:"enabled_in_codex"`
-	EnabledInGemini         bool              `json:"enabled_in_gemini"`
-	EnabledInDeepSeekCode   bool              `json:"enabled_in_deepseekcode"`
-	EnabledInReasonix       bool              `json:"enabled_in_reasonix"`
+	EnabledInGemini     bool              `json:"enabled_in_gemini"`
+	EnabledInReasonix   bool              `json:"enabled_in_reasonix"`
 	MissingPlaceholders []string          `json:"missing_placeholders"`
 }
 
@@ -153,7 +150,6 @@ func (ms *MCPService) ListServersForPlatform(platform string) ([]MCPServer, erro
 	claudeEnabled := loadClaudeEnabledServers()
 	codexEnabled := loadCodexEnabledServers()
 	geminiEnabled := loadGeminiEnabledServers()
-	deepseekEnabled := loadDeepSeekCodeEnabledServers()
 	reasonixEnabled := loadReasonixEnabledServers()
 
 	names := make([]string, 0, len(config))
@@ -167,21 +163,20 @@ func (ms *MCPService) ListServersForPlatform(platform string) ([]MCPServer, erro
 		entry := config[name]
 		typ := normalizeServerType(entry.Type)
 		server := MCPServer{
-			Name:            name,
-			Type:            typ,
-			Command:         strings.TrimSpace(entry.Command),
-			Args:            cloneArgs(entry.Args),
-			Env:             cloneEnv(entry.Env),
-			URL:             strings.TrimSpace(entry.URL),
-			Website:         strings.TrimSpace(entry.Website),
-			Tips:            strings.TrimSpace(entry.Tips),
-			Enabled:         entry.Enabled == nil || *entry.Enabled,
-			EnablePlatform:  []string{normalizedPlatform},
-			EnabledInClaude: containsNormalized(claudeEnabled, name),
-			EnabledInCodex:  containsNormalized(codexEnabled, name),
-			EnabledInGemini:       containsNormalized(geminiEnabled, name),
-			EnabledInDeepSeekCode: containsNormalized(deepseekEnabled, name),
-			EnabledInReasonix:     containsNormalized(reasonixEnabled, name),
+			Name:              name,
+			Type:              typ,
+			Command:           strings.TrimSpace(entry.Command),
+			Args:              cloneArgs(entry.Args),
+			Env:               cloneEnv(entry.Env),
+			URL:               strings.TrimSpace(entry.URL),
+			Website:           strings.TrimSpace(entry.Website),
+			Tips:              strings.TrimSpace(entry.Tips),
+			Enabled:           entry.Enabled == nil || *entry.Enabled,
+			EnablePlatform:    []string{normalizedPlatform},
+			EnabledInClaude:   containsNormalized(claudeEnabled, name),
+			EnabledInCodex:    containsNormalized(codexEnabled, name),
+			EnabledInGemini:   containsNormalized(geminiEnabled, name),
+			EnabledInReasonix: containsNormalized(reasonixEnabled, name),
 		}
 		server.MissingPlaceholders = detectPlaceholders(server.URL, server.Args)
 		servers = append(servers, server)
@@ -224,21 +219,20 @@ func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServe
 			return fmt.Errorf("%s 需要提供 url", name)
 		}
 		normalized[i] = MCPServer{
-			Name:            name,
-			Type:            typ,
-			Command:         command,
-			Args:            args,
-			Env:             env,
-			URL:             url,
-			Website:         strings.TrimSpace(server.Website),
-			Tips:            strings.TrimSpace(server.Tips),
-			Enabled:         server.Enabled,
-			EnablePlatform:  platforms,
-			EnabledInClaude: server.EnabledInClaude,
-			EnabledInCodex:  server.EnabledInCodex,
-			EnabledInGemini:       server.EnabledInGemini,
-			EnabledInDeepSeekCode: server.EnabledInDeepSeekCode,
-			EnabledInReasonix:     server.EnabledInReasonix,
+			Name:              name,
+			Type:              typ,
+			Command:           command,
+			Args:              args,
+			Env:               env,
+			URL:               url,
+			Website:           strings.TrimSpace(server.Website),
+			Tips:              strings.TrimSpace(server.Tips),
+			Enabled:           server.Enabled,
+			EnablePlatform:    platforms,
+			EnabledInClaude:   server.EnabledInClaude,
+			EnabledInCodex:    server.EnabledInCodex,
+			EnabledInGemini:   server.EnabledInGemini,
+			EnabledInReasonix: server.EnabledInReasonix,
 		}
 		raw[name] = rawMCPServer{
 			Type:           typ,
@@ -286,10 +280,6 @@ func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServe
 		}
 	case platGemini:
 		if err := ms.syncGeminiServers(normalized); err != nil {
-			return err
-		}
-	case platDeepSeekCode:
-		if err := ms.syncDeepSeekCodeServers(normalized); err != nil {
 			return err
 		}
 	case platReasonix:
@@ -539,8 +529,6 @@ func normalizePlatform(value string) (string, bool) {
 		return "codex", true
 	case "gemini", "gemini-cli", "gemini_cli":
 		return "gemini", true
-	case "deepseekcode", "deepseek_code", "deepseek-code":
-		return "deepseekcode", true
 	case "reasonix":
 		return "reasonix", true
 	default:
@@ -688,50 +676,6 @@ func loadGeminiEnabledServers() map[string]struct{} {
 		result[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
 	}
 	return result
-}
-
-func loadDeepSeekCodeEnabledServers() map[string]struct{} {
-	result := map[string]struct{}{}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return result
-	}
-	path := filepath.Join(home, deepseekCodeDirName, geminiConfigFile)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return result
-	}
-	var payload geminiMcpFilePayload
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return result
-	}
-	for name := range payload.Servers {
-		result[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
-	}
-	return result
-}
-
-func deepseekCodeConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, deepseekCodeDirName, geminiConfigFile), nil
-}
-
-func (ms *MCPService) syncDeepSeekCodeServers(servers []MCPServer) error {
-	path, err := deepseekCodeConfigPath()
-	if err != nil {
-		return err
-	}
-	desired := make(map[string]claudeDesktopServer)
-	for _, server := range servers {
-		if !server.Enabled || !platformContains(server.EnablePlatform, platDeepSeekCode) {
-			continue
-		}
-		desired[server.Name] = buildClaudeDesktopEntry(server)
-	}
-	return writeJSONMCPServersPreservingLayout(path, "mcpServers", desired, 0o600)
 }
 
 func reasonixConfigPath() (string, error) {

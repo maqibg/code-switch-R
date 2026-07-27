@@ -16,7 +16,6 @@ type PlatformDefinition struct {
 var providerPlatformDefinitions = []PlatformDefinition{
 	{ID: "claude", ClientProtocol: relayprotocol.AnthropicMessages, DefaultEndpoint: "/v1/messages"},
 	{ID: "codex", ClientProtocol: relayprotocol.OpenAIResponses, DefaultEndpoint: "/responses"},
-	{ID: "deepseekcode", ClientProtocol: relayprotocol.AnthropicMessages, DefaultEndpoint: "/v1/messages"},
 	{ID: "reasonix", ClientProtocol: relayprotocol.OpenAIChat, DefaultEndpoint: "/chat/completions"},
 	{ID: "pi", ClientProtocol: relayprotocol.OpenAIChat, DefaultEndpoint: "/v1/chat/completions"},
 }
