@@ -61,6 +61,13 @@ var schemaMigrations = []schemaMigration{
 		// 读取侧仍按 name 查询，本迁移只是把关联键准备好。
 		up: migrateLogProviderID,
 	},
+	{
+		version: 4,
+		name:    "blacklist-provider-id",
+		// 黑名单表加 provider_id 与 source_id 并回填，
+		// 为按 ID 定位铺路（删除 provider_alias 的前置条件之一）。
+		up: migrateBlacklistProviderID,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
