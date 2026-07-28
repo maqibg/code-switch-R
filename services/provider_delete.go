@@ -136,12 +136,6 @@ func deleteDeletedProviderNameRows(tx *sql.Tx, platform, name string) error {
 	); err != nil {
 		return fmt.Errorf("删除 provider_blacklist 失败: %w", err)
 	}
-	if _, err := tx.Exec(
-		`DELETE FROM provider_alias WHERE platform = ? AND (alias_name = ? OR canonical_name = ?)`,
-		platform, name, name,
-	); err != nil {
-		return fmt.Errorf("删除 provider_alias 名称记录失败: %w", err)
-	}
 	return nil
 }
 
@@ -171,54 +165,40 @@ func deleteRelayAttemptProviderNameRows(tx *sql.Tx, scope providerDataScope, nam
 	return err
 }
 
+// deleteDeletedProviderIDRows 按 provider_id 清理关联数据。
+//
+// 这是主数据入库后的主要清理方式：按 ID 一次覆盖该 provider 的全部历史记录，
+// 无论这些记录当时用的是哪个名字。按名字清理只作为补充，
+// 用于处理 provider_id 为 NULL 的早期数据。
 func deleteDeletedProviderIDRows(tx *sql.Tx, platform string, providerID int64) error {
 	if providerID == 0 {
 		return nil
 	}
+	for _, table := range []string{"request_log", "relay_attempt"} {
+		if _, err := tx.Exec(
+			fmt.Sprintf(`DELETE FROM %s WHERE provider_id = ?`, table), providerID,
+		); err != nil {
+			return fmt.Errorf("按 provider_id 删除 %s 失败: %w", table, err)
+		}
+	}
 	if _, err := tx.Exec(
-		`DELETE FROM provider_alias WHERE platform = ? AND provider_id = ?`,
-		platform, providerID,
+		`DELETE FROM provider_blacklist WHERE provider_id = ?`, providerID,
 	); err != nil {
-		return fmt.Errorf("按 provider_id 删除 provider_alias 失败: %w", err)
+		return fmt.Errorf("按 provider_id 删除 provider_blacklist 失败: %w", err)
 	}
 	return nil
 }
 
+// deletedProviderNames 返回被删除 provider 需要清理的名字集合。
+//
+// 原先还要从 provider_alias 里收集该 provider 用过的所有历史名字，
+// 因为日志与黑名单按名字关联，漏掉任一历史名就会留下清理不掉的孤儿数据。
+// 现在两者都带 provider_id，按 ID 清理即可覆盖全部历史记录，
+// 名字只用于清理 provider_id 为 NULL 的早期数据。
 func deletedProviderNames(tx *sql.Tx, platform string, provider deletedProvider) ([]string, error) {
-	names := make(map[string]struct{})
-	addName := func(name string) {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			names[name] = struct{}{}
-		}
+	name := strings.TrimSpace(provider.Name)
+	if name == "" {
+		return nil, nil
 	}
-	addName(provider.Name)
-
-	rows, err := tx.Query(
-		`SELECT alias_name, canonical_name FROM provider_alias
-		 WHERE platform = ? AND (provider_id = ? OR alias_name = ? OR canonical_name = ?)`,
-		platform, provider.ID, provider.Name, provider.Name,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("查询 provider_alias 失败: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var aliasName, canonicalName string
-		if err := rows.Scan(&aliasName, &canonicalName); err != nil {
-			return nil, fmt.Errorf("读取 provider_alias 失败: %w", err)
-		}
-		addName(aliasName)
-		addName(canonicalName)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历 provider_alias 失败: %w", err)
-	}
-
-	result := make([]string, 0, len(names))
-	for name := range names {
-		result = append(result, name)
-	}
-	return result, nil
+	return []string{name}, nil
 }

@@ -287,13 +287,9 @@ func prepareProviderSave(kind string, providers, existingProviders []Provider, a
 			return providerSavePlan{}, fmt.Errorf("provider id %d 的 name 不可修改(请使用 RenameProvider)", p.ID)
 		}
 
-		// 规则:名字不得占用其他 provider 的 48h 活动 alias
-		// 防止 "A→B 后新建同名 A" 被 alias resolver 静默归并到 B 的历史里
-		if plan.aliasEnabled {
-			if err := checkNameNotOccupiedByAlias(plan.aliasPlatform, p.ID, p.Name); err != nil {
-				return providerSavePlan{}, err
-			}
-		}
+		// 原先这里禁止"新建的 provider 用了别人 48h 内的旧名"，
+		// 因为 alias resolver 会把它静默归并到那个 provider 的历史里。
+		// 日志与黑名单改按 provider_id 关联后不存在这种归并，限制随之取消。
 
 		// 验证模型配置
 		p.configValidated = false

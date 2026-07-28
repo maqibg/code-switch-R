@@ -2,21 +2,10 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
-	"sync/atomic"
-	"time"
-
-	"github.com/daodao97/xgo/xdb"
 )
-
-// aliasTTL 定义 rename 后旧名保留时长,必须 > in-flight 请求上限(32h)并留 buffer。
-const aliasTTL = 48 * time.Hour
-
-var providerAliasLookupEnabled atomic.Bool
 
 type providerDataScope struct {
 	identityPlatform  string
@@ -76,11 +65,6 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 		return fmt.Errorf("应用数据库迁移失败: %w", err)
 	}
 
-	// 清理过期 alias(MVP:不起后台 job,借 rename 顺手 GC)
-	if err := cleanupExpiredAliases(); err != nil {
-		return fmt.Errorf("清理过期 alias 失败: %w", err)
-	}
-
 	// 加载当前配置(原样读,不触发迁移保存)
 	providers, err := ps.loadProvidersRaw(kind)
 	if err != nil {
@@ -113,11 +97,8 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 		}
 	}
 
-	// 校验 alias 表内是否被占用 + 该 provider_id 48h 内是否已 rename
-	if err := checkAliasConstraints(scope.identityPlatform, id, newName); err != nil {
-		return err
-	}
-
+	// 不再需要 alias 层面的校验：日志与黑名单都按 provider_id 关联，
+	// 改名不产生"旧名残留"，因此也不再禁止链式改名。
 	originalProviders := append([]Provider(nil), providers...)
 
 	// 更新内存中的 provider.Name（写入由 commitProviderRenameLocked 落到 provider 表）
@@ -185,12 +166,6 @@ func (ps *ProviderService) SaveProvidersWithRename(kind string, providerID int64
 	}
 	if err := RunMigrations(); err != nil {
 		return fmt.Errorf("应用数据库迁移失败: %w", err)
-	}
-	if err := cleanupExpiredAliases(); err != nil {
-		return fmt.Errorf("清理过期 alias 失败: %w", err)
-	}
-	if err := checkAliasConstraints(scope.identityPlatform, providerID, nextProvider.Name); err != nil {
-		return err
 	}
 
 	plan, err := prepareProviderSave(kind, providers, existingProviders, providerID)
@@ -341,6 +316,9 @@ func doRenameTxCtx(ctx context.Context, tx dbTxExecutor, scope providerDataScope
 		}
 	}
 
+	// 黑名单按 provider_id 定位（迁移 v4），这里同步名字只为让展示一致。
+	// 即使这次更新漏掉某行（例如它的 provider_id 为 NULL 的历史行），
+	// 也不会影响失败计数的正确性。
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE provider_blacklist SET provider_name = ? WHERE platform = ? AND provider_name = ?`,
 		newName, scope.identityPlatform, oldName,
@@ -348,187 +326,11 @@ func doRenameTxCtx(ctx context.Context, tx dbTxExecutor, scope providerDataScope
 		return fmt.Errorf("更新 provider_blacklist 失败: %w", err)
 	}
 
-	expiresAt := time.Now().Add(aliasTTL).UTC().Format("2006-01-02 15:04:05")
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO provider_alias (platform, provider_id, alias_name, canonical_name, expires_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		scope.identityPlatform, providerID, oldName, newName, expiresAt,
-	); err != nil {
-		return fmt.Errorf("写入 alias 失败: %w", err)
-	}
-	providerAliasLookupEnabled.Store(true)
-
+	// 不再写 provider_alias：日志与黑名单都按 provider_id 关联，
+	// 改名瞬间 in-flight 的写入靠 ID 落到同一行，不需要旧名映射表。
 	return nil
 }
 
-// request_log.provider / relay_attempt.provider / provider_blacklist.provider_name + 写 alias。
-func doRenameTx(tx *sql.Tx, scope providerDataScope, providerID int64, oldName, newName string) error {
-	if err := updateRequestLogProviderNameTx(tx, scope, oldName, newName); err != nil {
-		return fmt.Errorf("更新 request_log 失败: %w", err)
-	}
-	if err := updateRelayAttemptProviderNameTx(tx, scope, oldName, newName); err != nil {
-		return fmt.Errorf("更新 relay_attempt 失败: %w", err)
-	}
-
-	if _, err := tx.Exec(
-		`UPDATE provider_blacklist SET provider_name = ? WHERE platform = ? AND provider_name = ?`,
-		newName, scope.identityPlatform, oldName,
-	); err != nil {
-		return fmt.Errorf("更新 provider_blacklist 失败: %w", err)
-	}
-
-	expiresAt := time.Now().Add(aliasTTL).UTC().Format("2006-01-02 15:04:05")
-	if _, err := tx.Exec(
-		`INSERT INTO provider_alias (platform, provider_id, alias_name, canonical_name, expires_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		scope.identityPlatform, providerID, oldName, newName, expiresAt,
-	); err != nil {
-		return fmt.Errorf("写入 alias 失败: %w", err)
-	}
-	providerAliasLookupEnabled.Store(true)
-
-	return nil
-}
-
-func updateRequestLogProviderNameTx(tx *sql.Tx, scope providerDataScope, oldName, newName string) error {
-	if scope.sourceID == "" {
-		_, err := tx.Exec(`UPDATE request_log SET provider = ? WHERE platform = ? AND provider = ?`, newName, scope.identityPlatform, oldName)
-		return err
-	}
-	_, err := tx.Exec(
-		`UPDATE request_log SET provider = ?
-		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
-		newName, oldName, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
-	)
-	return err
-}
-
-func updateRelayAttemptProviderNameTx(tx *sql.Tx, scope providerDataScope, oldName, newName string) error {
-	if scope.sourceID == "" {
-		_, err := tx.Exec(`UPDATE relay_attempt SET provider = ? WHERE platform = ? AND provider = ?`, newName, scope.identityPlatform, oldName)
-		return err
-	}
-	_, err := tx.Exec(
-		`UPDATE relay_attempt SET provider = ?
-		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
-		newName, oldName, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
-	)
-	return err
-}
-
-// checkAliasConstraints 校验 alias 表层面的约束:
-//   - newName 未被 48h 内其它 alias 占用
-//   - 该 provider_id 48h 内没有产生过 alias(禁止链式 rename)
-func checkAliasConstraints(platform string, providerID int64, newName string) error {
-	db, err := xdb.DB("default")
-	if err != nil {
-		return fmt.Errorf("获取数据库连接失败: %w", err)
-	}
-
-	var occupied int
-	err = db.QueryRow(
-		`SELECT COUNT(*) FROM provider_alias
-		 WHERE platform = ? AND alias_name = ? AND expires_at > CURRENT_TIMESTAMP`,
-		platform, newName,
-	).Scan(&occupied)
-	if err != nil {
-		return fmt.Errorf("查询 alias 占用失败: %w", err)
-	}
-	if occupied > 0 {
-		return fmt.Errorf("新名字 %q 在 48h 内被历史别名占用,无法使用", newName)
-	}
-
-	var chained int
-	err = db.QueryRow(
-		`SELECT COUNT(*) FROM provider_alias
-		 WHERE platform = ? AND provider_id = ? AND expires_at > CURRENT_TIMESTAMP`,
-		platform, providerID,
-	).Scan(&chained)
-	if err != nil {
-		return fmt.Errorf("查询链式 rename 失败: %w", err)
-	}
-	if chained > 0 {
-		return fmt.Errorf("该 provider 48h 内已改过名,请等 alias 过期后再操作")
-	}
-
-	return nil
-}
-
-// checkNameNotOccupiedByAlias 校验 `name` 未被其它 provider 的 48h 活动 alias 占用。
-// 用于 SaveProviders 新建/更新时阻止"复用旧名新建 provider 污染历史"。
-// providerID 为当前被保存的 provider id;如果 alias 的 provider_id 等于它本身,则不算冲突
-// (意味着是该 provider 自己的老别名,canonical_name 仍指向它自己,不会误归并)。
-func checkNameNotOccupiedByAlias(platform string, providerID int64, name string) error {
-	if name == "" {
-		return nil
-	}
-	db, err := xdb.DB("default")
-	if err != nil {
-		return fmt.Errorf("获取数据库连接失败: %w", err)
-	}
-	var owner int64
-	err = db.QueryRow(
-		`SELECT provider_id FROM provider_alias
-		 WHERE platform = ? AND alias_name = ? AND expires_at > CURRENT_TIMESTAMP
-		 LIMIT 1`,
-		platform, name,
-	).Scan(&owner)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("查询 alias 占用失败: %w", err)
-	}
-	if owner != providerID {
-		log.Printf("[Provider] 名字 %q 被其他 provider(id=%d)的 48h 活动别名占用,拒绝保存", name, owner)
-		return fmt.Errorf("名字 %q 被其他供应商的历史别名暂时占用(48h 内),请换个名字或等待过期", name)
-	}
-	return nil
-}
-
-// cleanupExpiredAliases 删除已过期的 alias 记录。
-func cleanupExpiredAliases() error {
-	db, err := xdb.DB("default")
-	if err != nil {
-		return err
-	}
-	if _, err = db.Exec(`DELETE FROM provider_alias WHERE expires_at <= CURRENT_TIMESTAMP`); err != nil {
-		return err
-	}
-	return refreshProviderAliasLookupEnabled(db)
-}
-
-func refreshProviderAliasLookupEnabled(db *sql.DB) error {
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM provider_alias WHERE expires_at > CURRENT_TIMESTAMP`).Scan(&count); err != nil {
-		return err
-	}
-	providerAliasLookupEnabled.Store(count > 0)
-	return nil
-}
-
-// ResolveProviderAlias 将旧名翻译为当前 canonical name(未过期),找不到返回原名。
-// 只做 1 跳查询,由 RenameProvider 的链式拒绝约束保证不会出现多层 alias。
-func ResolveProviderAlias(platform, name string) string {
-	if name == "" || !providerAliasLookupEnabled.Load() {
-		return name
-	}
-	db, err := xdb.DB("default")
-	if err != nil {
-		return name
-	}
-	var canonical string
-	err = db.QueryRow(
-		`SELECT canonical_name FROM provider_alias
-		 WHERE platform = ? AND alias_name = ? AND expires_at > CURRENT_TIMESTAMP
-		 LIMIT 1`,
-		platform, name,
-	).Scan(&canonical)
-	if err != nil || canonical == "" {
-		return name
-	}
-	return canonical
-}
 
 // resolvePlatform 把 kind 归一到 DB 使用的 platform 值(与 request_log/blacklist 一致)。
 //

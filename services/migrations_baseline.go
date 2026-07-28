@@ -17,6 +17,9 @@ func migrateBaseline(tx sqlExecutor) error {
 	}{
 		{"app_settings", migrateAppSettingsTable},
 		{"provider_blacklist", migrateProviderBlacklistTable},
+		// provider_alias 在迁移 v5 被删除。基线仍需建它：
+		// 迁移按序执行，v1 之后的 v3/v4 会读到这张表存在与否的状态，
+		// 保持基线与历史一致比让后续迁移分支判断更简单。
 		{"provider_alias", migrateProviderAliasTable},
 		{"request_log", migrateRequestLogTable},
 		{"relay_attempt", migrateRelayAttemptTable},

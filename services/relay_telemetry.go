@@ -96,7 +96,10 @@ func (t *relayTelemetry) recordAttempt(provider Provider, execution *relayForwar
 	if execution != nil {
 		protocolName = string(execution.RoutePlan.UpstreamProtocol)
 	}
-	usage.Provider = ResolveProviderAlias(t.AliasPlatform, provider.Name)
+	// 直接记录当前名字。原先要把它翻译成 canonical name，是因为日志按名字关联，
+	// 改名后旧名记录会与新名记录割裂；现在按 provider_id 关联，
+	// name 就是"请求发生当时的名字"这个历史事实，不需要翻译。
+	usage.Provider = provider.Name
 	usage.Model = strings.TrimSpace(usage.Model)
 	if usage.Model == "" && execution != nil {
 		usage.Model = execution.Model
@@ -125,7 +128,7 @@ func (t *relayTelemetry) recordGeminiAttempt(provider GeminiProvider, usage Requ
 	if t == nil {
 		return
 	}
-	usage.Provider = ResolveProviderAlias("gemini", provider.Name)
+	usage.Provider = provider.Name
 	attempt := RelayAttemptLog{
 		RequestID: t.RequestID, AttemptIndex: len(t.Attempts) + 1, Provider: usage.Provider,
 		Model: usage.Model, UpstreamProtocol: string(relayprotocol.GeminiNative), HTTPCode: usage.HttpCode,

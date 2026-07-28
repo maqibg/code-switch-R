@@ -119,34 +119,3 @@ func ensureBlacklistTables() error {
 
 	return nil
 }
-
-// ensureProviderAliasTable 创建 provider_alias 表,用于 rename 后 48h 内承接旧名 in-flight 写入。
-func ensureProviderAliasTable() error {
-	db, err := xdb.DB("default")
-	if err != nil {
-		return fmt.Errorf("获取数据库连接失败: %w", err)
-	}
-
-	const createSQL = `CREATE TABLE IF NOT EXISTS provider_alias (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		platform TEXT NOT NULL,
-		provider_id INTEGER NOT NULL,
-		alias_name TEXT NOT NULL COLLATE NOCASE,
-		canonical_name TEXT NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		expires_at DATETIME NOT NULL,
-		UNIQUE(platform, alias_name)
-	)`
-	if _, err := db.Exec(createSQL); err != nil {
-		return fmt.Errorf("创建 provider_alias 表失败: %w", err)
-	}
-
-	const createIndexSQL = `
-		CREATE INDEX IF NOT EXISTS idx_provider_alias_pid ON provider_alias(platform, provider_id);
-		CREATE INDEX IF NOT EXISTS idx_provider_alias_expires ON provider_alias(expires_at);
-	`
-	if _, err := db.Exec(createIndexSQL); err != nil {
-		return fmt.Errorf("创建 provider_alias 索引失败: %w", err)
-	}
-	return refreshProviderAliasLookupEnabled(db)
-}

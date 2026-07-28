@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/daodao97/xgo/xdb"
 	_ "modernc.org/sqlite"
@@ -179,6 +178,23 @@ func countRows(t *testing.T, query string, args ...interface{}) int {
 	return n
 }
 
+// tableStillExists 判断表是否仍存在，用于断言已删除的表确实不在了
+func tableStillExists(t *testing.T, table string) bool {
+	t.Helper()
+	db, _ := xdb.DB("default")
+	var name string
+	err := db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`, table,
+	).Scan(&name)
+	if err == sql.ErrNoRows {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("查询表 %s 是否存在失败: %v", table, err)
+	}
+	return true
+}
+
 // TestRenameProvider_HappyPath 基础 rename + 历史数据迁移。
 func TestRenameProvider_HappyPath(t *testing.T) {
 	setupRenameTestEnv(t)
@@ -218,9 +234,12 @@ func TestRenameProvider_HappyPath(t *testing.T) {
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE provider_name = ?`, "NewName"); n != 1 {
 		t.Errorf("provider_blacklist 应改名,实际 NewName 条数 %d", n)
 	}
-	// 验证 alias 已写入
-	if n := countRows(t, `SELECT COUNT(*) FROM provider_alias WHERE alias_name = ? AND canonical_name = ?`, "OldName", "NewName"); n != 1 {
-		t.Errorf("alias 应有 1 条 OldName->NewName,实际 %d", n)
+	// 不再写 alias：历史数据靠 provider_id 关联，ID 保持不变
+	if tableStillExists(t, "provider_alias") {
+		t.Error("provider_alias 表应已被删除（迁移 v5）")
+	}
+	if len(providers) != 1 || providers[0].ID != 1 {
+		t.Errorf("改名不应改变 provider ID，实际 %+v", providers)
 	}
 }
 
@@ -260,8 +279,12 @@ func TestRenameProvider_CurrentConflict(t *testing.T) {
 	}
 }
 
-// TestRenameProvider_ChainedBlocked 48h 内同 provider 禁止再次 rename。
-func TestRenameProvider_ChainedBlocked(t *testing.T) {
+// 链式改名现在合法。
+//
+// 原先 48 小时内禁止对同一 provider 再次改名，是因为 alias 是 name→name 映射：
+// A→B→C 之后，用 A 查会得到 B，而 B 已经不存在了。
+// 日志与黑名单改按 provider_id 关联后不存在这个问题，限制随之取消。
+func TestRenameProvider_ChainedRenameAllowed(t *testing.T) {
 	setupRenameTestEnv(t)
 	ps := NewProviderService()
 	saveProviderFixture(t, ps, []Provider{{ID: 1, Name: "A", APIURL: "u"}})
@@ -269,13 +292,28 @@ func TestRenameProvider_ChainedBlocked(t *testing.T) {
 	if err := ps.RenameProvider("claude", 1, "B"); err != nil {
 		t.Fatalf("首次 rename 应成功: %v", err)
 	}
-	if err := ps.RenameProvider("claude", 1, "C"); err == nil {
-		t.Error("48h 内再次 rename 应拒绝")
+	if err := ps.RenameProvider("claude", 1, "C"); err != nil {
+		t.Fatalf("链式 rename 现在应允许: %v", err)
+	}
+
+	providers, err := ps.LoadProviders("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providers) != 1 || providers[0].Name != "C" {
+		t.Fatalf("最终名字应为 C，实际 %+v", providers)
+	}
+	// ID 始终不变，历史数据靠它关联
+	if providers[0].ID != 1 {
+		t.Errorf("改名不应改变 ID，实际 %d", providers[0].ID)
 	}
 }
 
-// TestRenameProvider_AliasOccupied 新名字被其它 provider 的未过期 alias 占用时拒绝。
-func TestRenameProvider_AliasOccupied(t *testing.T) {
+// 重用另一个 provider 的旧名现在合法。
+//
+// 原先禁止是因为 alias 会把新建的同名 provider 静默归并到旧 provider 的历史里。
+// 按 provider_id 关联后两者互不干扰。
+func TestRenameProvider_ReusingFormerNameAllowed(t *testing.T) {
 	setupRenameTestEnv(t)
 	ps := NewProviderService()
 	saveProviderFixture(t, ps, []Provider{
@@ -283,42 +321,39 @@ func TestRenameProvider_AliasOccupied(t *testing.T) {
 		{ID: 2, Name: "X", APIURL: "u"},
 	})
 
-	// A -> B,产生 alias A
+	// A -> B，A 这个名字随之空出来
 	if err := ps.RenameProvider("claude", 1, "B"); err != nil {
 		t.Fatalf("A->B 失败: %v", err)
 	}
-	// 此时 X 想改为 A,但 alias 还占着 A
-	if err := ps.RenameProvider("claude", 2, "A"); err == nil {
-		t.Error("新名 A 被未过期 alias 占用,应拒绝")
+	// X 改名为 A：现在应当允许
+	if err := ps.RenameProvider("claude", 2, "A"); err != nil {
+		t.Fatalf("重用已释放的名字应允许: %v", err)
+	}
+
+	providers, err := ps.LoadProviders("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[int64]string{}
+	for _, p := range providers {
+		byID[p.ID] = p.Name
+	}
+	if byID[1] != "B" || byID[2] != "A" {
+		t.Errorf("两个 provider 应各自持有新名字，实际 %+v", byID)
 	}
 }
 
-// TestRenameProvider_TTLCleanup 过期 alias 不应阻塞新 rename。
-func TestRenameProvider_TTLCleanup(t *testing.T) {
+// 改名不应再写入 alias 记录（整套机制已随主数据入库删除）
+func TestRenameProvider_WritesNoAlias(t *testing.T) {
 	setupRenameTestEnv(t)
 	ps := NewProviderService()
-	saveProviderFixture(t, ps, []Provider{
-		{ID: 1, Name: "A", APIURL: "u"},
-	})
+	saveProviderFixture(t, ps, []Provider{{ID: 1, Name: "A", APIURL: "u"}})
+
 	if err := ps.RenameProvider("claude", 1, "B"); err != nil {
 		t.Fatalf("rename 失败: %v", err)
 	}
-
-	// 手动把 alias 和 provider_id 相关记录改为已过期
-	db, _ := xdb.DB("default")
-	past := time.Now().Add(-1 * time.Hour).UTC().Format("2006-01-02 15:04:05")
-	if _, err := db.Exec(`UPDATE provider_alias SET expires_at = ?`, past); err != nil {
-		t.Fatalf("手动过期失败: %v", err)
-	}
-
-	// 现在 rename B -> C 应该过(链式约束看未过期,过期不算)
-	if err := ps.RenameProvider("claude", 1, "C"); err != nil {
-		t.Errorf("过期 alias 不应阻塞:%v", err)
-	}
-
-	// 过期 alias 应该已经被清理
-	if n := countRows(t, `SELECT COUNT(*) FROM provider_alias WHERE alias_name = 'A'`); n != 0 {
-		t.Errorf("过期 alias 应被清理,实际仍有 %d 条", n)
+	if tableStillExists(t, "provider_alias") {
+		t.Error("provider_alias 表应已被删除（迁移 v5）")
 	}
 }
 
@@ -361,66 +396,76 @@ func TestRenameProvider_RollbackOnTxFail(t *testing.T) {
 	}
 }
 
-// TestSaveProviders_RejectsAliasReuse 验证新建/保存 provider 时,
-// 不能使用 48h 内仍活动的 alias 名,防止历史数据被 alias resolver 静默归并。
-func TestSaveProviders_RejectsAliasReuse(t *testing.T) {
+// 新建 provider 复用别人释放出来的旧名现在合法。
+//
+// 原先拒绝是因为 alias 会把新 provider 的记录静默归并到旧 provider 的历史里。
+// 按 provider_id 关联后两者各自独立，不需要这条限制。
+func TestSaveProviders_AllowsReusingReleasedName(t *testing.T) {
 	setupRenameTestEnv(t)
 	ps := NewProviderService()
 	saveProviderFixture(t, ps, []Provider{
 		{ID: 1, Name: "OldName", APIURL: "https://a.com"},
 	})
 
-	// A->B 产生 alias OldName->NewName
 	if err := ps.RenameProvider("claude", 1, "NewName"); err != nil {
 		t.Fatalf("rename 失败: %v", err)
 	}
 
-	// 用户尝试新增 id=2 命名为 OldName,应该被拒绝
+	// 新增 id=2 使用已释放的 OldName
 	providers, _ := ps.LoadProviders("claude")
 	providers = append(providers, Provider{ID: 2, Name: "OldName", APIURL: "https://b.com"})
-	err := ps.SaveProviders("claude", providers)
-	if err == nil {
-		t.Fatal("新建 provider 复用活动 alias 名应该被拒绝")
+	if err := ps.SaveProviders("claude", providers); err != nil {
+		t.Fatalf("复用已释放的名字应允许: %v", err)
+	}
+
+	saved, err := ps.LoadProviders("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 2 {
+		t.Fatalf("应有 2 个 provider，实际 %d", len(saved))
+	}
+	byID := map[int64]string{}
+	for _, p := range saved {
+		byID[p.ID] = p.Name
+	}
+	if byID[1] != "NewName" || byID[2] != "OldName" {
+		t.Errorf("两者应各自独立持有名字，实际 %+v", byID)
 	}
 }
 
-// TestSaveProviders_AliasReuseCaseInsensitive 验证 alias 占用的大小写不敏感,
-// 锁住 alias_name 列的 COLLATE NOCASE 契约,防止未来改回 case-sensitive 产生回归。
-func TestSaveProviders_AliasReuseCaseInsensitive(t *testing.T) {
-	setupRenameTestEnv(t)
-	ps := NewProviderService()
-	saveProviderFixture(t, ps, []Provider{
-		{ID: 1, Name: "OldName", APIURL: "https://a.com"},
-	})
-
-	if err := ps.RenameProvider("claude", 1, "NewName"); err != nil {
-		t.Fatalf("rename 失败: %v", err)
-	}
-
-	// 使用不同大小写的同名("oldname" vs "OldName")仍应被拒绝
-	providers, _ := ps.LoadProviders("claude")
-	providers = append(providers, Provider{ID: 2, Name: "oldname", APIURL: "https://b.com"})
-	if err := ps.SaveProviders("claude", providers); err == nil {
-		t.Fatal("大小写不同的同名 alias 也应被拒绝(COLLATE NOCASE)")
-	}
-}
-
-// TestResolveProviderAlias rename 后用旧名查 canonical。
-func TestResolveProviderAlias(t *testing.T) {
+// 改名后历史记录靠 provider_id 关联，不依赖名字翻译。
+//
+// 取代原来的 TestResolveProviderAlias：那个函数与 provider_alias 一起删除了。
+func TestRenamedProviderHistoryLinkedByID(t *testing.T) {
 	setupRenameTestEnv(t)
 	ps := NewProviderService()
 	saveProviderFixture(t, ps, []Provider{{ID: 1, Name: "A", APIURL: "u"}})
 
+	// 用旧名写一条带 provider_id 的日志
+	db, _ := xdb.DB("default")
+	if _, err := db.Exec(
+		`INSERT INTO request_log (platform, provider, provider_id, http_code) VALUES ('claude', 'A', 1, 200)`,
+	); err != nil {
+		t.Fatalf("写入日志失败: %v", err)
+	}
+
 	if err := ps.RenameProvider("claude", 1, "B"); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
-	if got := ResolveProviderAlias("claude", "A"); got != "B" {
-		t.Errorf("A 应该被解析为 B,实际 %q", got)
+
+	// 按 provider_id 能找到那条记录，无论它当时叫什么名字
+	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE provider_id = 1`); n != 1 {
+		t.Errorf("应能按 provider_id 找到历史记录，实际 %d 条", n)
 	}
-	if got := ResolveProviderAlias("claude", "B"); got != "B" {
-		t.Errorf("canonical 输入应原样返回,实际 %q", got)
+	// 按新名筛选也能命中（筛选内部解析成 ID，见 log_provider_filter.go）
+	filter := resolveLogProviderFilter("claude", "", "B")
+	condition, args := filter.sqlCondition()
+	var matched int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM request_log WHERE `+condition, args...).Scan(&matched); err != nil {
+		t.Fatalf("按新名筛选失败: %v", err)
 	}
-	if got := ResolveProviderAlias("claude", "Unknown"); got != "Unknown" {
-		t.Errorf("未注册 name 应原样返回,实际 %q", got)
+	if matched != 1 {
+		t.Errorf("按新名筛选应命中改名前的记录，实际 %d 条", matched)
 	}
 }

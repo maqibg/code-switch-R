@@ -40,7 +40,7 @@ func TestMigrationsCreateFullSchemaOnFreshDB(t *testing.T) {
 
 	for _, table := range []string{
 		"schema_version", "app_settings", "provider_blacklist",
-		"provider_alias", "request_log", "relay_attempt",
+		"request_log", "relay_attempt",
 	} {
 		if !tableExists(t, db, table) {
 			t.Errorf("表 %s 应已创建", table)
@@ -250,8 +250,6 @@ func TestMigrationsCreateExpectedIndexes(t *testing.T) {
 		"idx_request_log_model_created_at",
 		"idx_request_log_pending_cost",
 		"idx_relay_attempt_provider_created_at",
-		"idx_provider_alias_pid",
-		"idx_provider_alias_expires",
 	} {
 		if !found[idx] {
 			t.Errorf("索引 %s 应已创建", idx)

@@ -3,22 +3,22 @@ package services
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/daodao97/xgo/xdb"
 )
 
-func seedProviderAlias(t *testing.T, platform string, providerID int64, aliasName, canonicalName string) {
+// seedLogWithProviderID 写入带 provider_id 的日志行，
+// 用于验证删除时按 ID 清理能覆盖该 provider 的全部历史记录
+func seedLogWithProviderID(t *testing.T, platform, providerName string, providerID int64, count int) {
 	t.Helper()
 	db, _ := xdb.DB("default")
-	expiresAt := time.Now().Add(time.Hour).UTC().Format("2006-01-02 15:04:05")
-	_, err := db.Exec(
-		`INSERT INTO provider_alias (platform, provider_id, alias_name, canonical_name, expires_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		platform, providerID, aliasName, canonicalName, expiresAt,
-	)
-	if err != nil {
-		t.Fatalf("seed provider_alias 失败: %v", err)
+	for i := 0; i < count; i++ {
+		if _, err := db.Exec(
+			`INSERT INTO request_log (platform, provider, provider_id, http_code) VALUES (?, ?, ?, 200)`,
+			platform, providerName, providerID,
+		); err != nil {
+			t.Fatalf("seed request_log 失败: %v", err)
+		}
 	}
 }
 
@@ -32,15 +32,14 @@ func TestSaveProviders_DeleteCleansProviderData(t *testing.T) {
 	})
 
 	seedRequestLog(t, "claude", "DeleteMe", 2)
-	seedRequestLog(t, "claude", "OldDeleteMe", 1)
 	seedRequestLog(t, "claude", "KeepMe", 1)
 	seedRelayAttempt(t, "claude", "", "DeleteMe", 2)
-	seedRelayAttempt(t, "claude", "", "OldDeleteMe", 1)
 	seedRelayAttempt(t, "claude", "", "KeepMe", 1)
 	seedBlacklist(t, "claude", "DeleteMe")
-	seedBlacklist(t, "claude", "OldDeleteMe")
 	seedBlacklist(t, "claude", "KeepMe")
-	seedProviderAlias(t, "claude", 1, "OldDeleteMe", "DeleteMe")
+	// 一条带 provider_id 但用的是该 provider 早先名字的记录：
+	// 按 ID 清理应当覆盖它。原先这依赖 alias 收集历史名字才能清掉。
+	seedLogWithProviderID(t, "claude", "OldDeleteMe", 1, 1)
 
 	err := ps.SaveProviders("claude", []Provider{
 		{ID: 2, Name: "KeepMe", APIURL: "https://b.com", APIKey: "k"},
@@ -71,8 +70,12 @@ func assertDeletedProviderDataRemoved(t *testing.T, platform string, providerID 
 	if n := countRows(t, `SELECT COUNT(*) FROM provider_blacklist WHERE platform = ? AND provider_name IN (?, ?)`, platform, "DeleteMe", "OldDeleteMe"); n != 0 {
 		t.Fatalf("删除供应商的 provider_blacklist 应清空,实际 %d", n)
 	}
-	if n := countRows(t, `SELECT COUNT(*) FROM provider_alias WHERE platform = ? AND provider_id = ?`, platform, providerID); n != 0 {
-		t.Fatalf("删除供应商的 provider_alias 应清空,实际 %d", n)
+	// 按 provider_id 关联的记录也必须清空（覆盖该 provider 用过的所有历史名字）
+	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE provider_id = ?`, providerID); n != 0 {
+		t.Fatalf("按 provider_id 关联的 request_log 应清空,实际 %d", n)
+	}
+	if n := countRows(t, `SELECT COUNT(*) FROM relay_attempt WHERE provider_id = ?`, providerID); n != 0 {
+		t.Fatalf("按 provider_id 关联的 relay_attempt 应清空,实际 %d", n)
 	}
 }
 

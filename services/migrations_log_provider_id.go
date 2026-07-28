@@ -104,5 +104,49 @@ func backfillProviderID(tx sqlExecutor, table string) error {
 	if affected, err := result.RowsAffected(); err == nil && affected > 0 {
 		logInfo("已回填日志表的 provider_id", "table", table, "rows", affected)
 	}
+
+	return backfillProviderIDViaAlias(tx, table)
+}
+
+// backfillProviderIDViaAlias 借 provider_alias 把"用历史名字写入的行"也关联上。
+//
+// 按当前名字匹配会漏掉这些行：provider 改名后，改名前写入的记录仍带旧名，
+// 而 provider 表里只有新名。alias 表恰好记录了旧名到 provider_id 的映射，
+// 迁移 v5 才删除它，所以这里还能用上——这是最后的机会。
+//
+// 漏掉的后果是这些行的 provider_id 永久为 NULL，删除该 provider 时
+// 按 ID 清理覆盖不到，留下孤儿数据。
+func backfillProviderIDViaAlias(tx sqlExecutor, table string) error {
+	// alias 表可能已不存在（全新安装在 v5 之后建库，或已跑过 v5）
+	var aliasExists string
+	err := tx.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='provider_alias'`,
+	).Scan(&aliasExists)
+	if err != nil {
+		// 不存在或查询失败都视为无需处理
+		return nil
+	}
+
+	result, err := tx.Exec(fmt.Sprintf(`
+		UPDATE %s
+		SET provider_id = (
+			SELECT a.provider_id FROM provider_alias a
+			WHERE a.alias_name = %s.provider
+			  AND a.platform = %s.platform
+			LIMIT 1
+		)
+		WHERE provider_id IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM provider_alias a
+			WHERE a.alias_name = %s.provider
+			  AND a.platform = %s.platform
+		  )
+	`, table, table, table, table, table))
+	if err != nil {
+		return fmt.Errorf("按 alias 回填 %s.provider_id 失败: %w", table, err)
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected > 0 {
+		logInfo("已按历史名字回填日志表的 provider_id", "table", table, "rows", affected)
+	}
 	return nil
 }

@@ -109,8 +109,8 @@ func TestPiSaveProvidersWithRenameIsAtomicOnSyncFailure(t *testing.T) {
 	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE platform = ? AND provider = ?`, "pi", "old"); n != 1 {
 		t.Fatalf("失败后历史数据应保留旧名: %d", n)
 	}
-	if n := countRows(t, `SELECT COUNT(*) FROM provider_alias WHERE platform = ?`, "pi"); n != 0 {
-		t.Fatalf("失败后不应留下 alias: %d", n)
+	if tableStillExists(t, "provider_alias") {
+		t.Fatal("provider_alias 表应已被删除（迁移 v5）")
 	}
 	if len(snapshots) != 2 || snapshots[0][0].Name != "new" || snapshots[1][0].Name != "old" {
 		t.Fatalf("Pi gateway 应尝试新配置并恢复旧配置: %#v", snapshots)
@@ -172,8 +172,13 @@ func TestPiSaveProvidersWithRenameUpdatesConfigHistoryAndGateway(t *testing.T) {
 	if n := countRows(t, `SELECT COUNT(*) FROM request_log WHERE platform = ? AND provider = ?`, "pi", "new"); n != 1 {
 		t.Fatalf("历史数据未同步改名: %d", n)
 	}
-	if got := ResolveProviderAlias("pi", "old"); got != "new" {
-		t.Fatalf("旧名 alias = %q, want new", got)
+	// 原先这里断言 alias 把旧名解析成新名。alias 已随主数据入库删除——
+	// 现在的不变量是 provider_id 不变，历史记录靠它关联。
+	if providers[0].ID != 1 {
+		t.Fatalf("改名不应改变 provider ID: %d", providers[0].ID)
+	}
+	if tableStillExists(t, "provider_alias") {
+		t.Fatal("provider_alias 表应已被删除（迁移 v5）")
 	}
 	if len(synced) != 1 || synced[0].Name != "new" || synced[0].APIURL != next.APIURL {
 		t.Fatalf("Pi gateway 未收到完整新配置: %#v", synced)

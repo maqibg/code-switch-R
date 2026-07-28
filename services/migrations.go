@@ -68,6 +68,12 @@ var schemaMigrations = []schemaMigration{
 		// 为按 ID 定位铺路（删除 provider_alias 的前置条件之一）。
 		up: migrateBlacklistProviderID,
 	},
+	{
+		version: 5,
+		name:    "drop-provider-alias",
+		// 日志与黑名单都按 provider_id 关联后，旧名映射表不再需要。
+		up: migrateDropProviderAlias,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
