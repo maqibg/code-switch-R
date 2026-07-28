@@ -493,8 +493,12 @@ func buildRangeFilterArgs(start *time.Time, end time.Time, platform, provider, s
 	clauses = append(clauses, "created_at < ?")
 	args = append(args, formatCreatedAtBoundary(end))
 	if sourceID != "" {
-		clauses = append(clauses, "((platform = ? AND source_id = ?) OR platform = ?)")
-		args = append(args, platform, sourceID, "custom:"+sourceID)
+		// 只匹配当前格式。旧格式 platform='custom:<toolId>' 的历史行
+		// 已由迁移 v3 一次性归一化，写入侧也只产生当前格式，
+		// 因此不再需要兼容 OR——那个 OR 会让
+		// idx_request_log_platform_created_at 对 custom 平台失效。
+		clauses = append(clauses, "platform = ? AND source_id = ?")
+		args = append(args, platform, sourceID)
 	} else if platform != "" {
 		clauses = append(clauses, "platform = ?")
 		args = append(args, platform)

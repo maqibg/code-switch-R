@@ -189,13 +189,12 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 		options = append(options, xdb.WhereGte("created_at", formatCreatedAtBoundary(*filter.start)))
 	}
 	if filter.sourceID != "" {
-		options = append(options, xdb.WhereGroup(
-			xdb.WhereGroup(
-				xdb.WhereEq("platform", filter.platform),
-				xdb.WhereEq("source_id", filter.sourceID),
-			),
-			xdb.WhereOrEq("platform", "custom:"+filter.sourceID),
-		))
+		// 旧格式 platform='custom:<toolId>' 已由迁移 v3 归一化，
+		// 去掉兼容 OR 让 idx_request_log_platform_created_at 重新可用
+		options = append(options,
+			xdb.WhereEq("platform", filter.platform),
+			xdb.WhereEq("source_id", filter.sourceID),
+		)
 	} else if filter.platform != "" {
 		options = append(options, xdb.WhereEq("platform", filter.platform))
 	}

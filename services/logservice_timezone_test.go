@@ -196,10 +196,14 @@ func TestProviderStatsBySourceAndRangeIsolatesCustomTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	createdAt := formatCreatedAtBoundary(nowInBeijing().Add(-time.Minute))
+	// 统一用当前格式 platform='custom' + source_id。
+	// 旧格式 platform='custom:<toolId>' 已由迁移 v3 归一化，
+	// 写入侧也只产生当前格式，统计 SQL 因此不再带兼容 OR
+	// （那个 OR 会让 idx_request_log_platform_created_at 对 custom 平台失效）。
 	if _, err := db.Exec(`INSERT INTO request_log (platform, source_id, provider, model, http_code, created_at) VALUES
 		('custom', 'tool-a', 'Shared', 'model-a', 200, ?),
-		('custom', 'tool-b', 'Shared', 'model-a', 200, ?),
-		('custom:tool-a', '', 'Shared', 'model-a', 200, ?)`, createdAt, createdAt, createdAt); err != nil {
+		('custom', 'tool-a', 'Shared', 'model-a', 200, ?),
+		('custom', 'tool-b', 'Shared', 'model-a', 200, ?)`, createdAt, createdAt, createdAt); err != nil {
 		t.Fatal(err)
 	}
 	stats, err := NewLogService(nil).ProviderStatsBySourceAndRange("custom", "tool-a", statsRangeToday)

@@ -139,15 +139,16 @@ func deleteDeletedProviderNameRows(tx *sql.Tx, platform, name string) error {
 	return nil
 }
 
+// 旧格式 platform='custom:<toolId>' 的历史行已由迁移 v3 归一化，
+// 写入侧也只产生当前格式，因此这两个函数不再需要兼容 OR。
 func deleteRequestLogProviderNameRows(tx *sql.Tx, scope providerDataScope, name string) error {
 	if scope.sourceID == "" {
 		_, err := tx.Exec(`DELETE FROM request_log WHERE platform = ? AND provider = ?`, scope.identityPlatform, name)
 		return err
 	}
 	_, err := tx.Exec(
-		`DELETE FROM request_log
-		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
-		name, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
+		`DELETE FROM request_log WHERE provider = ? AND platform = ? AND source_id = ?`,
+		name, scope.telemetryPlatform, scope.sourceID,
 	)
 	return err
 }
@@ -158,9 +159,8 @@ func deleteRelayAttemptProviderNameRows(tx *sql.Tx, scope providerDataScope, nam
 		return err
 	}
 	_, err := tx.Exec(
-		`DELETE FROM relay_attempt
-		 WHERE provider = ? AND (platform = ? OR (platform = ? AND source_id = ?))`,
-		name, scope.identityPlatform, scope.telemetryPlatform, scope.sourceID,
+		`DELETE FROM relay_attempt WHERE provider = ? AND platform = ? AND source_id = ?`,
+		name, scope.telemetryPlatform, scope.sourceID,
 	)
 	return err
 }
