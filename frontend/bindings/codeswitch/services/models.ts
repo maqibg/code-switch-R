@@ -4437,9 +4437,15 @@ export class RequestLog {
     "model": string;
 
     /**
-     * provider name
+     * 请求发生时的 provider 名（历史记录，改名后不回溯）
      */
     "provider": string;
+
+    /**
+     * ProviderID 关联 provider 表。0 表示未知（供应商已删除，或 Gemini
+     * 尚未并入 provider 表）。按 ID 关联使改名无需 UPDATE 日志表。
+     */
+    "provider_id"?: number;
     "http_code": number;
     "input_tokens": number;
     "output_tokens": number;

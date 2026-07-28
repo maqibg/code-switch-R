@@ -24,9 +24,12 @@ const (
 var relaySensitiveQueryPattern = regexp.MustCompile(`(?i)([?&](?:key|api[_-]?key|apikey|token|access[_-]?token)=)([^&#\s]+)`)
 
 type RelayAttemptLog struct {
-	RequestID        string
-	AttemptIndex     int
-	Provider         string
+	RequestID    string
+	AttemptIndex int
+	Provider     string
+	// ProviderID 关联 provider 表。0 表示未知（例如 Gemini 尚未并入 provider 表，
+	// 见 A1 第 5 步）。日志按 ID 关联后，改名不再需要 UPDATE 日志表。
+	ProviderID       int64
 	Model            string
 	UpstreamProtocol string
 	HTTPCode         int
@@ -100,7 +103,8 @@ func (t *relayTelemetry) recordAttempt(provider Provider, execution *relayForwar
 	}
 	attempt := RelayAttemptLog{
 		RequestID: t.RequestID, AttemptIndex: len(t.Attempts) + 1, Provider: usage.Provider,
-		Model: usage.Model, UpstreamProtocol: protocolName, HTTPCode: usage.HttpCode,
+		ProviderID: provider.ID,
+		Model:      usage.Model, UpstreamProtocol: protocolName, HTTPCode: usage.HttpCode,
 		DurationSec: time.Since(started).Seconds(), Success: success, Usage: usage,
 	}
 	if err != nil {
@@ -181,6 +185,7 @@ func (t *relayTelemetry) logicalRequest(status int) RequestLog {
 	}
 	if final != nil {
 		result.Provider = final.Provider
+		result.ProviderID = final.ProviderID
 		result.Model = final.Model
 		result.UpstreamProtocol = final.UpstreamProtocol
 		result.ServiceTier = final.Usage.ServiceTier
@@ -226,19 +231,31 @@ func (t *relayTelemetry) completionStatus(c *gin.Context) int {
 	return status
 }
 
+// nullableProviderID 把 0 转成 SQL NULL。
+//
+// provider_id 为 NULL 表示"关联不到 provider 表"，语义上不同于 id=0：
+// 供应商已删除、或 Gemini 这类尚未并入 provider 表的平台都属于这种情况。
+// 写成 0 会造成一个指向不存在行的假外键值。
+func nullableProviderID(id int64) any {
+	if id == 0 {
+		return nil
+	}
+	return id
+}
+
 func logicalRequestStatement(log RequestLog) dbStatement {
 	return dbStatement{Query: `
 		INSERT INTO request_log (
 			request_id, platform, source_id, client_protocol, upstream_protocol,
-			requested_model, model, provider, http_code, attempt_count, error_type,
+			requested_model, model, provider, provider_id, http_code, attempt_count, error_type,
 			input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 			reasoning_tokens, is_stream, duration_sec, ephemeral_5m_tokens,
 			ephemeral_1h_tokens, service_tier, input_cost, output_cost, reasoning_cost,
 			cache_create_cost, cache_read_cost, ephemeral_5m_cost, ephemeral_1h_cost,
 			total_cost, has_pricing, cost_calculated, pricing_version, pricing_source, pricing_rule_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, Args: []any{log.RequestID, log.Platform, log.SourceID, log.ClientProtocol, log.UpstreamProtocol,
-		log.RequestedModel, log.Model, log.Provider, log.HttpCode, log.AttemptCount, log.ErrorType,
+		log.RequestedModel, log.Model, log.Provider, nullableProviderID(log.ProviderID), log.HttpCode, log.AttemptCount, log.ErrorType,
 		log.InputTokens, log.OutputTokens, log.CacheCreateTokens, log.CacheReadTokens,
 		log.ReasoningTokens, boolToInt(log.IsStream), log.DurationSec, log.Ephemeral5mTokens,
 		log.Ephemeral1hTokens, log.ServiceTier, log.InputCost, log.OutputCost, log.ReasoningCost,
@@ -249,13 +266,13 @@ func logicalRequestStatement(log RequestLog) dbStatement {
 func relayAttemptStatement(telemetry *relayTelemetry, attempt RelayAttemptLog) dbStatement {
 	return dbStatement{Query: `
 		INSERT INTO relay_attempt (
-			request_id, attempt_index, platform, source_id, provider, model,
+			request_id, attempt_index, platform, source_id, provider, provider_id, model,
 			upstream_protocol, http_code, success, error_type, error_message,
 			duration_sec, input_tokens, output_tokens, cache_create_tokens,
 			cache_read_tokens, reasoning_tokens, total_cost, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`, Args: []any{telemetry.RequestID, attempt.AttemptIndex, telemetry.Platform, telemetry.SourceID,
-		attempt.Provider, attempt.Model, attempt.UpstreamProtocol, attempt.HTTPCode,
+		attempt.Provider, nullableProviderID(attempt.ProviderID), attempt.Model, attempt.UpstreamProtocol, attempt.HTTPCode,
 		boolToInt(attempt.Success), attempt.ErrorType, attempt.ErrorMessage, attempt.DurationSec,
 		attempt.Usage.InputTokens, attempt.Usage.OutputTokens, attempt.Usage.CacheCreateTokens,
 		attempt.Usage.CacheReadTokens, attempt.Usage.ReasoningTokens, attempt.Cost.TotalCost}}
