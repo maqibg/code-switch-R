@@ -81,6 +81,7 @@ type dbStatement struct {
 // 可以直接把绑定的连接传给业务逻辑，无需构造 *sql.Tx。
 type dbTxExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
