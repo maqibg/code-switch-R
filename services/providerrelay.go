@@ -474,7 +474,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			}
 
 			// 黑名单检查：跳过已拉黑的 provider
-			if isBlacklisted, until := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(relayScope, provider)); isBlacklisted {
+			if isBlacklisted, until := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(relayScope, provider)); isBlacklisted {
 				fmt.Printf("⛔ Provider %s 已拉黑，过期时间: %v\n", provider.Name, until.Format("15:04:05"))
 				skippedCount++
 				continue
@@ -569,7 +569,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 				for _, provider := range providersInLevel {
 					// 检查是否已被拉黑（跳过已拉黑的 provider）
-					if blacklisted, until := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(relayScope, provider)); blacklisted {
+					if blacklisted, until := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(relayScope, provider)); blacklisted {
 						relayDebugf("[INFO] ⏭️ 跳过已拉黑的 Provider: %s (解禁时间: %v)\n", provider.Name, until)
 						continue
 					}
@@ -594,7 +594,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						totalAttempts++
 
 						// 再次检查是否已被拉黑（重试过程中可能被拉黑）
-						if blacklisted, _ := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(relayScope, provider)); blacklisted {
+						if blacklisted, _ := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(relayScope, provider)); blacklisted {
 							relayDebugf("[INFO] 🚫 Provider %s 已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -609,7 +609,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						if ok {
 							relayDebugf("[INFO] ✓ 成功: %s | 重试 %d 次 | 耗时: %.2fs\n",
 								provider.Name, retryCount+1, duration.Seconds())
-							if err := prs.blacklistService.RecordSuccessFor(blacklistTargetFor(relayScope, provider)); err != nil {
+							if err := prs.blacklistService.recordSuccessFor(blacklistTargetFor(relayScope, provider)); err != nil {
 								logWarn(fmt.Sprintf("清零失败计数失败: %v", err))
 							}
 							prs.setLastUsedProvider(relayScope, provider.Name)
@@ -651,19 +651,19 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 							// 但失败仍要计入 provider 记账——否则"上游每次都在流中途断开"
 							// 这类坏 provider 永远攒不够失败次数，拉黑对它完全失效。
 							logWarn(fmt.Sprintf("响应已发送，停止重试和 Provider 降级（仍计失败）: %v", err))
-							if recordErr := prs.blacklistService.RecordFailureFor(blacklistTargetFor(relayScope, provider)); recordErr != nil {
+							if recordErr := prs.blacklistService.recordFailureFor(blacklistTargetFor(relayScope, provider)); recordErr != nil {
 								logError(fmt.Sprintf("记录失败到黑名单失败: %v", recordErr))
 							}
 							return
 						}
 
 						// 记录失败次数（可能触发拉黑）
-						if err := prs.blacklistService.RecordFailureFor(blacklistTargetFor(relayScope, provider)); err != nil {
+						if err := prs.blacklistService.recordFailureFor(blacklistTargetFor(relayScope, provider)); err != nil {
 							logError(fmt.Sprintf("记录失败到黑名单失败: %v", err))
 						}
 
 						// 检查是否刚被拉黑
-						if blacklisted, _ := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(relayScope, provider)); blacklisted {
+						if blacklisted, _ := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(relayScope, provider)); blacklisted {
 							relayDebugf("[INFO] 🚫 Provider %s 达到失败阈值，已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -752,7 +752,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					relayDebugf("[INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
 
 					// 成功：清零连续失败计数
-					if err := prs.blacklistService.RecordSuccessFor(blacklistTargetFor(relayScope, provider)); err != nil {
+					if err := prs.blacklistService.recordSuccessFor(blacklistTargetFor(relayScope, provider)); err != nil {
 						logWarn(fmt.Sprintf("清零失败计数失败: %v", err))
 					}
 
@@ -792,7 +792,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					logWarn(fmt.Sprintf("响应已发送，停止 Provider 降级: %v", err))
 					if errors.Is(err, errClientAbort) {
 						relayDebugf("[INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
-					} else if recordErr := prs.blacklistService.RecordFailureFor(blacklistTargetFor(relayScope, provider)); recordErr != nil {
+					} else if recordErr := prs.blacklistService.recordFailureFor(blacklistTargetFor(relayScope, provider)); recordErr != nil {
 						logError(fmt.Sprintf("记录失败到黑名单失败: %v", recordErr))
 					}
 					return
@@ -801,7 +801,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				// 客户端中断不计入失败次数
 				if errors.Is(err, errClientAbort) {
 					relayDebugf("[INFO] 客户端中断，跳过失败计数: %s\n", provider.Name)
-				} else if err := prs.blacklistService.RecordFailureFor(blacklistTargetFor(relayScope, provider)); err != nil {
+				} else if err := prs.blacklistService.recordFailureFor(blacklistTargetFor(relayScope, provider)); err != nil {
 					logError(fmt.Sprintf("记录失败到黑名单失败: %v", err))
 				}
 
@@ -1494,7 +1494,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 				continue
 			}
 			// 检查黑名单
-			if isBlacklisted, until := prs.blacklistService.IsBlacklisted("gemini", p.Name); isBlacklisted {
+			if isBlacklisted, until := prs.blacklistService.isBlacklistedFor(blacklistTargetForGemini(p)); isBlacklisted {
 				fmt.Printf("[Gemini] ⛔ Provider %s 已拉黑，过期时间: %v\n", p.Name, until.Format("15:04:05"))
 				continue
 			}
@@ -1562,7 +1562,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 
 				for _, provider := range providersInLevel {
 					// 检查是否已被拉黑（跳过已拉黑的 provider）
-					if blacklisted, until := prs.blacklistService.IsBlacklisted("gemini", provider.Name); blacklisted {
+					if blacklisted, until := prs.blacklistService.isBlacklistedFor(blacklistTargetForGemini(provider)); blacklisted {
 						fmt.Printf("[Gemini] ⏭️ 跳过已拉黑的 Provider: %s (解禁时间: %v)\n", provider.Name, until)
 						continue
 					}
@@ -1572,7 +1572,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 						totalAttempts++
 
 						// 再次检查是否已被拉黑（重试过程中可能被拉黑）
-						if blacklisted, _ := prs.blacklistService.IsBlacklisted("gemini", provider.Name); blacklisted {
+						if blacklisted, _ := prs.blacklistService.isBlacklistedFor(blacklistTargetForGemini(provider)); blacklisted {
 							fmt.Printf("[Gemini] 🚫 Provider %s 已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -1583,7 +1583,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 						ok, errMsg, responseWritten := prs.forwardGeminiAttempt(c, &provider, endpoint, bodyBytes, isStream)
 						if ok {
 							relayDebugf("[Gemini] ✓ 成功: %s | 重试 %d 次\n", provider.Name, retryCount+1)
-							_ = prs.blacklistService.RecordSuccess("gemini", provider.Name)
+							_ = prs.blacklistService.recordSuccessFor(blacklistTargetForGemini(provider))
 							prs.setLastUsedProvider("gemini", provider.Name)
 							return
 						}
@@ -1591,7 +1591,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 						// 【关键修复】如果响应已写入客户端，不能重试或降级，直接返回
 						if responseWritten {
 							fmt.Printf("[Gemini] ⚠️ 响应已部分写入，无法重试: %s | 错误: %s\n", provider.Name, errMsg)
-							_ = prs.blacklistService.RecordFailure("gemini", provider.Name)
+							_ = prs.blacklistService.recordFailureFor(blacklistTargetForGemini(provider))
 							return
 						}
 
@@ -1603,10 +1603,10 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 							provider.Name, retryCount+1, maxRetryPerProvider, errMsg)
 
 						// 记录失败次数（可能触发拉黑）
-						_ = prs.blacklistService.RecordFailure("gemini", provider.Name)
+						_ = prs.blacklistService.recordFailureFor(blacklistTargetForGemini(provider))
 
 						// 检查是否刚被拉黑
-						if blacklisted, _ := prs.blacklistService.IsBlacklisted("gemini", provider.Name); blacklisted {
+						if blacklisted, _ := prs.blacklistService.isBlacklistedFor(blacklistTargetForGemini(provider)); blacklisted {
 							fmt.Printf("[Gemini] 🚫 Provider %s 达到失败阈值，已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -1659,7 +1659,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 
 				ok, errMsg, responseWritten := prs.forwardGeminiAttempt(c, &provider, endpoint, bodyBytes, isStream)
 				if ok {
-					_ = prs.blacklistService.RecordSuccess("gemini", provider.Name)
+					_ = prs.blacklistService.recordSuccessFor(blacklistTargetForGemini(provider))
 					// 记录最后使用的供应商
 					prs.setLastUsedProvider("gemini", provider.Name)
 					relayDebugf("[Gemini] ✓ 请求完成 | Provider: %s | 总耗时: %.2fs\n", provider.Name, time.Since(start).Seconds())
@@ -1669,13 +1669,13 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 				// 【关键修复】如果响应已写入客户端，不能降级到其他 provider，直接返回
 				if responseWritten {
 					fmt.Printf("[Gemini] ⚠️ 响应已部分写入，无法降级: %s | 错误: %s\n", provider.Name, errMsg)
-					_ = prs.blacklistService.RecordFailure("gemini", provider.Name)
+					_ = prs.blacklistService.recordFailureFor(blacklistTargetForGemini(provider))
 					return
 				}
 
 				// 失败，记录并继续
 				lastError = errMsg
-				_ = prs.blacklistService.RecordFailure("gemini", provider.Name)
+				_ = prs.blacklistService.recordFailureFor(blacklistTargetForGemini(provider))
 			}
 
 			fmt.Printf("[Gemini] Level %d 的所有 %d 个 provider 均失败，尝试下一 Level\n", level, len(providersInLevel))
@@ -1937,7 +1937,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 			}
 
 			// 黑名单检查
-			if isBlacklisted, until := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(kind, provider)); isBlacklisted {
+			if isBlacklisted, until := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(kind, provider)); isBlacklisted {
 				fmt.Printf("[CustomCLI] ⛔ Provider %s 已拉黑，过期时间: %v\n", provider.Name, until.Format("15:04:05"))
 				skippedCount++
 				continue
@@ -2021,7 +2021,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 				for _, provider := range providersInLevel {
 					// 检查是否已被拉黑（跳过已拉黑的 provider）
-					if blacklisted, until := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(kind, provider)); blacklisted {
+					if blacklisted, until := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(kind, provider)); blacklisted {
 						fmt.Printf("[CustomCLI][INFO] ⏭️ 跳过已拉黑的 Provider: %s (解禁时间: %v)\n", provider.Name, until)
 						continue
 					}
@@ -2047,7 +2047,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 						totalAttempts++
 
 						// 再次检查是否已被拉黑（重试过程中可能被拉黑）
-						if blacklisted, _ := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(kind, provider)); blacklisted {
+						if blacklisted, _ := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(kind, provider)); blacklisted {
 							fmt.Printf("[CustomCLI][INFO] 🚫 Provider %s 已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -2062,7 +2062,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 						if ok {
 							fmt.Printf("[CustomCLI][INFO] ✓ 成功: %s | 重试 %d 次 | 耗时: %.2fs\n",
 								provider.Name, retryCount+1, duration.Seconds())
-							if err := prs.blacklistService.RecordSuccessFor(blacklistTargetFor(kind, provider)); err != nil {
+							if err := prs.blacklistService.recordSuccessFor(blacklistTargetFor(kind, provider)); err != nil {
 								fmt.Printf("[CustomCLI][WARN] 清零失败计数失败: %v\n", err)
 							}
 							prs.setLastUsedProvider(kind, provider.Name)
@@ -2091,12 +2091,12 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 						}
 
 						// 记录失败次数（可能触发拉黑）
-						if err := prs.blacklistService.RecordFailureFor(blacklistTargetFor(kind, provider)); err != nil {
+						if err := prs.blacklistService.recordFailureFor(blacklistTargetFor(kind, provider)); err != nil {
 							fmt.Printf("[CustomCLI][ERROR] 记录失败到黑名单失败: %v\n", err)
 						}
 
 						// 检查是否刚被拉黑
-						if blacklisted, _ := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(kind, provider)); blacklisted {
+						if blacklisted, _ := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(kind, provider)); blacklisted {
 							fmt.Printf("[CustomCLI][INFO] 🚫 Provider %s 达到失败阈值，已被拉黑，切换到下一个\n", provider.Name)
 							break
 						}
@@ -2177,7 +2177,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 				if ok {
 					fmt.Printf("[CustomCLI][INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
-					if err := prs.blacklistService.RecordSuccessFor(blacklistTargetFor(kind, provider)); err != nil {
+					if err := prs.blacklistService.recordSuccessFor(blacklistTargetFor(kind, provider)); err != nil {
 						fmt.Printf("[CustomCLI][WARN] 清零失败计数失败: %v\n", err)
 					}
 					prs.setLastUsedProvider(kind, provider.Name)
@@ -2200,7 +2200,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 				} else if errors.Is(err, errResponseCommitted) {
 					fmt.Printf("[CustomCLI][WARN] 响应已发送，停止 Provider 降级: %v\n", err)
 					return
-				} else if err := prs.blacklistService.RecordFailureFor(blacklistTargetFor(kind, provider)); err != nil {
+				} else if err := prs.blacklistService.recordFailureFor(blacklistTargetFor(kind, provider)); err != nil {
 					fmt.Printf("[CustomCLI][ERROR] 记录失败到黑名单失败: %v\n", err)
 				}
 
@@ -2272,7 +2272,7 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 		}
 
 		// 黑名单检查：跳过已拉黑的 provider
-		if isBlacklisted, until := prs.blacklistService.IsBlacklistedFor(blacklistTargetFor(kind, provider)); isBlacklisted {
+		if isBlacklisted, until := prs.blacklistService.isBlacklistedFor(blacklistTargetFor(kind, provider)); isBlacklisted {
 			fmt.Printf("[%s] ⛔ Provider %s 已拉黑，过期时间: %v\n", logPrefix, provider.Name, until.Format("15:04:05"))
 			continue
 		}

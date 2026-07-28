@@ -50,6 +50,8 @@ export function IsBlacklistEnabled(): $CancellablePromise<boolean> {
 
 /**
  * IsBlacklisted 检查 provider 是否在黑名单中
+ * IsBlacklisted 按名字查询拉黑状态（兼容入口）。
+ * 内部解析成 provider_id 定位，见 IsBlacklistedFor。
  */
 export function IsBlacklisted(platform: string, providerName: string): $CancellablePromise<[boolean, string | null]> {
     return $Call.ByID(237122095, platform, providerName);
@@ -85,14 +87,15 @@ export function ManualUnblockAndReset(platform: string, providerName: string): $
 }
 
 /**
- * RecordFailure 记录 provider 失败，连续失败次数达到阈值时自动拉黑（支持等级拉黑）
+ * RecordFailure 记录失败（兼容入口，内部解析成 provider_id 定位）
  */
 export function RecordFailure(platform: string, providerName: string): $CancellablePromise<void> {
     return $Call.ByID(640211172, platform, providerName);
 }
 
 /**
- * RecordSuccess 记录 provider 成功，清零连续失败计数，执行降级和宽恕逻辑
+ * RecordSuccess 记录 provider 成功，清零连续失败计数，执行降级和宽恕逻辑。
+ * 兼容入口：内部解析成 provider_id 定位。
  */
 export function RecordSuccess(platform: string, providerName: string): $CancellablePromise<void> {
     return $Call.ByID(555083369, platform, providerName);

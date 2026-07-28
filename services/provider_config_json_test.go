@@ -109,6 +109,12 @@ func TestProviderConfigCoversEveryPersistedField(t *testing.T) {
 		// PiTemplate 是早期开发版旧名，读取时迁移到 piPlatform，新写入不再产生
 		"piTemplate": true,
 	}
+	// 只存在于 config_json、不对应 Provider 导出字段的键。
+	// gemini 承载 Gemini provider 的专有数据，通过非导出字段 Provider.gemini
+	// 读写——非导出是为了不进 Wails 绑定，对外仍用 GeminiProvider。
+	configOnly := map[string]bool{
+		"gemini": true,
+	}
 
 	providerTags := jsonTagSet(t, reflect.TypeOf(Provider{}))
 	configTags := jsonTagSet(t, reflect.TypeOf(providerConfigPayload{}))
@@ -120,11 +126,12 @@ func TestProviderConfigCoversEveryPersistedField(t *testing.T) {
 		t.Errorf("Provider 字段 %q 既不是列也不在 config_json 中，迁移后会丢失", tag)
 	}
 
-	// 反向检查：config_json 里不应有 Provider 上不存在的字段
+	// 反向检查：config_json 里不应有 Provider 上不存在的字段（白名单除外）
 	for tag := range configTags {
-		if !providerTags[tag] {
-			t.Errorf("config_json 含 Provider 上不存在的字段 %q", tag)
+		if configOnly[tag] || providerTags[tag] {
+			continue
 		}
+		t.Errorf("config_json 含 Provider 上不存在的字段 %q", tag)
 	}
 }
 

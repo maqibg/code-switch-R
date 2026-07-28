@@ -28,6 +28,18 @@ type blacklistTarget struct {
 	name string
 }
 
+// blacklistTargetForGemini 由 GeminiProvider 构造定位信息。
+//
+// Gemini 已并入 provider 表（A1 第 5 步），numericID 就是 provider_id；
+// 对外仍是 string ID，因此这里不能用 GeminiProvider.ID。
+func blacklistTargetForGemini(provider GeminiProvider) blacklistTarget {
+	return blacklistTarget{
+		platform:   "gemini",
+		providerID: provider.numericID,
+		name:       provider.Name,
+	}
+}
+
 // blacklistTargetFor 由 relay 的 scope 与 Provider 构造定位信息。
 //
 // relayScope 的形态与 provider 表不同：自定义 CLI 是 "custom:toolId"，

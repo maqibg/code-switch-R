@@ -37,6 +37,11 @@ type GeminiProvider struct {
 	Level               int               `json:"level,omitempty"`          // 优先级分组 (1-10, 默认 1)
 	EnvConfig           map[string]string `json:"envConfig,omitempty"`      // .env 配置
 	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"` // settings.json 配置
+
+	// numericID 是 provider 表里的 int64 主键（A1 第 5 步）。
+	// 非导出因此不进 Wails 绑定——对外 ID 仍是上面的 string，前端无需改动。
+	// 用途是让遥测与黑名单按 provider_id 关联，不必每次再查一遍库。
+	numericID int64 `json:"-"`
 }
 
 // GeminiPreset 预设供应商
@@ -593,33 +598,20 @@ func deepMerge(dst, src map[string]any) map[string]any {
 
 // loadProviders 加载供应商配置
 func (s *GeminiService) loadProviders() error {
-	path := getGeminiProvidersPath()
-	data, err := os.ReadFile(path)
+	// 存储已统一到 provider 表（A1 第 5 步）。原来读独立的
+	// gemini-providers.json，那让 Gemini 成了与 Provider 平行的体系，
+	// 日志与黑名单因此拿不到 provider_id。
+	providers, err := loadGeminiProvidersFromDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			s.providers = []GeminiProvider{}
-			return nil
-		}
 		return err
 	}
-
-	return json.Unmarshal(data, &s.providers)
+	s.providers = providers
+	return nil
 }
 
-// saveProviders 保存供应商配置
+// saveProviders 保存供应商配置到 provider 表
 func (s *GeminiService) saveProviders() error {
-	path := getGeminiProvidersPath()
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(s.providers, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return atomicWriteFile(path, data, 0o644)
+	return saveGeminiProvidersToDB(s.providers)
 }
 
 // CreateProviderFromPreset 从预设创建供应商

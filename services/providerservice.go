@@ -111,6 +111,11 @@ type Provider struct {
 	// 内部字段：配置验证错误（不持久化）
 	configErrors    []string `json:"-"`
 	configValidated bool     `json:"-"`
+
+	// gemini 承载 Gemini provider 的专有数据（A1 第 5 步）。
+	// 非导出因此不进 Wails 绑定：对外仍通过 GeminiProvider 暴露，
+	// 前端无需改动。持久化时进 config_json 的 gemini 子对象。
+	gemini *geminiConfigPayload `json:"-"`
 }
 
 type providerEnvelope struct {

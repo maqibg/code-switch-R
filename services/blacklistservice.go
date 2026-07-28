@@ -40,14 +40,14 @@ func NewBlacklistService(settingsService *SettingsService, notificationService *
 	}
 }
 
-// RecordSuccess 记录 provider 成功，清零连续失败计数，执行降级和宽恕逻辑
-// RecordSuccess 记录成功（兼容入口，内部解析成 provider_id 定位）
+// RecordSuccess 记录 provider 成功，清零连续失败计数，执行降级和宽恕逻辑。
+// 兼容入口：内部解析成 provider_id 定位。
 func (bs *BlacklistService) RecordSuccess(platform string, providerName string) error {
-	return bs.RecordSuccessFor(blacklistTargetByName(platform, providerName))
+	return bs.recordSuccessFor(blacklistTargetByName(platform, providerName))
 }
 
-// RecordSuccessFor 按 provider_id（回退 name）记录成功
-func (bs *BlacklistService) RecordSuccessFor(target blacklistTarget) error {
+// recordSuccessFor 按 provider_id（回退 name）记录成功
+func (bs *BlacklistService) recordSuccessFor(target blacklistTarget) error {
 	platform, providerName := target.platform, target.name
 	db, err := xdb.DB("default")
 	if err != nil {
@@ -179,17 +179,17 @@ func (bs *BlacklistService) RecordSuccessFor(target blacklistTarget) error {
 
 // RecordFailure 记录失败（兼容入口，内部解析成 provider_id 定位）
 func (bs *BlacklistService) RecordFailure(platform string, providerName string) error {
-	return bs.RecordFailureFor(blacklistTargetByName(platform, providerName))
+	return bs.recordFailureFor(blacklistTargetByName(platform, providerName))
 }
 
-// RecordFailureFor 按 provider_id（回退 name）记录 provider 失败，
+// recordFailureFor 按 provider_id（回退 name）记录 provider 失败，
 // 连续失败次数达到阈值时自动拉黑（支持等级拉黑）。
 //
 // 按 ID 定位解决了一个真实缺陷：改名瞬间仍在进行的请求（流式上限 32 小时）
 // 失败时带的是旧名字，原实现按名字查不到已改名的那一行，
 // 于是插入第二条黑名单行——失败计数被拆成两份，拉黑阈值永远达不到。
 // provider_alias 表当初就是为遮掩这一点而存在的。
-func (bs *BlacklistService) RecordFailureFor(target blacklistTarget) error {
+func (bs *BlacklistService) recordFailureFor(target blacklistTarget) error {
 	platform, providerName := target.platform, target.name
 	// 检查拉黑功能是否启用
 	if !bs.settingsService.IsBlacklistEnabled() {
@@ -526,11 +526,11 @@ func (bs *BlacklistService) getLevelDuration(level int, config *BlacklistLevelCo
 // IsBlacklisted 按名字查询拉黑状态（兼容入口）。
 // 内部解析成 provider_id 定位，见 IsBlacklistedFor。
 func (bs *BlacklistService) IsBlacklisted(platform string, providerName string) (bool, *time.Time) {
-	return bs.IsBlacklistedFor(blacklistTargetByName(platform, providerName))
+	return bs.isBlacklistedFor(blacklistTargetByName(platform, providerName))
 }
 
-// IsBlacklistedFor 按 provider_id（回退 name）查询拉黑状态
-func (bs *BlacklistService) IsBlacklistedFor(target blacklistTarget) (bool, *time.Time) {
+// isBlacklistedFor 按 provider_id（回退 name）查询拉黑状态
+func (bs *BlacklistService) isBlacklistedFor(target blacklistTarget) (bool, *time.Time) {
 	// 如果拉黑功能已关闭，始终返回未拉黑
 	if !bs.settingsService.IsBlacklistEnabled() {
 		return false, nil

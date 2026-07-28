@@ -54,6 +54,29 @@ type providerConfigPayload struct {
 	ConnectivityCheck        bool   `json:"connectivityCheck,omitempty"`
 	ConnectivityTestModel    string `json:"connectivityTestModel,omitempty"`
 	ConnectivityTestEndpoint string `json:"connectivityTestEndpoint,omitempty"`
+
+	// Gemini 专有数据。Gemini 的 provider 由 GeminiService 管理，
+	// 对外仍是 GeminiProvider（string ID），但存储统一进 provider 表，
+	// 这样日志与黑名单才能按 provider_id 关联。
+	//
+	// 放在独立嵌套对象里而不是平铺：这些字段不属于 Provider 结构体，
+	// 平铺会让"config_json 字段必须与 Provider 字段一一对应"的检查失效。
+	Gemini *geminiConfigPayload `json:"gemini,omitempty"`
+}
+
+// geminiConfigPayload Gemini provider 在 provider 表中的专有数据
+type geminiConfigPayload struct {
+	// LegacyID 是原来的 string ID。对外 API 仍用它，
+	// 因此前端与 Wails 绑定无需改动。
+	LegacyID            string            `json:"legacyId,omitempty"`
+	WebsiteURL          string            `json:"websiteUrl,omitempty"`
+	APIKeyURL           string            `json:"apiKeyUrl,omitempty"`
+	Model               string            `json:"model,omitempty"`
+	Description         string            `json:"description,omitempty"`
+	Category            string            `json:"category,omitempty"`
+	PartnerPromotionKey string            `json:"partnerPromotionKey,omitempty"`
+	EnvConfig           map[string]string `json:"envConfig,omitempty"`
+	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"`
 }
 
 // marshalProviderConfig 把 Provider 的长尾字段序列化为 config_json。
@@ -101,6 +124,8 @@ func marshalProviderConfig(provider Provider) (string, error) {
 		ConnectivityCheck:        provider.ConnectivityCheck,
 		ConnectivityTestModel:    provider.ConnectivityTestModel,
 		ConnectivityTestEndpoint: provider.ConnectivityTestEndpoint,
+
+		Gemini: provider.gemini,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -159,5 +184,6 @@ func applyProviderConfig(provider *Provider, configJSON string) error {
 	provider.ConnectivityCheck = payload.ConnectivityCheck
 	provider.ConnectivityTestModel = payload.ConnectivityTestModel
 	provider.ConnectivityTestEndpoint = payload.ConnectivityTestEndpoint
+	provider.gemini = payload.Gemini
 	return nil
 }

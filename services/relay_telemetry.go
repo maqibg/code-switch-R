@@ -131,7 +131,9 @@ func (t *relayTelemetry) recordGeminiAttempt(provider GeminiProvider, usage Requ
 	usage.Provider = provider.Name
 	attempt := RelayAttemptLog{
 		RequestID: t.RequestID, AttemptIndex: len(t.Attempts) + 1, Provider: usage.Provider,
-		Model: usage.Model, UpstreamProtocol: string(relayprotocol.GeminiNative), HTTPCode: usage.HttpCode,
+		// Gemini 已并入 provider 表（A1 第 5 步），numericID 即 provider_id
+		ProviderID: provider.numericID,
+		Model:      usage.Model, UpstreamProtocol: string(relayprotocol.GeminiNative), HTTPCode: usage.HttpCode,
 		DurationSec: time.Since(started).Seconds(), Success: success, Usage: usage,
 	}
 	if err != nil {

@@ -74,6 +74,14 @@ var schemaMigrations = []schemaMigration{
 		// 日志与黑名单都按 provider_id 关联后，旧名映射表不再需要。
 		up: migrateDropProviderAlias,
 	},
+	{
+		version: 6,
+		name:    "gemini-providers",
+		// Gemini provider 并入 provider 表：它原本是独立文件 + string ID 的
+		// 平行体系，这让日志与黑名单拿不到 provider_id，也迫使转发循环
+		// 为它单开一套。对外仍暴露 string ID（存进 config_json）。
+		up: migrateGeminiProviders,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
