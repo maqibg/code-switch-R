@@ -199,8 +199,10 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 	} else if filter.platform != "" {
 		options = append(options, xdb.WhereEq("platform", filter.platform))
 	}
-	if filter.provider != "" {
-		options = append(options, xdb.WhereEq("provider", filter.provider))
+	if providerFilter := resolveLogProviderFilter(filter.platform, filter.sourceID, filter.provider); !providerFilter.empty() {
+		if option, ok := providerFilter.xdbOption(); ok {
+			options = append(options, option)
+		}
 	}
 	records, err := model.Selects(options...)
 	if err != nil {
@@ -379,8 +381,10 @@ func (ls *LogService) ListRequestLogsByRange(platform string, provider string, r
 	if platform != "" {
 		options = append(options, xdb.WhereEq("platform", platform))
 	}
-	if provider != "" {
-		options = append(options, xdb.WhereEq("provider", provider))
+	if providerFilter := resolveLogProviderFilter(platform, "", provider); !providerFilter.empty() {
+		if option, ok := providerFilter.xdbOption(); ok {
+			options = append(options, option)
+		}
 	}
 	records, err := model.Selects(options...)
 	if err != nil {
@@ -424,8 +428,10 @@ func (ls *LogService) ListRequestLogsPage(platform string, provider string, rang
 	if platform != "" {
 		filters = append(filters, xdb.WhereEq("platform", platform))
 	}
-	if provider != "" {
-		filters = append(filters, xdb.WhereEq("provider", provider))
+	if providerFilter := resolveLogProviderFilter(platform, "", provider); !providerFilter.empty() {
+		if option, ok := providerFilter.xdbOption(); ok {
+			filters = append(filters, option)
+		}
 	}
 
 	model := xdb.New("request_log")

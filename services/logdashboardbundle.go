@@ -499,9 +499,13 @@ func buildRangeFilterArgs(start *time.Time, end time.Time, platform, provider, s
 		clauses = append(clauses, "platform = ?")
 		args = append(args, platform)
 	}
-	if provider != "" {
-		clauses = append(clauses, "provider = ?")
-		args = append(args, provider)
+	// 按 provider_id 匹配，绕开"改名瞬间 in-flight 写入带旧名"的窗口。
+	// 详见 log_provider_filter.go。
+	if providerFilter := resolveLogProviderFilter(platform, sourceID, provider); !providerFilter.empty() {
+		if condition, condArgs := providerFilter.sqlCondition(); condition != "" {
+			clauses = append(clauses, condition)
+			args = append(args, condArgs...)
+		}
 	}
 	return strings.Join(clauses, " AND "), args
 }
