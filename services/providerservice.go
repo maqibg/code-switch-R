@@ -1,7 +1,7 @@
 package services
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
 	"net/url"
@@ -176,9 +176,10 @@ func (ps *ProviderService) SaveProviders(kind string, providers []Provider) erro
 	return ps.saveProvidersLocked(kind, providers)
 }
 
+// providerSavePlan 是校验与规范化后的待保存结果。
+// data 字段（序列化好的 JSON）已随主数据入库移除。
 type providerSavePlan struct {
 	providers        []Provider
-	data             []byte
 	aliasPlatform    string
 	aliasEnabled     bool
 	deletedProviders []deletedProvider
@@ -190,43 +191,28 @@ func (ps *ProviderService) setPiGatewaySync(syncGateway func([]Provider) error) 
 	ps.piGatewaySync = syncGateway
 }
 
-// loadProvidersRaw 原样读取配置文件（不迁移、不保存）
-// 用于内部需要读取现有配置但不触发迁移的场景（如名称校验）
+// loadProvidersRaw 读取 provider 列表但不做配置校验。
+// 用于内部只需要当前存储内容的场景（如 name 变更检测）。
 func (ps *ProviderService) loadProvidersRaw(kind string) ([]Provider, error) {
-	path, err := providerFilePath(kind)
+	scope, err := scopeForKind(kind)
 	if err != nil {
 		return nil, err
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var envelope providerEnvelope
-	if len(data) == 0 {
-		return []Provider{}, nil
-	}
-
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, err
-	}
-
-	return envelope.Providers, nil
+	return loadProvidersFromDB(context.Background(), scope)
 }
 
-// saveProvidersLocked 内部保存方法，调用方必须已持有锁
+// saveProvidersLocked 内部保存方法，调用方必须已持有锁。
+//
+// 写入落到 provider 表的单个事务里。原实现是「先写 JSON → 再提交 DB 事务 →
+// 失败时补偿回写文件」，进程在文件写完、事务提交前崩溃就永久不一致，
+// 且补偿本身可能失败（只能打 CRITICAL 日志）。现在不存在这个窗口，
+// 补偿逻辑（rollbackProviderFile）随之不再需要。
 func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider) error {
-	path, err := providerFilePath(kind)
+	scope, err := scopeForKind(kind)
 	if err != nil {
 		return err
 	}
 
-	// 加载现有配置，用于检查 name 是否被修改
-	// 使用原样读取，避免触发迁移导致死锁
 	existingProviders, err := ps.loadProvidersRaw(kind)
 	if err != nil {
 		return err
@@ -236,29 +222,31 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 		return err
 	}
 
-	if err := atomicWriteFile(path, plan.data, 0o644); err != nil {
+	ctx := context.Background()
+	deleted, err := replaceProvidersInDB(ctx, scope, plan.providers)
+	if err != nil {
 		return err
 	}
-	ps.invalidateProviderCache(path)
 
-	piSynced := false
 	if strings.EqualFold(strings.TrimSpace(kind), "pi") && ps.piGatewaySync != nil {
 		if err := ps.piGatewaySync(plan.providers); err != nil {
-			return rollbackProviderFile(path, existingProviders, fmt.Errorf("同步 Pi models.json 失败: %w", err))
+			// Pi 网关同步失败：把 provider 表恢复成保存前的内容。
+			// 这里仍需回滚，因为 models.json 是本进程之外的文件，
+			// 无法与数据库事务原子提交。
+			if _, restoreErr := replaceProvidersInDB(ctx, scope, existingProviders); restoreErr != nil {
+				return fmt.Errorf("同步 Pi models.json 失败: %w; 回滚 provider 失败: %v", err, restoreErr)
+			}
+			return fmt.Errorf("同步 Pi models.json 失败: %w", err)
 		}
-		piSynced = true
 	}
 
-	if len(plan.deletedProviders) == 0 {
+	if len(deleted) == 0 {
 		return nil
 	}
-	if err := cleanupDeletedProviders(plan.aliasPlatform, plan.deletedProviders); err != nil {
-		if piSynced {
-			if syncErr := ps.piGatewaySync(existingProviders); syncErr != nil {
-				err = fmt.Errorf("%w; Pi gateway 回滚失败: %v", err, syncErr)
-			}
-		}
-		return rollbackProviderFile(path, existingProviders, err)
+	// 清理被删除 provider 的关联数据（黑名单等）。
+	// 日志表按 provider_id 关联且允许 NULL，删除后历史统计仍可用。
+	if err := cleanupDeletedProviders(plan.aliasPlatform, deleted); err != nil {
+		logError("清理已删除 provider 的关联数据失败", "platform", plan.aliasPlatform, "error", err)
 	}
 	return nil
 }
@@ -332,11 +320,8 @@ func prepareProviderSave(kind string, providers, existingProviders []Provider, a
 		}
 	}
 
-	data, err := json.MarshalIndent(providerEnvelope{Providers: preparedProviders}, "", "  ")
-	if err != nil {
-		return providerSavePlan{}, err
-	}
-	plan.data = data
+	// 主数据入库后不再序列化 JSON：写入直接走 provider 表。
+	// providerEnvelope 只保留给迁移导入与导出使用。
 	return plan, nil
 }
 
@@ -378,52 +363,30 @@ func canonicalPiSupplierURL(value string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
+// LoadProviders 读取指定平台的 provider 列表。
+//
+// 数据源是 provider 表（A1）。此前是读 JSON 文件并按 mtime+size 做缓存，
+// 那个缓存本身有竞态：Windows 上 mtime 精度约 1-2 秒，同一秒内
+// "写入 → 读取 → 再写入同长度内容" 会返回陈旧结果。改读数据库后
+// 不再需要这层缓存。
 func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
-	path, err := providerFilePath(kind)
+	scope, err := scopeForKind(kind)
 	if err != nil {
 		return nil, err
 	}
-	info, statErr := os.Stat(path)
-	if statErr != nil {
-		if os.IsNotExist(statErr) {
-			ps.invalidateProviderCache(path)
-			return nil, nil
-		}
-		return nil, statErr
-	}
-	ps.cacheMu.Lock()
-	if cached, ok := ps.fileCache[path]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
-		providers := cloneProviderList(cached.providers)
-		ps.cacheMu.Unlock()
-		return providers, nil
-	}
-	ps.cacheMu.Unlock()
-
-	data, err := os.ReadFile(path)
+	providers, err := loadProvidersFromDB(context.Background(), scope)
 	if err != nil {
 		return nil, err
 	}
-
-	var envelope providerEnvelope
-	if len(data) == 0 {
-		return []Provider{}, nil
+	// 保持既有契约：没有任何 provider 时返回 nil（原实现在文件不存在时如此）
+	if len(providers) == 0 {
+		return nil, nil
 	}
-
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, err
+	// 与原实现一致：读出后填充配置校验结果，供 UI 显示与 relay 过滤使用
+	for i := range providers {
+		providers[i].ValidateConfiguration()
 	}
-	for i := range envelope.Providers {
-		envelope.Providers[i].ValidateConfiguration()
-	}
-	ps.cacheMu.Lock()
-	if ps.fileCache == nil {
-		ps.fileCache = make(map[string]providerFileCache)
-	}
-	ps.fileCache[path] = providerFileCache{
-		modTime: info.ModTime(), size: info.Size(), providers: cloneProviderList(envelope.Providers),
-	}
-	ps.cacheMu.Unlock()
-	return cloneProviderList(envelope.Providers), nil
+	return providers, nil
 }
 
 func (ps *ProviderService) invalidateProviderCache(path string) {
@@ -465,32 +428,17 @@ func cloneProviderStringMap(source map[string]string) map[string]string {
 	return cloned
 }
 
-// loadProvidersNoLock 内部加载方法，在持有锁的情况下调用（避免递归加锁）
-// 仅在已持有 ps.mu 锁的上下文中调用（如 DuplicateProvider）
+// loadProvidersNoLock 内部加载方法，在持有锁的情况下调用（避免递归加锁）。
+// 仅在已持有 ps.mu 锁的上下文中调用（如 DuplicateProvider）。
+//
+// 与 loadProvidersRaw 一样读 provider 表：此前读 JSON 文件，
+// 主数据入库后那样会读到陈旧数据。
 func (ps *ProviderService) loadProvidersNoLock(kind string) ([]Provider, error) {
-	path, err := providerFilePath(kind)
+	scope, err := scopeForKind(kind)
 	if err != nil {
 		return nil, err
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var envelope providerEnvelope
-	if len(data) == 0 {
-		return []Provider{}, nil
-	}
-
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, err
-	}
-
-	return envelope.Providers, nil
+	return loadProvidersFromDB(context.Background(), scope)
 }
 
 // clearLegacyPiFields 只迁移仍在使用的 Pi 平台字段。

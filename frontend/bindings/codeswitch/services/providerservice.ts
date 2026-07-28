@@ -43,6 +43,14 @@ export function ListRequestTemplates(): $CancellablePromise<$models.ProviderRequ
     });
 }
 
+/**
+ * LoadProviders 读取指定平台的 provider 列表。
+ * 
+ * 数据源是 provider 表（A1）。此前是读 JSON 文件并按 mtime+size 做缓存，
+ * 那个缓存本身有竞态：Windows 上 mtime 精度约 1-2 秒，同一秒内
+ * "写入 → 读取 → 再写入同长度内容" 会返回陈旧结果。改读数据库后
+ * 不再需要这层缓存。
+ */
 export function LoadProviders(kind: string): $CancellablePromise<$models.Provider[]> {
     return $Call.ByID(3413098935, kind).then(($result: any) => {
         return $$createType6($result);

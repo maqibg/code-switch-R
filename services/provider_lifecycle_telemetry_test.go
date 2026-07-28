@@ -186,9 +186,11 @@ func TestCustomProviderLifecycleScopesTelemetryBySourceID(t *testing.T) {
 	kind := "custom:tool-a"
 	saveProviderFixtureForKind(t, kind, []Provider{{ID: 1, Name: "old", APIURL: "https://api.example"}})
 
-	seedRequestLogWithSource(t, "custom", "tool-a", "old", 2)
+	// 统一用当前格式 platform='custom' + source_id。
+	// 旧格式 platform='custom:toolId' 已由迁移 v3 一次性归一化，
+	// 且写入侧（relay_telemetry.go）只产生新格式，因此不再需要兼容分支。
+	seedRequestLogWithSource(t, "custom", "tool-a", "old", 3)
 	seedRequestLogWithSource(t, "custom", "tool-b", "old", 1)
-	seedRequestLog(t, kind, "old", 1)
 	seedRelayAttempt(t, "custom", "tool-a", "old", 2)
 	seedRelayAttempt(t, "custom", "tool-b", "old", 1)
 	seedBlacklist(t, kind, "old")

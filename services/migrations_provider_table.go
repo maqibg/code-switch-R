@@ -142,7 +142,27 @@ func importProvidersFromJSON(tx sqlExecutor) error {
 	if imported > 0 {
 		logInfo("已把 Provider 主数据导入数据库", "count", imported, "files", len(sources))
 	}
+	markImportedProviderFiles(sources)
 	return nil
+}
+
+// markImportedProviderFiles 把已导入的 JSON 文件改名为 *.migrated。
+//
+// 导入之后数据库才是权威来源，JSON 不再被写入。留着原名会让人误以为
+// 改配置可以直接编辑那些文件（编辑不生效），也分不清哪边是真数据。
+// 改名而不是删除：内容保留下来，出问题时还能人工比对。
+//
+// 失败只记警告：这一步纯属整理，不该让迁移失败。
+func markImportedProviderFiles(sources []providerImportSource) {
+	for _, source := range sources {
+		if _, err := os.Stat(source.path); err != nil {
+			continue
+		}
+		target := source.path + ".migrated"
+		if err := os.Rename(source.path, target); err != nil {
+			logWarn("标记已导入的 Provider 配置文件失败", "path", source.path, "error", err)
+		}
+	}
 }
 
 // readProviderEnvelope 读取一个 provider JSON 文件；文件不存在返回空列表

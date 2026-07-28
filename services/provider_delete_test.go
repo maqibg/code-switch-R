@@ -1,6 +1,7 @@
 package services
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -88,23 +89,33 @@ func assertKeptProviderDataRemains(t *testing.T, platform string, providerID int
 	}
 }
 
-func TestSaveProviders_DeleteRollbackOnCleanupFail(t *testing.T) {
-	setupRenameTestEnv(t)
+// 数据库不可用时保存必须失败，且不留下任何部分写入。
+//
+// A1 之前这个测试验证的是"文件回滚"：那时先写 JSON、再提交 DB 事务，
+// 中途失败要靠补偿把文件写回去。主数据入库后写入是单个事务，
+// 数据库不可用就什么都没写，不存在需要回滚的中间态——
+// 这比原来的补偿式回滚更强，因为补偿本身也可能失败。
+func TestSaveProviders_FailsCleanlyWhenDatabaseUnavailable(t *testing.T) {
+	tmpHome := setupRenameTestEnv(t)
 
 	ps := NewProviderService()
 	saveProviderFixture(t, ps, []Provider{{ID: 1, Name: "DeleteMe", APIURL: "https://a.com"}})
-	closeDefaultTestDB()
 
-	err := ps.SaveProviders("claude", []Provider{})
-	if err == nil {
-		t.Fatal("清理数据库不可用时删除应失败")
+	closeDefaultTestDB()
+	if err := ps.SaveProviders("claude", []Provider{}); err == nil {
+		t.Fatal("数据库不可用时保存应失败")
 	}
-	providers, loadErr := ps.LoadProviders("claude")
-	if loadErr != nil {
-		t.Fatal(loadErr)
+
+	// 重新连接同一个库，确认删除没有生效（事务未提交）
+	dbPath := filepath.Join(tmpHome, ".code-switch", "app.db?cache=shared&mode=rwc")
+	initDefaultTestDB(t, dbPath)
+
+	providers, err := ps.LoadProviders("claude")
+	if err != nil {
+		t.Fatalf("重新读取失败: %v", err)
 	}
 	if len(providers) != 1 || providers[0].Name != "DeleteMe" {
-		t.Fatalf("清理失败时配置文件应回滚,实际 %+v", providers)
+		t.Fatalf("失败的保存不应改动已存数据，实际 %+v", providers)
 	}
 }
 

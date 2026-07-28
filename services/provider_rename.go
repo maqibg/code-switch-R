@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -29,7 +30,6 @@ type providerRenameCommit struct {
 	providerID                   int64
 	oldName, newName             string
 	originalProviders, providers []Provider
-	data                         []byte
 }
 
 func resolveProviderDataScope(kind string) (providerDataScope, error) {
@@ -120,15 +120,11 @@ func (ps *ProviderService) RenameProvider(kind string, id int64, newName string)
 
 	originalProviders := append([]Provider(nil), providers...)
 
-	// 更新内存中的 provider.Name,序列化新配置
+	// 更新内存中的 provider.Name（写入由 commitProviderRenameLocked 落到 provider 表）
 	target.Name = newName
-	newBytes, err := serializeProviders(providers)
-	if err != nil {
-		return fmt.Errorf("序列化新配置失败: %w", err)
-	}
 	return ps.commitProviderRenameLocked(providerRenameCommit{
 		kind: kind, scope: scope, providerID: id, oldName: oldName, newName: newName,
-		originalProviders: originalProviders, providers: providers, data: newBytes,
+		originalProviders: originalProviders, providers: providers,
 	})
 }
 
@@ -208,63 +204,76 @@ func (ps *ProviderService) SaveProvidersWithRename(kind string, providerID int64
 	return ps.commitProviderRenameLocked(providerRenameCommit{
 		kind: kind, scope: scope, providerID: providerID,
 		oldName: oldProvider.Name, newName: nextProvider.Name,
-		originalProviders: existingProviders, providers: plan.providers, data: plan.data,
+		originalProviders: existingProviders, providers: plan.providers,
 	})
 }
 
+// commitProviderRenameLocked 提交改名。
+//
+// 主数据入库后（A1），provider 表与历史数据表在同一个事务里更新，
+// 不再需要「先写 JSON 文件、失败时补偿回写」那一套：
+// 原实现在写完文件、提交事务之前崩溃会永久不一致，且补偿本身可能失败
+// （只能打 CRITICAL 日志）。现在这个窗口不存在。
+//
+// Pi 网关同步仍需补偿：models.json 是本进程之外的文件，
+// 无法与数据库事务原子提交。
 func (ps *ProviderService) commitProviderRenameLocked(commit providerRenameCommit) error {
-	path, err := providerFilePath(commit.kind)
+	ctx := context.Background()
+
+	// provider 表用的是 (platform='custom', source_id='toolId') 形式，
+	// 而 providerDataScope.identityPlatform 对自定义 CLI 是 'custom:toolId'。
+	// 两套表示不能混用，这里统一走 scopeForKind。
+	repoScope, err := scopeForKind(commit.kind)
 	if err != nil {
 		return err
 	}
-	originalBytes, err := serializeProviders(commit.originalProviders)
-	if err != nil {
-		return fmt.Errorf("序列化原配置失败: %w", err)
-	}
-	if err := atomicWriteFile(path, commit.data, 0o644); err != nil {
-		return fmt.Errorf("写入配置文件失败: %w", err)
-	}
-	rollbackFile := func(primary error) error {
-		if rollbackErr := atomicWriteFile(path, originalBytes, 0o644); rollbackErr != nil {
-			log.Printf("[ProviderRename] CRITICAL 回滚配置文件失败 path=%s primary=%v rollback=%v", path, primary, rollbackErr)
-			return fmt.Errorf("%w; 配置文件回滚失败: %v", primary, rollbackErr)
-		}
-		return primary
-	}
 
-	db, err := xdb.DB("default")
-	if err != nil {
-		return rollbackFile(fmt.Errorf("获取数据库连接失败: %w", err))
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return rollbackFile(fmt.Errorf("开启事务失败: %w", err))
-	}
-	if err := doRenameTx(tx, commit.scope, commit.providerID, commit.oldName, commit.newName); err != nil {
-		_ = tx.Rollback()
-		return rollbackFile(fmt.Errorf("更新历史数据失败: %w", err))
-	}
+	isPi := strings.EqualFold(strings.TrimSpace(commit.kind), "pi") && ps.piGatewaySync != nil
 
-	piSynced := false
-	if strings.EqualFold(strings.TrimSpace(commit.kind), "pi") && ps.piGatewaySync != nil {
-		if err := ps.piGatewaySync(commit.providers); err != nil {
-			_ = tx.Rollback()
-			primary := fmt.Errorf("同步 Pi models.json 失败: %w", err)
-			if syncErr := ps.piGatewaySync(commit.originalProviders); syncErr != nil {
-				primary = fmt.Errorf("%w; Pi gateway 回滚失败: %v", primary, syncErr)
+	piSyncAttempted := false
+
+	err = dbExecInImmediateTx(ctx, func(tx dbTxExecutor) error {
+		// 写入整份 provider 列表，而不是只改 name：
+		// SaveProvidersWithRename 允许在改名的同时修改其它字段（APIURL、模型映射等），
+		// 只更新 name 会把这些改动丢掉。
+		found := false
+		for order, provider := range commit.providers {
+			if provider.ID == commit.providerID {
+				found = true
 			}
-			return rollbackFile(primary)
-		}
-		piSynced = true
-	}
-	if err := tx.Commit(); err != nil {
-		primary := fmt.Errorf("提交事务失败: %w", err)
-		if piSynced {
-			if syncErr := ps.piGatewaySync(commit.originalProviders); syncErr != nil {
-				primary = fmt.Errorf("%w; Pi gateway 回滚失败: %v", primary, syncErr)
+			if err := upsertProviderInTx(ctx, tx, repoScope, provider, order); err != nil {
+				return err
 			}
 		}
-		return rollbackFile(primary)
+		if !found {
+			return fmt.Errorf("未找到 id=%d 的 provider", commit.providerID)
+		}
+
+		// 历史数据表的名字与 alias
+		if err := doRenameTxCtx(ctx, tx, commit.scope, commit.providerID, commit.oldName, commit.newName); err != nil {
+			return fmt.Errorf("更新历史数据失败: %w", err)
+		}
+
+		// Pi 网关同步放在提交之前：models.json 是进程外的文件，无法与事务原子提交，
+		// 但放在这里可以让同步失败连带回滚 provider 改名、历史数据和 alias。
+		// 若放在提交之后，同步失败时这三者已经落库，只能靠补偿逐个回退。
+		if isPi {
+			piSyncAttempted = true
+			if syncErr := ps.piGatewaySync(commit.providers); syncErr != nil {
+				return fmt.Errorf("同步 Pi models.json 失败: %w", syncErr)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		// 事务已回滚。只要尝试过同步就要恢复 models.json——
+		// 同步可能写到一半才失败，此时文件内容已经变了。
+		if piSyncAttempted {
+			if syncErr := ps.piGatewaySync(commit.originalProviders); syncErr != nil {
+				return fmt.Errorf("%w; Pi gateway 回滚失败: %v", err, syncErr)
+			}
+		}
+		return err
 	}
 	return nil
 }
@@ -293,6 +302,65 @@ func validateProviderSetUnchanged(existingProviders, providers []Provider) error
 }
 
 // doRenameTx 在 tx 内完成 DB 侧所有改动:
+// doRenameTxCtx 在事务内完成历史数据侧的改名。
+//
+// 接受 dbTxExecutor（*sql.Conn 与 *sql.Tx 均满足），
+// 以便与 BEGIN IMMEDIATE 事务配合使用。
+func doRenameTxCtx(ctx context.Context, tx dbTxExecutor, scope providerDataScope, providerID int64, oldName, newName string) error {
+	// request_log / relay_attempt 的 provider 名。
+	// 注：迁移 v3 之后这两张表已有 provider_id，按 ID 关联的部分无需改动；
+	// 这里更新 name 列是为了让历史记录显示改名后的名字，
+	// 与 A1 第 4 步删除 alias 时一并重新评估。
+	if scope.sourceID == "" {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE request_log SET provider = ? WHERE platform = ? AND provider = ?`,
+			newName, scope.identityPlatform, oldName,
+		); err != nil {
+			return fmt.Errorf("更新 request_log 失败: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE relay_attempt SET provider = ? WHERE platform = ? AND provider = ?`,
+			newName, scope.identityPlatform, oldName,
+		); err != nil {
+			return fmt.Errorf("更新 relay_attempt 失败: %w", err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE request_log SET provider = ?
+			 WHERE provider = ? AND platform = ? AND source_id = ?`,
+			newName, oldName, scope.telemetryPlatform, scope.sourceID,
+		); err != nil {
+			return fmt.Errorf("更新 request_log 失败: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE relay_attempt SET provider = ?
+			 WHERE provider = ? AND platform = ? AND source_id = ?`,
+			newName, oldName, scope.telemetryPlatform, scope.sourceID,
+		); err != nil {
+			return fmt.Errorf("更新 relay_attempt 失败: %w", err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE provider_blacklist SET provider_name = ? WHERE platform = ? AND provider_name = ?`,
+		newName, scope.identityPlatform, oldName,
+	); err != nil {
+		return fmt.Errorf("更新 provider_blacklist 失败: %w", err)
+	}
+
+	expiresAt := time.Now().Add(aliasTTL).UTC().Format("2006-01-02 15:04:05")
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO provider_alias (platform, provider_id, alias_name, canonical_name, expires_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		scope.identityPlatform, providerID, oldName, newName, expiresAt,
+	); err != nil {
+		return fmt.Errorf("写入 alias 失败: %w", err)
+	}
+	providerAliasLookupEnabled.Store(true)
+
+	return nil
+}
+
 // request_log.provider / relay_attempt.provider / provider_blacklist.provider_name + 写 alias。
 func doRenameTx(tx *sql.Tx, scope providerDataScope, providerID int64, oldName, newName string) error {
 	if err := updateRequestLogProviderNameTx(tx, scope, oldName, newName); err != nil {

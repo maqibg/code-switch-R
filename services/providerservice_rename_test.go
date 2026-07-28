@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -102,13 +103,14 @@ func saveProviderFixture(t *testing.T, ps *ProviderService, providers []Provider
 
 func saveProviderFixtureForKind(t *testing.T, kind string, providers []Provider) {
 	t.Helper()
-	// 直接写文件绕过 SaveProviders 的 name 不可改校验
-	path, err := providerFilePath(kind)
+	// 直接写 provider 表，绕过 SaveProviders 的 name 不可改校验。
+	// A1 之前这里写的是 JSON 文件；主数据入库后必须写数据库，
+	// 否则读取路径拿不到 fixture。
+	scope, err := scopeForKind(kind)
 	if err != nil {
-		t.Fatalf("获取路径失败: %v", err)
+		t.Fatalf("解析 kind %q 失败: %v", kind, err)
 	}
-	data, _ := serializeProviders(providers)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if _, err := replaceProvidersInDB(context.Background(), scope, providers); err != nil {
 		t.Fatalf("写 fixture 失败: %v", err)
 	}
 }
