@@ -150,7 +150,9 @@ B8(黑名单计数竞态)**不在第 0 批**:根因是队列强制读-改-写,�
 
 副作用:services 测试套件耗时由约 42 秒降到约 10-20 秒(消除了每列一次 pragma 探测)。
 
-### A1 Provider 入库(前两步完成,第三步未开工)
+### A1 Provider 入库(第 1 至 4.5 步完成,第 5 步未开工)
+
+实施中发现原计划漏了两层依赖,都不是"删 alias"这一步本身能绕开的:写入侧必须先填 `provider_id`(第 3.5 步),黑名单也必须先改按 ID 定位(第 4.5 步)。原计划把"切换读写后即可删 alias"当成一步,实际是三步。
 
 **已完成 · 第 1 步:`provider` 表 + 从 JSON 导入**(迁移 v2)
 
@@ -165,17 +167,47 @@ B8(黑名单计数竞态)**不在第 0 批**:根因是队列强制读-改-写,�
 - `name` 列有意保留:它记录请求发生当时该供应商叫什么,这个历史事实本身有价值 —— `provider_alias` 机制其实是在勉强模拟这件事。
 - 同一迁移归一化 `platform='custom:<toolId>'` 历史行。顺序是先归一 platform 再回填,否则旧格式行匹配不上。
 
-**未开工 · 第 3 步:切换读写路径**
+**已完成 · 第 3 步:切换读写路径**
 
-这是真正的切换点,也是风险集中处。范围:`LoadProviders` / `SaveProviders` / `loadProvidersRaw` / `SaveProvidersWithRename` 改走 DB,涉及 **85 处调用点(生产 42 + 测试 43)**。做完才能进第 4 步删 alias 全套。
+`LoadProviders` / `loadProvidersRaw` / `loadProvidersNoLock` / `loadProviderSnapshot` 改读 provider 表;`saveProvidersLocked` 与 `commitProviderRenameLocked` 改写 provider 表。JSON 不再被写入,迁移导入后原文件改名为 `*.migrated`。
 
-未在本轮开工的原因:半途停下会留下"读走 DB、写走 JSON"的中间态,比不开工更糟。这一步需要一个完整会话。
+删掉的补偿逻辑:原实现先写 JSON 再提交 DB 事务,失败时补偿回写文件。进程在两步之间崩溃会永久不一致,补偿本身还可能失败。现在写入是单事务。
 
-**未开工 · 第 4 步:删除 alias 机制** —— `provider_alias` 表、`aliasTTL`、`ResolveProviderAlias`、`checkAliasConstraints`、`cleanupExpiredAliases`、`commitProviderRenameLocked`、`rollbackFile`、禁止链式改名限制。改名缩成 `UPDATE provider SET name=? WHERE id=?`。
+顺带去掉 `LoadProviders` 的 mtime+size 缓存 —— 它本身有竞态:Windows 上 mtime 精度约 1-2 秒,同秒内"写→读→再写同长度内容"返回陈旧结果。
 
-**未开工 · 第 5 步:Gemini 类型统一** —— `GeminiProvider`(string ID)并入 `Provider`(int64),连带删掉 `roundRobinOrderGemini` 与 `provider_delete.go`/`provider_rename.go` 里的 gemini 特判。这一步同时是 A3 阶段 1。
+修掉三个实施中引入的缺陷:表示混用(provider 表用 `platform='custom'`+`source_id`,而 `providerDataScope.identityPlatform` 对自定义 CLI 是 `custom:toolId`);`SaveProvidersWithRename` 只写 name 列丢掉同批字段改动;Pi 同步放在事务提交之后导致失败时历史数据已落库。
 
-**未开工 · 顺带项** —— 回填完成后删除统计 SQL 里的 `custom:` 兼容 OR(`logservice.go:197`、`logdashboardbundle.go:497`);`blacklist_level_config` 双源真相收敛;app 设置分裂定归宿。
+**已完成 · 第 3.5 步:遥测写入 `provider_id`(计划漏项)**
+
+做第 4 步时发现:迁移 v3 只回填了历史行,遥测的两条 INSERT 根本不写这一列,新日志行的 `provider_id` 恒为 NULL、仍只按 name 关联。alias 正是承接改名瞬间 in-flight 写入的机制,写入侧不填 ID 就删不掉它。
+
+ID 为 0 时写 SQL NULL 而非 0:NULL 表示关联不到 provider 表(供应商已删除,或 Gemini 尚未并入),写 0 会造出指向不存在行的假外键值。
+
+**已完成 · 第 4 步:删除 alias 全套**
+
+先把 4 处按 name 筛选日志的读路径改为按 `provider_id` 匹配(方案 A:改名仍同步更新 name 列以保持展示一致),条件为 `(provider_id = ? OR (provider_id IS NULL AND provider = ?))`,解析不到 ID 时回退按 name。走参数绑定不拼字符串 —— 供应商名来自用户输入。
+
+然后删除:`provider_alias` 表(迁移 v5 DROP)、`aliasTTL`、`providerAliasLookupEnabled`、`ResolveProviderAlias`、`checkAliasConstraints`、`checkNameNotOccupiedByAlias`、`cleanupExpiredAliases`、`refreshProviderAliasLookupEnabled`、`ensureProviderAliasTable`,以及从 alias 收集历史名字的删除逻辑。
+
+随之解除两条限制:链式改名(原先 48 小时内禁止,因为 alias 是 name→name 映射,A→B→C 后用 A 查会得到已不存在的 B)、重用他人释放的旧名(原先会被 alias 静默归并)。
+
+补上一处会丢数据的缺口:迁移 v3 原先只按当前名字回填,改名前写入的记录匹配不上而永久为 NULL,删除时按 ID 清理覆盖不到,留下孤儿数据。现在 v3 额外借 alias 表把这些行也关联上 —— v5 才删 alias,这是最后的机会。
+
+**已完成 · 第 4.5 步:黑名单按 `provider_id` 定位(计划漏项)**
+
+删 alias 的第二层前置,同样在实施第 4 步时才发现。`provider_blacklist` 原按 `(platform, provider_name)` 定位,改名瞬间 in-flight 的失败带旧名查不到已改名的行,于是插入第二条 —— 失败计数被拆成两份,拉黑阈值永远达不到。
+
+迁移 v4 加 `provider_id` 与 `source_id` 并回填;新增 `blacklistTarget`,`IsBlacklistedFor` / `RecordSuccessFor` / `RecordFailureFor` 为新入口(按名字的旧方法保留为兼容委托,UI 手动解除拉黑只有名字可用);`providerrelay.go` 19 处调用点改为传 ID。
+
+**未开工 · 第 5 步:Gemini 类型统一**
+
+范围已量:**28 处 Go 引用、20 个 Wails 暴露方法、6 处前端调用**,还要把 ID 从 string 改成 int64(连带改前端)并迁移 `gemini-providers.json`。`GeminiProvider` 有真实差异字段(`EnvConfig`、`SettingsConfig`、`WebsiteURL`、`APIKeyURL`、`Category`、`PartnerPromotionKey`),不是 `Provider` 的字段子集。
+
+当前状态:`providerrelay.go` 里剩 10 处 Gemini 黑名单调用按名字定位(Gemini 从不写 alias,因此不受删除影响);`roundRobinOrderGemini`、`provider_delete.go`/`provider_rename.go` 的 gemini 特判都还在,要等这一步一并清掉。
+
+这一步同时是 A3 阶段 1 —— Gemini 转发循环之所以独立,根因就是这个平行类型。
+
+**未开工 · 顺带项** —— 删除统计 SQL 里的 `custom:` 兼容 OR(`logservice.go:197`、`logdashboardbundle.go:497`,历史行已由迁移 v3 归一);`blacklist_level_config` 双源真相收敛;app 设置分裂定归宿。
 - [ ] **A3 主体** —— 阶段 1 是 Gemini 类型归一(建议随 A1 迁移一起做),阶段 2 抽 `dispatchWithFailover`。动手前必须先补 failover 主循环的表驱动测试(对着现在的 `proxyHandler` 写,确认通过后再在下面重构)。
 - [ ] **A4/A5 拆包** —— 按域拆子包 + 小接口;删 `SetPricingService` 与 `LogService` 三个构造变体(它们是"同进程三套定价引擎并存、计费口径可分叉"的原因);Pi 的 `Supplier` 改名 `Provider`。
 - [ ] **前端 F1-F3** —— Main/Index.vue 4592 行拆分、引入状态层、`Call.ByName` 收敛到 bindings。
