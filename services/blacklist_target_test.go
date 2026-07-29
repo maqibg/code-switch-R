@@ -13,7 +13,7 @@ import (
 // 拉黑阈值永远达不到。按 provider_id 定位就没有这个问题。
 func TestBlacklistTargetLocatesSameRowAfterRename(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	ctx := context.Background()
@@ -40,7 +40,7 @@ func TestBlacklistTargetLocatesSameRowAfterRename(t *testing.T) {
 
 	// 模拟 in-flight 请求失败：它手里的 Provider 还是旧名字，但 ID 是对的
 	staleProvider := Provider{ID: 77, Name: "OldName"}
-	target := blacklistTargetFor("claude", staleProvider)
+	target := BlacklistTargetFor("claude", staleProvider)
 
 	locator, args := target.locator()
 	if !strings.Contains(locator, "provider_id") {
@@ -67,9 +67,9 @@ func TestBlacklistTargetLocatesSameRowAfterRename(t *testing.T) {
 	}
 }
 
-// blacklistTargetFor 要正确拆分自定义 CLI 的 scope
+// BlacklistTargetFor 要正确拆分自定义 CLI 的 scope
 func TestBlacklistTargetForSplitsCustomScope(t *testing.T) {
-	target := blacklistTargetFor("custom:tool-a", Provider{ID: 5, Name: "P"})
+	target := BlacklistTargetFor("custom:tool-a", Provider{ID: 5, Name: "P"})
 	if target.platform != "custom" || target.sourceID != "tool-a" {
 		t.Errorf("应拆成 custom + tool-a，实际 platform=%q sourceID=%q", target.platform, target.sourceID)
 	}
@@ -79,7 +79,7 @@ func TestBlacklistTargetForSplitsCustomScope(t *testing.T) {
 
 	// 注册平台的别名要归一化
 	for _, kind := range []string{"claude", "claude-code", "claude_code"} {
-		if got := blacklistTargetFor(kind, Provider{ID: 1, Name: "P"}).platform; got != "claude" {
+		if got := BlacklistTargetFor(kind, Provider{ID: 1, Name: "P"}).platform; got != "claude" {
 			t.Errorf("%q 应归一为 claude，实际 %q", kind, got)
 		}
 	}
@@ -87,7 +87,7 @@ func TestBlacklistTargetForSplitsCustomScope(t *testing.T) {
 
 // 无 ID 时回退按名字定位（Gemini 尚未并入 provider 表）
 func TestBlacklistTargetFallsBackToNameWithoutID(t *testing.T) {
-	target := blacklistTarget{platform: "gemini", name: "GeminiProv"}
+	target := BlacklistTarget{platform: "gemini", name: "GeminiProv"}
 	locator, args := target.locator()
 	if !strings.Contains(locator, "provider_name") {
 		t.Errorf("无 ID 时应按名字定位，实际 %q", locator)
@@ -97,10 +97,10 @@ func TestBlacklistTargetFallsBackToNameWithoutID(t *testing.T) {
 	}
 }
 
-// blacklistTargetByName 应从 provider 表解析出 ID
+// BlacklistTargetByName 应从 provider 表解析出 ID
 func TestBlacklistTargetByNameResolvesID(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	ctx := context.Background()
@@ -110,21 +110,21 @@ func TestBlacklistTargetByNameResolvesID(t *testing.T) {
 		t.Fatalf("写入失败: %v", err)
 	}
 
-	if got := blacklistTargetByName("codex", "Resolvable").providerID; got != 88 {
+	if got := BlacklistTargetByName("codex", "Resolvable").providerID; got != 88 {
 		t.Errorf("应解析出 ID 88，实际 %d", got)
 	}
 	// 不存在的名字解析不到 ID，回退按名字
-	if got := blacklistTargetByName("codex", "Nope").providerID; got != 0 {
+	if got := BlacklistTargetByName("codex", "Nope").providerID; got != 0 {
 		t.Errorf("不存在的名字不应解析出 ID，实际 %d", got)
 	}
 }
 
 // nullableID：0 应写 NULL，避免造出指向不存在行的假外键值
 func TestBlacklistTargetNullableID(t *testing.T) {
-	if got := (blacklistTarget{}).nullableID(); got != nil {
+	if got := (BlacklistTarget{}).nullableID(); got != nil {
 		t.Errorf("ID 为 0 应写 NULL，实际 %v", got)
 	}
-	if got := (blacklistTarget{providerID: 3}).nullableID(); got != int64(3) {
+	if got := (BlacklistTarget{providerID: 3}).nullableID(); got != int64(3) {
 		t.Errorf("非零 ID 应原样写入，实际 %v", got)
 	}
 }

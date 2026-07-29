@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"database/sql"
 	"net/http"
 	"testing"
@@ -44,26 +43,14 @@ func TestNewHTTPClientWithProxyKeepsCustomTransportIsolated(t *testing.T) {
 	}
 }
 
-func TestWaitForRetryStopsOnCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	started := time.Now()
-	if waitForRetry(ctx, time.Second) {
-		t.Fatal("waitForRetry() = true after cancellation")
-	}
-	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
-		t.Fatalf("waitForRetry() took %v after cancellation", elapsed)
-	}
-}
-
 func TestEnsureRequestLogTableCreatesPendingCostIndex(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
 	defer db.Close()
-	if err := runMigrationsOn(db); err != nil {
-		t.Fatalf("runMigrationsOn() error = %v", err)
+	if err := RunMigrationsOn(db); err != nil {
+		t.Fatalf("RunMigrationsOn() error = %v", err)
 	}
 	var sqlText string
 	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_request_log_pending_cost'`).Scan(&sqlText); err != nil {
@@ -71,20 +58,5 @@ func TestEnsureRequestLogTableCreatesPendingCostIndex(t *testing.T) {
 	}
 	if sqlText == "" {
 		t.Fatal("pending cost index SQL is empty")
-	}
-}
-
-func TestGJSONGetStringReadsChatChoiceWithoutRemarshal(t *testing.T) {
-	body := map[string]any{
-		"choices": []any{map[string]any{
-			"delta":         map[string]any{"content": "hello", "reasoning_content": ""},
-			"finish_reason": "stop",
-		}},
-	}
-	if got := gjsonGetString(body, "choices.0.delta.content"); got != "hello" {
-		t.Fatalf("content = %q, want hello", got)
-	}
-	if got := gjsonGetString(body, "choices.0.finish_reason"); got != "stop" {
-		t.Fatalf("finish_reason = %q, want stop", got)
 	}
 }

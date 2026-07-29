@@ -1,4 +1,11 @@
-import { Call } from '@wailsio/runtime'
+/**
+ * 黑名单 API 封装
+ *
+ * 走 frontend/bindings 生成的类型化函数，不用 Call.ByName：
+ * 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了。
+ */
+import * as BlacklistService from '../../bindings/codeswitch/services/blacklistservice'
+import * as SettingsService from '../../bindings/codeswitch/services/settingsservice'
 
 // 黑名单状态接口
 export interface BlacklistStatus {
@@ -23,15 +30,12 @@ export interface BlacklistSettings {
   durationMinutes: number   // 拉黑时长（分钟）
 }
 
-const BLACKLIST_SERVICE = 'codeswitch/services.BlacklistService'
-const SETTINGS_SERVICE = 'codeswitch/services.SettingsService'
-
 /**
  * 获取指定平台的黑名单状态列表
  * @param platform 'claude' | 'codex'
  */
 export const getBlacklistStatus = async (platform: string): Promise<BlacklistStatus[]> => {
-  return Call.ByName(`${BLACKLIST_SERVICE}.GetBlacklistStatus`, platform)
+  return (await BlacklistService.GetBlacklistStatus(platform)) as unknown as BlacklistStatus[]
 }
 
 /**
@@ -40,14 +44,30 @@ export const getBlacklistStatus = async (platform: string): Promise<BlacklistSta
  * @param providerName provider 名称
  */
 export const manualUnblock = async (platform: string, providerName: string): Promise<void> => {
-  return Call.ByName(`${BLACKLIST_SERVICE}.ManualUnblock`, platform, providerName)
+  return BlacklistService.ManualUnblock(platform, providerName)
+}
+
+/**
+ * 手动解除拉黑并重置失败计数（保留等级）
+ */
+export const manualUnblockAndReset = async (platform: string, providerName: string): Promise<void> => {
+  return BlacklistService.ManualUnblockAndReset(platform, providerName)
+}
+
+/**
+ * 手动清零等级（不解除拉黑，仅重置等级）
+ */
+export const manualResetLevel = async (platform: string, providerName: string): Promise<void> => {
+  return BlacklistService.ManualResetLevel(platform, providerName)
 }
 
 /**
  * 获取黑名单配置
  */
 export const getBlacklistSettings = async (): Promise<BlacklistSettings> => {
-  return Call.ByName(`${SETTINGS_SERVICE}.GetBlacklistSettingsStruct`)
+  const result = await SettingsService.GetBlacklistSettingsStruct()
+  // 绑定的返回类型允许 null（Go 侧出错时），调用方期望始终拿到对象
+  return result ?? { failureThreshold: 0, durationMinutes: 0 }
 }
 
 /**
@@ -56,5 +76,5 @@ export const getBlacklistSettings = async (): Promise<BlacklistSettings> => {
  * @param duration 拉黑时长（15/30/60 分钟）
  */
 export const updateBlacklistSettings = async (threshold: number, duration: number): Promise<void> => {
-  return Call.ByName(`${SETTINGS_SERVICE}.UpdateBlacklistSettings`, threshold, duration)
+  return SettingsService.UpdateBlacklistSettings(threshold, duration)
 }

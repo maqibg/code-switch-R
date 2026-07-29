@@ -1,4 +1,15 @@
-import { Call } from '@wailsio/runtime'
+/**
+ * 请求日志与统计 API 封装
+ *
+ * 走 frontend/bindings 生成的类型化函数，不用 Call.ByName：
+ * 后者靠字符串拼服务名与方法名，Go 侧签名变化时编译期发现不了，
+ * 只会在运行时报错；bindings 用数字方法 ID 且带参数与返回类型。
+ *
+ * 本文件的类型保留而不直接用生成的 models：`platform` 在这里是字面量联合
+ * （生成的是 string），UI 的 switch 分支与 Record 键依赖这个收窄。
+ * 因此在返回边界上做一次断言，字段名与 Go 的 json tag 逐一对齐。
+ */
+import * as LogService from '../../bindings/codeswitch/services/logservice'
 
 export type LogPlatform = 'claude' | 'codex' | 'gemini' | 'reasonix' | 'pi' | 'custom'
 export type StatsRange = 'today' | '7d' | '30d' | 'month' | 'all'
@@ -47,9 +58,9 @@ export const fetchRequestLogs = async (query: RequestLogQuery = {}): Promise<Req
   const limit = query.limit ?? 100
   const range = query.range ?? ''
   if (!range) {
-    return Call.ByName('codeswitch/services.LogService.ListRequestLogs', platform, provider, limit)
+    return (await LogService.ListRequestLogs(platform, provider, limit)) as RequestLog[]
   }
-  return Call.ByName('codeswitch/services.LogService.ListRequestLogsByRange', platform, provider, range, limit)
+  return (await LogService.ListRequestLogsByRange(platform, provider, range, limit)) as RequestLog[]
 }
 
 export const fetchRequestLogPage = async (
@@ -60,18 +71,11 @@ export const fetchRequestLogPage = async (
   const range = query.range ?? ''
   const page = Math.max(1, Math.floor(query.page ?? 1))
   const pageSize = Math.min(100, Math.max(1, Math.floor(query.pageSize ?? 15)))
-  return Call.ByName(
-    'codeswitch/services.LogService.ListRequestLogsPage',
-    platform,
-    provider,
-    range,
-    page,
-    pageSize,
-  )
+  return (await LogService.ListRequestLogsPage(platform, provider, range, page, pageSize)) as RequestLogPage
 }
 
 export const fetchLogProviders = async (platform: LogPlatform | '' = ''): Promise<string[]> => {
-  return Call.ByName('codeswitch/services.LogService.ListProviders', platform)
+  return LogService.ListProviders(platform)
 }
 
 export type LogStatsSeries = {
@@ -107,12 +111,12 @@ export const fetchLogStats = async (
   provider = '',
 ): Promise<LogStats> => {
   if (provider) {
-    return Call.ByName('codeswitch/services.LogService.StatsByProviderAndRange', platform, provider, range)
+    return (await LogService.StatsByProviderAndRange(platform, provider, range)) as LogStats
   }
   if (range === 'today') {
-    return Call.ByName('codeswitch/services.LogService.StatsSince', platform)
+    return (await LogService.StatsSince(platform)) as LogStats
   }
-  return Call.ByName('codeswitch/services.LogService.StatsByRange', platform, range)
+  return (await LogService.StatsByRange(platform, range)) as LogStats
 }
 
 export type DashboardOverview = {
@@ -135,13 +139,13 @@ export const fetchDashboardOverview = async (
   range: StatsRange = 'today',
 ): Promise<DashboardOverview> => {
   if (range === 'today') {
-    return Call.ByName('codeswitch/services.LogService.DashboardOverview', platform)
+    return (await LogService.DashboardOverview(platform)) as DashboardOverview
   }
-  return Call.ByName('codeswitch/services.LogService.DashboardOverviewByRange', platform, range)
+  return (await LogService.DashboardOverviewByRange(platform, range)) as DashboardOverview
 }
 
 export const fetchCostSince = async (start: string, platform: LogPlatform | '' = ''): Promise<number> => {
-  return Call.ByName('codeswitch/services.LogService.CostSince', start, platform)
+  return LogService.CostSince(start, platform)
 }
 
 export type ProviderDailyStat = {
@@ -165,15 +169,15 @@ export const fetchProviderDailyStats = async (
   sourceId = '',
 ): Promise<ProviderDailyStat[]> => {
   if (sourceId) {
-    return Call.ByName('codeswitch/services.LogService.ProviderStatsBySourceAndRange', platform, sourceId, range)
+    return LogService.ProviderStatsBySourceAndRange(platform, sourceId, range)
   }
   if (provider) {
-    return Call.ByName('codeswitch/services.LogService.ProviderStatsByProviderAndRange', platform, provider, range)
+    return LogService.ProviderStatsByProviderAndRange(platform, provider, range)
   }
   if (range === 'today') {
-    return Call.ByName('codeswitch/services.LogService.ProviderDailyStats', platform)
+    return LogService.ProviderDailyStats(platform)
   }
-  return Call.ByName('codeswitch/services.LogService.ProviderStatsByRange', platform, range)
+  return LogService.ProviderStatsByRange(platform, range)
 }
 
 export type ModelDailyStat = {
@@ -195,11 +199,14 @@ export const fetchModelDailyStats = async (
   range: StatsRange = 'today',
 ): Promise<ModelDailyStat[]> => {
   if (range === 'today') {
-    return Call.ByName('codeswitch/services.LogService.ModelDailyStats', platform)
+    return LogService.ModelDailyStats(platform)
   }
-  return Call.ByName('codeswitch/services.LogService.ModelStatsByRange', platform, range)
+  return LogService.ModelStatsByRange(platform, range)
 }
 
+// health_check 相关字段已删除：health_check_history 全套在后端早已移除，
+// 这里的 health_check_count / deleted_health_checks 是留下的死声明，
+// 原先靠 Call.ByName 的 any 返回值蒙过编译器，实际永远是 undefined。
 export type RecordStorageInfo = {
   total_bytes: number
   db_bytes: number
@@ -207,13 +214,11 @@ export type RecordStorageInfo = {
   shm_bytes: number
   request_log_count: number
   relay_attempt_count: number
-  health_check_count: number
 }
 
 export type RecordCleanupResult = {
   deleted_request_logs: number
   deleted_relay_attempts: number
-  deleted_health_checks: number
   storage: RecordStorageInfo
   warning?: string
 }
@@ -233,15 +238,15 @@ export const fetchDashboardBundle = async (
   recentLimit = 8,
 ): Promise<DashboardBundle> => {
   const limit = Number.isFinite(recentLimit) && recentLimit > 0 ? Math.floor(recentLimit) : 8
-  return Call.ByName('codeswitch/services.LogService.GetDashboardBundle', range, limit)
+  return (await LogService.GetDashboardBundle(range, limit)) as unknown as DashboardBundle
 }
 
 export const fetchRecordStorageInfo = async (): Promise<RecordStorageInfo> => {
-  return Call.ByName('codeswitch/services.LogService.GetRecordStorageInfo')
+  return LogService.GetRecordStorageInfo()
 }
 
 export const clearStoredRecords = async (): Promise<RecordCleanupResult> => {
-  return Call.ByName('codeswitch/services.LogService.ClearStoredRecords')
+  return LogService.ClearStoredRecords()
 }
 
 export type HeatmapStat = {
@@ -255,5 +260,5 @@ export type HeatmapStat = {
 
 export const fetchHeatmapStats = async (days: number): Promise<HeatmapStat[]> => {
   const range = Number.isFinite(days) && days > 0 ? Math.floor(days) : 30
-  return Call.ByName('codeswitch/services.LogService.HeatmapStats', range)
+  return LogService.HeatmapStats(range)
 }

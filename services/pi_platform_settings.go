@@ -135,7 +135,7 @@ func (s *PiSettingsService) EnablePlatformProxy(providerID string) error {
 	defer s.modelsMu.Unlock()
 
 	providerID = strings.TrimSpace(providerID)
-	if !piModelsProviderIDPattern.MatchString(providerID) {
+	if !PiModelsProviderIDPattern.MatchString(providerID) {
 		return fmt.Errorf("Pi 平台 ID 格式无效: %s", providerID)
 	}
 	detected, _, err := s.ensurePiModelsInitialized()
@@ -339,7 +339,7 @@ func (s *PiSettingsService) ensureFirstPlatformSupplier(providerID string, sourc
 		return nil, false, fmt.Errorf("加载 Pi 供应商失败: %w", err)
 	}
 	for _, provider := range providers {
-		if provider.piPlatformKey() == providerID {
+		if provider.PiPlatformKey() == providerID {
 			return providers, false, nil
 		}
 	}

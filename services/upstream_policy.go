@@ -2,16 +2,8 @@ package services
 
 import (
 	"fmt"
-	"net/textproto"
-	"sort"
 	"strings"
 )
-
-var blockedUpstreamHeaders = map[string]struct{}{
-	"authorization": {}, "proxy-authorization": {}, "x-api-key": {}, "host": {},
-	"content-length": {}, "transfer-encoding": {}, "connection": {}, "keep-alive": {},
-	"proxy-authenticate": {}, "te": {}, "trailer": {}, "upgrade": {}, "accept-encoding": {},
-}
 
 var userAgentPresets = map[string]string{
 	"code-switch-r":    "code-switch-R",
@@ -30,16 +22,6 @@ var replaceModeClientHeaders = map[string]struct{}{
 	"x-codex-turn-metadata": {}, "x-codex-turn-state": {}, "x-codex-window-id": {},
 	"x-openai-memgen-request": {}, "x-openai-subagent": {},
 	"x-openai-internal-codex-responses-lite": {}, "x-responsesapi-include-timing-metrics": {},
-}
-
-var exactUpstreamHeaderNames = map[string]string{
-	"openai-beta":                            "OpenAI-Beta",
-	"x-stainless-os":                         "X-Stainless-OS",
-	"x-codex-beta-features":                  "X-Codex-Beta-Features",
-	"x-codex-turn-metadata":                  "X-Codex-Turn-Metadata",
-	"x-codex-turn-state":                     "X-Codex-Turn-State",
-	"x-claude-code-session-id":               "X-Claude-Code-Session-Id",
-	"x-openai-internal-codex-responses-lite": "X-OpenAI-Internal-Codex-Responses-Lite",
 }
 
 func (p Provider) effectiveAuthScheme(platform string) (scheme string, header string) {
@@ -64,7 +46,7 @@ func (p Provider) effectiveAuthScheme(platform string) (scheme string, header st
 	return scheme, header
 }
 
-func providerEligibleForRelay(provider Provider, platform string) bool {
+func ProviderEligibleForRelay(provider Provider, platform string) bool {
 	if !provider.Enabled || strings.TrimSpace(provider.APIURL) == "" {
 		return false
 	}
@@ -72,11 +54,11 @@ func providerEligibleForRelay(provider Provider, platform string) bool {
 	return scheme == "none" || strings.TrimSpace(provider.APIKey) != ""
 }
 
-func buildUpstreamHeaders(provider Provider, platform string, clientHeaders map[string]string, upstreamProtocol UpstreamProtocolType) (map[string]string, error) {
-	return buildUpstreamHeadersForModel(provider, platform, "", clientHeaders, upstreamProtocol)
+func BuildUpstreamHeaders(provider Provider, platform string, clientHeaders map[string]string, upstreamProtocol UpstreamProtocolType) (map[string]string, error) {
+	return BuildUpstreamHeadersForModel(provider, platform, "", clientHeaders, upstreamProtocol)
 }
 
-func buildUpstreamHeadersForModel(provider Provider, platform, model string, clientHeaders map[string]string, upstreamProtocol UpstreamProtocolType) (map[string]string, error) {
+func BuildUpstreamHeadersForModel(provider Provider, platform, model string, clientHeaders map[string]string, upstreamProtocol UpstreamProtocolType) (map[string]string, error) {
 	var err error
 	provider, err = resolvePiProviderConfigValues(provider, platform)
 	if err != nil {
@@ -189,78 +171,6 @@ func shouldDropClientHeader(key string) bool {
 	return strings.HasPrefix(lower, "x-stainless-") || lower == "x-openai-client-user-agent"
 }
 
-func validateAdditionalHeader(key, value string) error {
-	if _, blocked := blockedUpstreamHeaders[strings.ToLower(strings.TrimSpace(key))]; blocked {
-		return fmt.Errorf("自定义 Header %q 由代理统一管理", key)
-	}
-	return validateHeaderNameAndValue(key, value)
-}
-
-func validateHeaderNameAndValue(key, value string) error {
-	if !isValidHTTPHeaderName(key) {
-		return fmt.Errorf("Header 名称无效: %q", key)
-	}
-	if strings.ContainsAny(value, "\r\n") {
-		return fmt.Errorf("Header %q 的值包含换行符", key)
-	}
-	return nil
-}
-
-func isValidHTTPHeaderName(key string) bool {
-	if key == "" || strings.TrimSpace(key) != key {
-		return false
-	}
-	for index := 0; index < len(key); index++ {
-		character := key[index]
-		if (character >= 'a' && character <= 'z') ||
-			(character >= 'A' && character <= 'Z') ||
-			(character >= '0' && character <= '9') {
-			continue
-		}
-		switch character {
-		case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func canonicalizeHeaderMap(headers map[string]string) (map[string]string, error) {
-	if len(headers) == 0 {
-		return nil, nil
-	}
-	keys := make([]string, 0, len(headers))
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		lowerI := strings.ToLower(keys[i])
-		lowerJ := strings.ToLower(keys[j])
-		if lowerI == lowerJ {
-			return keys[i] < keys[j]
-		}
-		return lowerI < lowerJ
-	})
-
-	result := make(map[string]string, len(headers))
-	seen := make(map[string]string, len(headers))
-	for _, key := range keys {
-		value := headers[key]
-		if err := validateHeaderNameAndValue(key, value); err != nil {
-			return nil, err
-		}
-		normalized := strings.ToLower(key)
-		if previous, exists := seen[normalized]; exists {
-			return nil, fmt.Errorf("Header 名称重复（忽略大小写）: %q 与 %q", previous, key)
-		}
-		seen[normalized] = key
-		result[canonicalUpstreamHeaderName(key)] = value
-	}
-	return result, nil
-}
-
 func applyUserAgentPolicy(headers map[string]string, provider Provider) error {
 	return applyUserAgentIdentity(headers, ProviderRequestIdentity{
 		UserAgentPreset: provider.UserAgentPreset,
@@ -296,58 +206,4 @@ func applyUserAgentIdentity(headers map[string]string, identity ProviderRequestI
 		setHeader(headers, "x-goog-api-client", "gemini-cli/0.1.5")
 	}
 	return nil
-}
-
-func mergeCommaSeparatedHeader(headers map[string]string, key, value string) {
-	seen := make(map[string]struct{})
-	items := make([]string, 0)
-	for _, source := range []string{headerValue(headers, key), value} {
-		for _, item := range strings.Split(source, ",") {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			normalized := strings.ToLower(item)
-			if _, exists := seen[normalized]; exists {
-				continue
-			}
-			seen[normalized] = struct{}{}
-			items = append(items, item)
-		}
-	}
-	if len(items) == 0 {
-		removeHeader(headers, key)
-		return
-	}
-	setHeader(headers, key, strings.Join(items, ","))
-}
-
-func setHeader(headers map[string]string, key, value string) {
-	removeHeader(headers, key)
-	headers[canonicalUpstreamHeaderName(key)] = value
-}
-
-func canonicalUpstreamHeaderName(key string) string {
-	key = strings.TrimSpace(key)
-	if exact := exactUpstreamHeaderNames[strings.ToLower(key)]; exact != "" {
-		return exact
-	}
-	return textproto.CanonicalMIMEHeaderKey(key)
-}
-
-func removeHeader(headers map[string]string, key string) {
-	for existing := range headers {
-		if strings.EqualFold(existing, key) {
-			delete(headers, existing)
-		}
-	}
-}
-
-func headerValue(headers map[string]string, key string) string {
-	for existing, value := range headers {
-		if strings.EqualFold(existing, key) {
-			return value
-		}
-	}
-	return ""
 }

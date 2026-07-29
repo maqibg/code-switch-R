@@ -85,7 +85,7 @@ func TestGeminiProviderFallsBackToGeneratedID(t *testing.T) {
 // 主键变化会让历史日志的 provider_id 关联断裂
 func TestGeminiProvidersSaveLoadKeepsNumericID(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -136,7 +136,7 @@ func TestGeminiProvidersSaveLoadKeepsNumericID(t *testing.T) {
 // 删除的 Gemini provider 应从表中消失
 func TestGeminiProvidersSaveDeletesMissing(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestGeminiMigrationImportsJSONFile(t *testing.T) {
 		t.Fatalf("写入 fixture 失败: %v", err)
 	}
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -209,11 +209,12 @@ func TestGeminiMigrationImportsJSONFile(t *testing.T) {
 	}
 }
 
-// 黑名单定位要带上 Gemini 的 int64 主键
+// Gemini 的黑名单定位走统一入口，带上 int64 主键。
+//
+// 原先有个专用的 blacklistTargetForGemini：那是 GeminiProvider 作为平行类型
+// 时的产物，转发循环并入统一 Provider 后（A3 阶段 1）已删除。
 func TestBlacklistTargetForGeminiUsesNumericID(t *testing.T) {
-	target := blacklistTargetForGemini(GeminiProvider{
-		ID: "gemini-x", Name: "X", numericID: 55,
-	})
+	target := BlacklistTargetFor("gemini", Provider{ID: 55, Name: "X"})
 	if target.platform != "gemini" {
 		t.Errorf("platform 应为 gemini，实际 %q", target.platform)
 	}
@@ -225,7 +226,7 @@ func TestBlacklistTargetForGeminiUsesNumericID(t *testing.T) {
 	}
 
 	// 未分配主键时回退按名字定位
-	fallback := blacklistTargetForGemini(GeminiProvider{ID: "gemini-y", Name: "Y"})
+	fallback := BlacklistTargetFor("gemini", Provider{Name: "Y"})
 	locator, _ := fallback.locator()
 	if locator != "platform = ? AND source_id = ? AND provider_name = ?" {
 		t.Errorf("无主键时应按名字定位，实际 %q", locator)

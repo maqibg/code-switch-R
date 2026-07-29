@@ -59,7 +59,7 @@ func (s *PiSettingsService) SaveSupplierOrder(platformID string, providerIDs []i
 	positions := make([]int, 0)
 	current := make(map[int64]Provider)
 	for index, provider := range providers {
-		if provider.piPlatformKey() != platformID {
+		if provider.PiPlatformKey() != platformID {
 			continue
 		}
 		positions = append(positions, index)

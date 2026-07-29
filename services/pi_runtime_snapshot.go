@@ -245,7 +245,7 @@ func (s *PiSettingsService) RuntimeSnapshot() (PiRuntimeSnapshot, error) {
 			sort.Strings(identityHeaderNames)
 			authScheme, _ := provider.effectiveAuthScheme("pi")
 			snapshot.Suppliers = append(snapshot.Suppliers, PiRuntimeSupplier{
-				ID: provider.ID, Name: provider.Name, PlatformID: provider.piPlatformKey(), Enabled: provider.Enabled,
+				ID: provider.ID, Name: provider.Name, PlatformID: provider.PiPlatformKey(), Enabled: provider.Enabled,
 				Level: provider.Level, ModelCount: len(models), URLConfigured: strings.TrimSpace(provider.APIURL) != "",
 				KeyConfigured: strings.TrimSpace(provider.APIKey) != "",
 				URLHost:       piSupplierURLHost(provider.APIURL), Protocol: provider.UpstreamProtocol,

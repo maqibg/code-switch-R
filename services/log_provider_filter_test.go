@@ -12,7 +12,7 @@ import (
 // 它覆盖了"改名瞬间 in-flight 写入带旧名"这个 alias 当初要遮掩的窗口。
 func TestLogProviderFilterMatchesByProviderID(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	ctx := context.Background()
@@ -45,7 +45,7 @@ func TestLogProviderFilterMatchesByProviderID(t *testing.T) {
 // 否则它们的历史记录会查不出来。
 func TestLogProviderFilterFallsBackToNameForDeletedProvider(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -81,7 +81,7 @@ func TestLogProviderFilterEmpty(t *testing.T) {
 // 未指定平台时无法定位范围，只能按名字匹配
 func TestLogProviderFilterWithoutPlatformUsesName(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -97,7 +97,7 @@ func TestLogProviderFilterWithoutPlatformUsesName(t *testing.T) {
 // 自定义 CLI 的范围要带上 source_id，避免跨工具误匹配同名供应商
 func TestLogProviderFilterScopesCustomCLI(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	ctx := context.Background()
@@ -124,7 +124,7 @@ func TestLogProviderFilterScopesCustomCLI(t *testing.T) {
 // 名字匹配忽略大小写与首尾空白（前端下拉框传值可能带空白）
 func TestLogProviderFilterNameMatchIsLenient(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	ctx := context.Background()
@@ -144,7 +144,7 @@ func TestLogProviderFilterNameMatchIsLenient(t *testing.T) {
 // 端到端：改名后按新名筛选，应能查到改名前写入的记录
 func TestLogFilterFindsRecordsAfterRename(t *testing.T) {
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	ctx := context.Background()
@@ -156,7 +156,7 @@ func TestLogFilterFindsRecordsAfterRename(t *testing.T) {
 	}
 
 	// 用旧名写入一条日志，带 provider_id
-	stmt := logicalRequestStatement(RequestLog{
+	stmt := RequestLogInsertStatement(RequestLog{
 		RequestID: "log-1", Platform: "claude", Provider: "BeforeName", ProviderID: 41, HttpCode: 200,
 	})
 	if _, err := db.Exec(stmt.Query, stmt.Args...); err != nil {

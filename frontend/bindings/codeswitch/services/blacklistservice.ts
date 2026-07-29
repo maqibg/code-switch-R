@@ -51,7 +51,7 @@ export function IsBlacklistEnabled(): $CancellablePromise<boolean> {
 /**
  * IsBlacklisted 检查 provider 是否在黑名单中
  * IsBlacklisted 按名字查询拉黑状态（兼容入口）。
- * 内部解析成 provider_id 定位，见 IsBlacklistedFor。
+ * 内部解析成 provider_id 定位，见 isBlacklistedFor。
  */
 export function IsBlacklisted(platform: string, providerName: string): $CancellablePromise<[boolean, string | null]> {
     return $Call.ByID(237122095, platform, providerName);

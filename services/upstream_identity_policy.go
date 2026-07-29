@@ -12,7 +12,7 @@ var claudeBodyCapabilityBetas = map[string]string{
 	"prompt-caching-scope-2026-01-05": "cache_control",
 }
 
-func applyBodyAwareRequestIdentityHeaders(headers map[string]string, provider Provider, model string, body []byte, protocol UpstreamProtocolType) error {
+func ApplyBodyAwareRequestIdentityHeaders(headers map[string]string, provider Provider, model string, body []byte, protocol UpstreamProtocolType) error {
 	identity := providerRequestIdentityForModel(provider, model)
 	if identity.TargetCLI != "claude-code" || protocol != UpstreamProtocolAnthropic {
 		return nil

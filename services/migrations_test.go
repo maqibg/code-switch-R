@@ -34,7 +34,7 @@ func tableExists(t *testing.T, db *sql.DB, name string) bool {
 func TestMigrationsCreateFullSchemaOnFreshDB(t *testing.T) {
 	db := openMigrationTestDB(t)
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -64,7 +64,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	db := openMigrationTestDB(t)
 
 	for i := 0; i < 3; i++ {
-		if err := runMigrationsOn(db); err != nil {
+		if err := RunMigrationsOn(db); err != nil {
 			t.Fatalf("第 %d 次迁移失败: %v", i+1, err)
 		}
 	}
@@ -97,7 +97,7 @@ func TestMigrationsAdoptExistingDatabase(t *testing.T) {
 		t.Fatalf("插入历史数据失败: %v", err)
 	}
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移旧库失败: %v", err)
 	}
 
@@ -149,7 +149,7 @@ func TestMigrationsSkipAlreadyAppliedVersions(t *testing.T) {
 
 	// 连跑三次，迁移体只应执行一次
 	for i := 0; i < 3; i++ {
-		if err := runMigrationsOn(db); err != nil {
+		if err := RunMigrationsOn(db); err != nil {
 			t.Fatalf("第 %d 次迁移失败: %v", i+1, err)
 		}
 	}
@@ -225,7 +225,7 @@ func TestMigrationVersionsAreUniqueAndAscending(t *testing.T) {
 // 索引应被创建（统计查询依赖它们）
 func TestMigrationsCreateExpectedIndexes(t *testing.T) {
 	db := openMigrationTestDB(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 

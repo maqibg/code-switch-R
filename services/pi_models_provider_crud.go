@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var piModelsProviderIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var PiModelsProviderIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // PiModelsProviderTemplate is returned only for an explicit edit action. Unlike
 // ModelsCatalog, it includes credentials and headers required by the editor.
@@ -174,7 +174,7 @@ func (s *PiSettingsService) DeleteModelsProvider(id, expectedFingerprint string)
 		}
 		remainingProviders = make([]Provider, 0, len(configuredProviders))
 		for _, provider := range configuredProviders {
-			if provider.piPlatformKey() != id {
+			if provider.PiPlatformKey() != id {
 				remainingProviders = append(remainingProviders, provider)
 			}
 		}
@@ -295,7 +295,7 @@ func normalizePiModelsProviderTemplate(input PiModelsProviderTemplate) (PiModels
 	input.BaseURL = strings.TrimSpace(input.BaseURL)
 	input.APIKey = strings.TrimSpace(input.APIKey)
 	input.API = strings.TrimSpace(input.API)
-	if input.ID == "" || len(input.ID) > 64 || !piModelsProviderIDPattern.MatchString(input.ID) {
+	if input.ID == "" || len(input.ID) > 64 || !PiModelsProviderIDPattern.MatchString(input.ID) {
 		return PiModelsProviderTemplate{}, fmt.Errorf("Provider ID 只能包含字母、数字、点、下划线和连字符，且不能超过 64 个字符")
 	}
 	if input.API != "" && !isSupportedPiAPI(input.API) {

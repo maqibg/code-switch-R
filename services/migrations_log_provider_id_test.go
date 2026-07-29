@@ -24,7 +24,7 @@ func TestLogProviderIDBackfillMatchesWithinScope(t *testing.T) {
 	seedLogRow(t, db, "claude", "", "SameName")
 	seedLogRow(t, db, "codex", "", "SameName")
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -44,7 +44,7 @@ func TestLogProviderIDLeavesDeletedProvidersNull(t *testing.T) {
 	seedLogRow(t, db, "claude", "", "Alive")
 	seedLogRow(t, db, "claude", "", "LongGone")
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -81,7 +81,7 @@ func TestLogProviderIDNormalizesLegacyCustomPlatform(t *testing.T) {
 		t.Fatalf("插入旧格式行失败: %v", err)
 	}
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestLogProviderIDCoversRelayAttempt(t *testing.T) {
 		t.Fatalf("插入 relay_attempt 失败: %v", err)
 	}
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestLogProviderIDMigrationIsIdempotent(t *testing.T) {
 	seedLogRow(t, db, "claude", "", "Idem")
 
 	for i := 0; i < 3; i++ {
-		if err := runMigrationsOn(db); err != nil {
+		if err := RunMigrationsOn(db); err != nil {
 			t.Fatalf("第 %d 次迁移失败: %v", i+1, err)
 		}
 	}

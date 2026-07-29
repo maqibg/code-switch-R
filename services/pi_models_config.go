@@ -142,7 +142,7 @@ func validatePiProviderConfiguration(provider Provider) []string {
 			knownModels[trimmedID] = struct{}{}
 		}
 	}
-	fallbackAPI := piAPIForProtocol(resolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions")))
+	fallbackAPI := piAPIForProtocol(ResolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions")))
 	for index, model := range provider.PiModels {
 		path := fmt.Sprintf("piModels[%d]", index)
 		id := strings.TrimSpace(model.ID)
@@ -189,7 +189,7 @@ func validatePiProviderConfiguration(provider Provider) []string {
 		errors = append(errors, "metadataUserId 以 JSON 对象开头但不是合法 JSON")
 	}
 	if metadata != "" {
-		protocol := resolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions"))
+		protocol := ResolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions"))
 		if protocol != UpstreamProtocolAnthropic {
 			errors = append(errors, "metadataUserId 只能用于 Anthropic Messages 上游")
 		}

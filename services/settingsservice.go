@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strconv"
@@ -85,44 +84,18 @@ func NewSettingsService() *SettingsService {
 	return &SettingsService{}
 }
 
-// GetBlacklistSettings 获取黑名单配置
+// GetBlacklistSettings 获取黑名单配置（阈值与固定拉黑时长）。
+//
+// 这两个值收敛到 blacklist_level_config 行（迁移 v7）。原先它们另有两个
+// 独立键 blacklist_failure_threshold / blacklist_duration_minutes，
+// 与配置里的 failureThreshold / fallbackDurationMinutes 是同一概念存两处，
+// 调用方要"两处都读、不一致就打补丁"。
 func (ss *SettingsService) GetBlacklistSettings() (threshold int, duration int, err error) {
-	db, err := xdb.DB("default")
+	config, err := ss.GetBlacklistLevelConfig()
 	if err != nil {
-		return 0, 0, fmt.Errorf("获取数据库连接失败: %w", err)
+		return 0, 0, err
 	}
-
-	// 获取失败阈值
-	var thresholdStr string
-	err = db.QueryRow(`
-		SELECT value FROM app_settings WHERE key = 'blacklist_failure_threshold'
-	`).Scan(&thresholdStr)
-
-	if err != nil {
-		return 0, 0, fmt.Errorf("获取失败阈值失败: %w", err)
-	}
-
-	threshold, err = strconv.Atoi(thresholdStr)
-	if err != nil {
-		return 0, 0, fmt.Errorf("失败阈值格式错误: %w", err)
-	}
-
-	// 获取拉黑时长
-	var durationStr string
-	err = db.QueryRow(`
-		SELECT value FROM app_settings WHERE key = 'blacklist_duration_minutes'
-	`).Scan(&durationStr)
-
-	if err != nil {
-		return 0, 0, fmt.Errorf("获取拉黑时长失败: %w", err)
-	}
-
-	duration, err = strconv.Atoi(durationStr)
-	if err != nil {
-		return 0, 0, fmt.Errorf("拉黑时长格式错误: %w", err)
-	}
-
-	return threshold, duration, nil
+	return config.FailureThreshold, config.FallbackDurationMinutes, nil
 }
 
 // IsBlacklistEnabled 检查拉黑功能是否启用
@@ -153,18 +126,17 @@ func (ss *SettingsService) IsBlacklistEnabled() bool {
 	return ss.blacklistEnabledValue
 }
 
-// UpdateBlacklistEnabled 更新拉黑功能开关
+// UpdateBlacklistEnabled 更新拉黑总开关。
+//
+// 这个开关只在 enable_blacklist 键上，不属于等级拉黑配置：
+// 它决定是否记失败、是否拉黑；等级拉黑开关（EnableLevelBlacklist）
+// 决定的是拉黑用等级模式还是固定模式。ShouldUseFixedMode 分别读两者。
 func (ss *SettingsService) UpdateBlacklistEnabled(enabled bool) error {
-	enabledStr := "false"
-	if enabled {
-		enabledStr = "true"
-	}
-
-	err := dbExec(`
-		UPDATE app_settings SET value = ? WHERE key = 'enable_blacklist'
-	`, enabledStr)
-
-	if err != nil {
+	if err := dbExec(
+		`INSERT INTO app_settings (key, value) VALUES ('enable_blacklist', ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		boolToSettingValue(enabled),
+	); err != nil {
 		return fmt.Errorf("更新拉黑开关失败: %w", err)
 	}
 	ss.cacheMu.Lock()
@@ -172,17 +144,21 @@ func (ss *SettingsService) UpdateBlacklistEnabled(enabled bool) error {
 	ss.blacklistEnabledUntil = time.Now().Add(settingsHotPathCacheTTL)
 	ss.cacheMu.Unlock()
 
-	log.Printf("✅ 拉黑功能开关已更新: %v", enabled)
+	logInfo("拉黑功能开关已更新", "enabled", enabled)
 	return nil
 }
 
-// UpdateBlacklistSettings 更新黑名单配置
-// UpdateBlacklistSettings 同时更新失败阈值和拉黑时长。
+// UpdateBlacklistSettings 同时更新失败阈值和固定拉黑时长。
+//
+// 两个值都写进 blacklist_level_config 行的 failureThreshold 与
+// fallbackDurationMinutes（迁移 v7 收敛，原先另有两个独立键）。
+//
+// 这里的取值范围比 validateBlacklistLevelConfig 更窄，是有意保留的：
+// 这是通用设置页那两个控件的约束（阈值 1-9、时长四选一），
+// 而整份配置保存走的是等级拉黑那套更宽的范围。
 //
 // 早先这里是"Saga 模式 + 手工补偿回滚"——两条 UPDATE 分别提交，第二条失败时
 // 再写一次把第一条改回去。那是因为所有写入都必须过队列，而队列没法开事务。
-// 去掉队列后，同一张表的两行更新就是一个普通事务，补偿逻辑随之删除：
-// 事务要么都生效要么都不生效，不存在"改了一半"的中间态。
 func (ss *SettingsService) UpdateBlacklistSettings(threshold int, duration int) error {
 	// 验证参数
 	if threshold < 1 || threshold > 9 {
@@ -193,20 +169,12 @@ func (ss *SettingsService) UpdateBlacklistSettings(threshold int, duration int) 
 		return fmt.Errorf("拉黑时长只支持 5/15/30/60 分钟")
 	}
 
-	if err := dbExecStatements(context.Background(), []dbStatement{
-		{
-			Query: `UPDATE app_settings SET value = ? WHERE key = 'blacklist_failure_threshold'`,
-			Args:  []any{strconv.Itoa(threshold)},
-		},
-		{
-			Query: `UPDATE app_settings SET value = ? WHERE key = 'blacklist_duration_minutes'`,
-			Args:  []any{strconv.Itoa(duration)},
-		},
+	if err := ss.updateBlacklistLevelConfigFields(func(config *BlacklistLevelConfig) {
+		config.FailureThreshold = threshold
+		config.FallbackDurationMinutes = duration
 	}); err != nil {
 		return fmt.Errorf("更新拉黑配置失败: %w", err)
 	}
-
-	ss.invalidateBlacklistLevelConfigCache()
 	return nil
 }
 
@@ -223,44 +191,32 @@ func (ss *SettingsService) GetBlacklistSettingsStruct() (*BlacklistSettings, err
 	}, nil
 }
 
-// GetLevelBlacklistEnabled 获取等级拉黑开关状态
+// GetLevelBlacklistEnabled 获取等级拉黑开关状态。
+//
+// 前端通过这对方法读写开关（frontend/src/services/settings.ts）。
+// 它原本用独立的 blacklist_level_enabled 键，与 JSON 配置里的
+// enableLevelBlacklist 是同一概念存两处。现在统一读配置行，
+// 方法签名不变，前端无需改动。
 func (ss *SettingsService) GetLevelBlacklistEnabled() (bool, error) {
-	db, err := xdb.DB("default")
+	config, err := ss.GetBlacklistLevelConfig()
 	if err != nil {
-		return false, fmt.Errorf("获取数据库连接失败: %w", err)
+		return false, err
 	}
-
-	var enabledStr string
-	err = db.QueryRow(`
-		SELECT value FROM app_settings WHERE key = 'blacklist_level_enabled'
-	`).Scan(&enabledStr)
-
-	if err != nil {
-		// 如果找不到记录，返回默认值 false（向后兼容）
-		return false, nil
-	}
-
-	return enabledStr == "true", nil
+	return config.EnableLevelBlacklist, nil
 }
 
-// SetLevelBlacklistEnabled 设置等级拉黑开关状态
+// SetLevelBlacklistEnabled 设置等级拉黑开关状态。
+//
+// 写配置行里的 enableLevelBlacklist，与 GetLevelBlacklistEnabled 同源。
+// 原先写独立键 blacklist_level_enabled，读取时再用它覆盖 JSON 文件里的
+// 同名字段——反方向就丢：SaveBlacklistLevelConfig 只写 JSON 文件，
+// 存进去的开关值会被下次读取时的旧独立键覆盖掉。
 func (ss *SettingsService) SetLevelBlacklistEnabled(enabled bool) error {
-	enabledStr := "false"
-	if enabled {
-		enabledStr = "true"
-	}
-
-	// 使用 UPSERT 模式：如果存在则更新，不存在则插入
-	err := dbExec(`
-		INSERT INTO app_settings (key, value) VALUES ('blacklist_level_enabled', ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value
-	`, enabledStr)
-
-	if err != nil {
+	if err := ss.updateBlacklistLevelConfigFields(func(config *BlacklistLevelConfig) {
+		config.EnableLevelBlacklist = enabled
+	}); err != nil {
 		return fmt.Errorf("设置等级拉黑开关失败: %w", err)
 	}
-	ss.invalidateBlacklistLevelConfigCache()
-
 	return nil
 }
 

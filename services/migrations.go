@@ -82,6 +82,13 @@ var schemaMigrations = []schemaMigration{
 		// 为它单开一套。对外仍暴露 string ID（存进 config_json）。
 		up: migrateGeminiProviders,
 	},
+	{
+		version: 7,
+		name:    "blacklist-level-config",
+		// 等级拉黑配置收敛到 app_settings 单一来源：
+		// 原先 JSON 文件与数据库各存一份，读取时靠打补丁维持一致。
+		up: migrateBlacklistLevelConfig,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
@@ -125,14 +132,14 @@ func RunMigrations() error {
 	if err != nil {
 		return err
 	}
-	return runMigrationsOn(db)
+	return RunMigrationsOn(db)
 }
 
-// runMigrationsOn 按序应用未执行的迁移。
+// RunMigrationsOn 按序应用未执行的迁移。
 // 每个迁移一个事务：失败则整条回滚，版本号不会被记录，下次启动重试。
 //
 // 接受显式 db 以便测试用独立库，不依赖全局连接。
-func runMigrationsOn(db *sql.DB) error {
+func RunMigrationsOn(db *sql.DB) error {
 	if err := ensureSchemaVersionTable(db); err != nil {
 		return err
 	}

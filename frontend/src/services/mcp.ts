@@ -1,4 +1,16 @@
-import { Call } from '@wailsio/runtime'
+/**
+ * MCP 服务 API 封装
+ *
+ * 走 frontend/bindings 生成的类型化函数，不用 Call.ByName：
+ * 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了。
+ *
+ * 本地类型保留而不直接用生成的 models：`type` 与 `enable_platform` 在这里是
+ * 字面量联合（生成的是 string / string[]），UI 的 switch 分支依赖这个收窄。
+ * 边界上做一次断言，字段名与 Go 的 json tag 逐一对齐。
+ */
+import * as MCPService from '../../bindings/codeswitch/services/mcpservice'
+import * as ImportService from '../../bindings/codeswitch/services/importservice'
+import type { MCPServer as GeneratedMcpServer } from '../../bindings/codeswitch/services/models'
 
 export type McpPlatform = 'claude-code' | 'codex' | 'gemini' | 'reasonix'
 export type McpServerType = 'stdio' | 'http'
@@ -17,16 +29,19 @@ export type McpServer = {
   enabled_in_claude: boolean
   enabled_in_codex: boolean
   enabled_in_gemini: boolean
+  // 原先漏了这个字段，而 reasonix 是 platformOptions 里的可选平台，
+  // 于是该平台下已启用的 server 在 UI 上永远显示未启用。
+  enabled_in_reasonix: boolean
   missing_placeholders: string[]
 }
 
 export const fetchMcpServers = async (platform: McpPlatform): Promise<McpServer[]> => {
-  const response = await Call.ByName('codeswitch/services.MCPService.ListServersForPlatform', platform)
+  const response = await MCPService.ListServersForPlatform(platform)
   return (response as McpServer[]) ?? []
 }
 
 export const saveMcpServers = async (platform: McpPlatform, servers: McpServer[]): Promise<void> => {
-  await Call.ByName('codeswitch/services.MCPService.SaveServersForPlatform', platform, servers)
+  await MCPService.SaveServersForPlatform(platform, servers as unknown as GeneratedMcpServer[])
 }
 
 export type McpParseResult = {
@@ -38,8 +53,8 @@ export type McpParseResult = {
 export type ConflictStrategy = 'skip' | 'overwrite'
 
 export const parseMcpJSON = async (platform: McpPlatform, jsonStr: string): Promise<McpParseResult | null> => {
-  const response = await Call.ByName('codeswitch/services.ImportService.ParseMCPJSONForPlatform', jsonStr, platform)
-  return response as McpParseResult | null
+  const response = await ImportService.ParseMCPJSONForPlatform(jsonStr, platform)
+  return response as unknown as McpParseResult | null
 }
 
 export const importMcpServers = async (
@@ -47,8 +62,12 @@ export const importMcpServers = async (
   servers: McpServer[],
   strategy: ConflictStrategy
 ): Promise<number> => {
-  const response = await Call.ByName('codeswitch/services.ImportService.ImportMCPServersForPlatform', servers, strategy, platform)
-  return (response as number) ?? 0
+  const response = await ImportService.ImportMCPServersForPlatform(
+    servers as unknown as GeneratedMcpServer[],
+    strategy,
+    platform
+  )
+  return response ?? 0
 }
 
 export const buildMcpExportJSON = (platform: McpPlatform, servers: McpServer[]): string => {

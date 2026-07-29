@@ -153,7 +153,9 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Call } from '@wailsio/runtime'
+// 走 bindings 生成的类型化函数，不用 Call.ByName：
+// 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
+import * as NetworkService from '../../../bindings/codeswitch/services/networkservice'
 import ListItem from './ListRow.vue'
 import { showToast } from '../../utils/toast'
 
@@ -199,7 +201,7 @@ const computeListenAddress = (): string => {
 // Load settings from backend
 const loadSettings = async () => {
   try {
-    const settings = await Call.ByName('codeswitch/services.NetworkService.GetNetworkSettings')
+    const settings = await NetworkService.GetNetworkSettings()
     if (settings) {
       listenMode.value = settings.listenMode || 'localhost'
       customAddress.value = settings.customAddress || ''
@@ -219,7 +221,7 @@ const loadSettings = async () => {
 // Detect WSL status
 const detectWsl = async () => {
   try {
-    const result = await Call.ByName('codeswitch/services.NetworkService.DetectWSL')
+    const result = await NetworkService.DetectWSL()
     if (result) {
       wslDetected.value = result.detected || false
       wslDistros.value = result.distros || []
@@ -234,12 +236,12 @@ const detectWsl = async () => {
 // Save settings to backend
 const saveSettings = async () => {
   try {
-    await Call.ByName('codeswitch/services.NetworkService.SaveNetworkSettings', {
+    await NetworkService.SaveNetworkSettings({
       listenMode: listenMode.value,
       customAddress: customAddress.value,
       wslAutoConfig: wslAutoConfig.value,
       targetCli: { ...targetCli },
-    })
+    } as never)
   } catch (error) {
     console.error('Failed to save network settings:', error)
     showToast(t('settings.network.saveFailed'), 'error')
@@ -254,7 +256,7 @@ const handleListenModeChange = async () => {
   // If switching to wsl_auto, trigger address detection
   if (listenMode.value === 'wsl_auto') {
     try {
-      const addr = await Call.ByName('codeswitch/services.NetworkService.GetWSLHostAddress')
+      const addr = await NetworkService.GetWSLHostAddress()
       if (addr) {
         currentListenAddress.value = `${addr}:18100`
       }
@@ -289,11 +291,11 @@ const handleConfigureNow = async () => {
   lastConfigResult.value = null
 
   try {
-    const result = await Call.ByName('codeswitch/services.NetworkService.ConfigureWSLClients', {
+    const result = await NetworkService.ConfigureWSLClients({
       claudeCode: targetCli.claudeCode,
       codex: targetCli.codex,
       gemini: targetCli.gemini,
-    })
+    } as never)
 
     lastConfigResult.value = {
       success: result?.success ?? false,

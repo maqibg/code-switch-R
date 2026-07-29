@@ -1,4 +1,13 @@
-import { Call } from '@wailsio/runtime'
+/**
+ * CLI 配置读写 API 封装
+ *
+ * 走 frontend/bindings 生成的类型化函数，不用 Call.ByName：
+ * 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了。
+ *
+ * 几个 Get 方法在绑定里的返回类型允许 null（Go 侧出错时），
+ * 而本文件的签名承诺非空，因此在边界上兜一个空值。
+ */
+import * as CliConfigService from '../../bindings/codeswitch/services/cliconfigservice'
 
 // CLI 平台类型
 export type CLIPlatform = 'claude' | 'codex' | 'gemini' | 'reasonix'
@@ -45,16 +54,14 @@ export interface CLIConfigSnapshots {
   mode: 'proxy' | 'direct'
 }
 
-const SERVICE_PATH = 'codeswitch/services.CliConfigService'
-
 // 获取指定平台的 CLI 配置
 export async function fetchCLIConfig(platform: CLIPlatform): Promise<CLIConfig> {
-  return Call.ByName(`${SERVICE_PATH}.GetConfig`, platform)
+  return (await CliConfigService.GetConfig(platform)) as unknown as CLIConfig
 }
 
 // 保存 CLI 配置
 export async function saveCLIConfig(platform: CLIPlatform, editable: Record<string, any>): Promise<void> {
-  return Call.ByName(`${SERVICE_PATH}.SaveConfig`, platform, editable)
+  return CliConfigService.SaveConfig(platform, editable)
 }
 
 // 保存指定配置文件内容（预览区高级编辑）
@@ -63,12 +70,12 @@ export async function saveCLIConfigFileContent(
   filePath: string,
   content: string
 ): Promise<void> {
-  return Call.ByName(`${SERVICE_PATH}.SaveConfigFileContent`, platform, filePath, content)
+  return CliConfigService.SaveConfigFileContent(platform, filePath, content)
 }
 
 // 获取指定平台的全局模板
 export async function fetchCLITemplate(platform: CLIPlatform): Promise<CLITemplate> {
-  return Call.ByName(`${SERVICE_PATH}.GetTemplate`, platform)
+  return (await CliConfigService.GetTemplate(platform)) as unknown as CLITemplate
 }
 
 // 设置指定平台的全局模板
@@ -77,17 +84,17 @@ export async function setCLITemplate(
   template: Record<string, any>,
   isGlobalDefault: boolean
 ): Promise<void> {
-  return Call.ByName(`${SERVICE_PATH}.SetTemplate`, platform, template, isGlobalDefault)
+  return CliConfigService.SetTemplate(platform, template, isGlobalDefault)
 }
 
 // 获取指定平台的锁定字段列表
 export async function fetchLockedFields(platform: CLIPlatform): Promise<string[]> {
-  return Call.ByName(`${SERVICE_PATH}.GetLockedFields`, platform)
+  return CliConfigService.GetLockedFields(platform)
 }
 
 // 恢复默认配置
 export async function restoreDefaultConfig(platform: CLIPlatform): Promise<void> {
-  return Call.ByName(`${SERVICE_PATH}.RestoreDefault`, platform)
+  return CliConfigService.RestoreDefault(platform)
 }
 
 // 获取配置快照（用于 Preview/Current 对比）
@@ -102,5 +109,10 @@ export async function fetchCLIConfigSnapshots(
   apiKey: string = '',
   previewMode: 'current' | 'direct' | 'proxy' | '' = ''
 ): Promise<CLIConfigSnapshots> {
-  return Call.ByName(`${SERVICE_PATH}.GetConfigSnapshots`, platform, apiUrl, apiKey, previewMode)
+  return (await CliConfigService.GetConfigSnapshots(
+    platform,
+    apiUrl,
+    apiKey,
+    previewMode
+  )) as unknown as CLIConfigSnapshots
 }

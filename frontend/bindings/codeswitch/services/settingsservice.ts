@@ -15,8 +15,12 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * GetBlacklistLevelConfig 获取等级拉黑配置
- * 【修复】开关状态从数据库读取，其他配置从 JSON 文件读取
+ * GetBlacklistLevelConfig 获取等级拉黑配置。
+ *
+ * 单一来源是 app_settings 的 blacklist_level_config 行（迁移 v7 收敛）。
+ * 原先这份配置有两处真相：JSON 文件存全部字段，而 UI 改动的开关、阈值和
+ * 拉黑时长只写 app_settings 的三个独立键，读取时要"先读 JSON、
+ * 再用数据库覆盖那几个字段"打补丁维持一致（原注释自称【关键修复】）。
  */
 export function GetBlacklistLevelConfig(): $CancellablePromise<$models.BlacklistLevelConfig | null> {
     return $Call.ByID(3210427164).then(($result: any) => {
@@ -25,7 +29,12 @@ export function GetBlacklistLevelConfig(): $CancellablePromise<$models.Blacklist
 }
 
 /**
- * GetBlacklistSettings 获取黑名单配置
+ * GetBlacklistSettings 获取黑名单配置（阈值与固定拉黑时长）。
+ *
+ * 这两个值收敛到 blacklist_level_config 行（迁移 v7）。原先它们另有两个
+ * 独立键 blacklist_failure_threshold / blacklist_duration_minutes，
+ * 与配置里的 failureThreshold / fallbackDurationMinutes 是同一概念存两处，
+ * 调用方要"两处都读、不一致就打补丁"。
  */
 export function GetBlacklistSettings(): $CancellablePromise<[number, number]> {
     return $Call.ByID(605514929);
@@ -49,7 +58,12 @@ export function GetIntSetting(key: string): $CancellablePromise<number> {
 }
 
 /**
- * GetLevelBlacklistEnabled 获取等级拉黑开关状态
+ * GetLevelBlacklistEnabled 获取等级拉黑开关状态。
+ *
+ * 前端通过这对方法读写开关（frontend/src/services/settings.ts）。
+ * 它原本用独立的 blacklist_level_enabled 键，与 JSON 配置里的
+ * enableLevelBlacklist 是同一概念存两处。现在统一读配置行，
+ * 方法签名不变，前端无需改动。
  */
 export function GetLevelBlacklistEnabled(): $CancellablePromise<boolean> {
     return $Call.ByID(458497461);
@@ -63,7 +77,14 @@ export function IsBlacklistEnabled(): $CancellablePromise<boolean> {
 }
 
 /**
- * SaveBlacklistLevelConfig 保存等级拉黑配置
+ * SaveBlacklistLevelConfig 保存等级拉黑配置。
+ *
+ * 只写配置行。收敛前这里写 JSON 文件、而 UI 的开关与阈值写 app_settings
+ * 独立键，两条写路径天然分叉；现在读写同一行。
+ *
+ * 注意不要在这里顺带同步 enable_blacklist：那是拉黑总开关，
+ * 与本配置里的 EnableLevelBlacklist（等级拉黑开关）是两个概念，
+ * ShouldUseFixedMode 会分别读取再组合判断。
  */
 export function SaveBlacklistLevelConfig(config: $models.BlacklistLevelConfig | null): $CancellablePromise<void> {
     return $Call.ByID(2798699223, config);
@@ -77,14 +98,23 @@ export function SetIntSetting(key: string, value: number): $CancellablePromise<v
 }
 
 /**
- * SetLevelBlacklistEnabled 设置等级拉黑开关状态
+ * SetLevelBlacklistEnabled 设置等级拉黑开关状态。
+ *
+ * 写配置行里的 enableLevelBlacklist，与 GetLevelBlacklistEnabled 同源。
+ * 原先写独立键 blacklist_level_enabled，读取时再用它覆盖 JSON 文件里的
+ * 同名字段——反方向就丢：SaveBlacklistLevelConfig 只写 JSON 文件，
+ * 存进去的开关值会被下次读取时的旧独立键覆盖掉。
  */
 export function SetLevelBlacklistEnabled(enabled: boolean): $CancellablePromise<void> {
     return $Call.ByID(3234655753, enabled);
 }
 
 /**
- * UpdateBlacklistEnabled 更新拉黑功能开关
+ * UpdateBlacklistEnabled 更新拉黑总开关。
+ *
+ * 这个开关只在 enable_blacklist 键上，不属于等级拉黑配置：
+ * 它决定是否记失败、是否拉黑；等级拉黑开关（EnableLevelBlacklist）
+ * 决定的是拉黑用等级模式还是固定模式。ShouldUseFixedMode 分别读两者。
  */
 export function UpdateBlacklistEnabled(enabled: boolean): $CancellablePromise<void> {
     return $Call.ByID(2636303210, enabled);
@@ -98,13 +128,17 @@ export function UpdateBlacklistLevelConfig(config: $models.BlacklistLevelConfig 
 }
 
 /**
- * UpdateBlacklistSettings 更新黑名单配置
- * UpdateBlacklistSettings 同时更新失败阈值和拉黑时长。
- * 
+ * UpdateBlacklistSettings 同时更新失败阈值和固定拉黑时长。
+ *
+ * 两个值都写进 blacklist_level_config 行的 failureThreshold 与
+ * fallbackDurationMinutes（迁移 v7 收敛，原先另有两个独立键）。
+ *
+ * 这里的取值范围比 validateBlacklistLevelConfig 更窄，是有意保留的：
+ * 这是通用设置页那两个控件的约束（阈值 1-9、时长四选一），
+ * 而整份配置保存走的是等级拉黑那套更宽的范围。
+ *
  * 早先这里是"Saga 模式 + 手工补偿回滚"——两条 UPDATE 分别提交，第二条失败时
  * 再写一次把第一条改回去。那是因为所有写入都必须过队列，而队列没法开事务。
- * 去掉队列后，同一张表的两行更新就是一个普通事务，补偿逻辑随之删除：
- * 事务要么都生效要么都不生效，不存在"改了一半"的中间态。
  */
 export function UpdateBlacklistSettings(threshold: number, duration: number): $CancellablePromise<void> {
     return $Call.ByID(833260620, threshold, duration);

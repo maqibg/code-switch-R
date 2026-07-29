@@ -42,7 +42,7 @@ func (s *PiSettingsService) PreviewPlatformModeChange(providerID, targetMode str
 		ProviderID: providerID, TargetMode: targetMode, Revision: s.currentRuntimeRevision(),
 		Changes: []string{}, Blockers: []string{}, CurrentMode: "direct",
 	}
-	if providerID == "" || !piModelsProviderIDPattern.MatchString(providerID) {
+	if providerID == "" || !PiModelsProviderIDPattern.MatchString(providerID) {
 		return plan, fmt.Errorf("Pi 平台 ID 格式无效: %s", providerID)
 	}
 	if targetMode != "managed" && targetMode != "direct" {

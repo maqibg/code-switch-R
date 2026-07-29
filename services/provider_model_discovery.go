@@ -64,8 +64,8 @@ func (s *ProviderModelDiscoveryService) FetchProviderModels(input ProviderModelD
 	if err != nil {
 		return ProviderModelDiscoveryResult{}, fmt.Errorf("创建模型发现客户端失败: %w", err)
 	}
-	protocolType := resolveProviderUpstreamProtocol(input.Platform, provider, provider.GetEffectiveEndpoint("/v1/models"))
-	headers, err := buildUpstreamHeaders(provider, input.Platform, nil, protocolType)
+	protocolType := ResolveProviderUpstreamProtocol(input.Platform, provider, provider.GetEffectiveEndpoint("/v1/models"))
+	headers, err := BuildUpstreamHeaders(provider, input.Platform, nil, protocolType)
 	if err != nil {
 		return ProviderModelDiscoveryResult{}, err
 	}

@@ -66,7 +66,7 @@ func NewConsoleService() *ConsoleService {
 
 	// 结构化日志（slog）直接送进环形缓冲，级别是字段而不是从文本猜的。
 	// 见 applog.go。
-	registerConsoleLogSink(cs)
+	registerConsoleLogSink(cs.addLog)
 
 	// 仍然捕获 stdout/stderr：项目里还有大量既有的 fmt.Printf，
 	// 以及第三方库（gin、wails）的输出，这些只能从管道拿。

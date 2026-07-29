@@ -36,7 +36,7 @@ func setupRenameTestEnv(t *testing.T) string {
 	db := initDefaultTestDB(t, dbPath)
 
 	// schema 统一由迁移建立，测试不再手写一份（手写副本会与生产 schema 漂移）
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("建立测试库 schema 失败: %v", err)
 	}
 

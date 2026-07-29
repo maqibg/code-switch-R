@@ -16,36 +16,28 @@ import (
 // provider_alias 表当初就是为第 2 点存在的（把旧名映射回新名）。
 // 调用方本来就持有 Provider，把 ID 直接传进来就不需要这层映射了。
 
-// blacklistTarget 标识一个黑名单条目
-type blacklistTarget struct {
+// BlacklistTarget 标识一个黑名单条目
+type BlacklistTarget struct {
 	// platform 规范化平台 ID（自定义 CLI 为 "custom"）
 	platform string
 	// sourceID 自定义 CLI 的 toolId，其余为空
 	sourceID string
-	// providerID 关联 provider 表；0 表示未知（Gemini 尚未并入该表）
+	// providerID 关联 provider 表；0 表示未知（供应商已被删除，
+	// 或调用方只拿到名字——如 UI 手动解除拉黑）
 	providerID int64
 	// name 供应商名，用于 providerID 为 0 时回退，以及新建行时写入
 	name string
 }
 
-// blacklistTargetForGemini 由 GeminiProvider 构造定位信息。
+// BlacklistTargetFor 由 relay 的 scope 与 Provider 构造定位信息。
 //
-// Gemini 已并入 provider 表（A1 第 5 步），numericID 就是 provider_id；
-// 对外仍是 string ID，因此这里不能用 GeminiProvider.ID。
-func blacklistTargetForGemini(provider GeminiProvider) blacklistTarget {
-	return blacklistTarget{
-		platform:   "gemini",
-		providerID: provider.numericID,
-		name:       provider.Name,
-	}
-}
-
-// blacklistTargetFor 由 relay 的 scope 与 Provider 构造定位信息。
+// Gemini 不再需要单独的构造函数：它的转发循环已改用统一 Provider 类型
+// （A3 阶段 1），走 BlacklistTargetFor("gemini", provider) 即可。
 //
 // relayScope 的形态与 provider 表不同：自定义 CLI 是 "custom:toolId"，
 // 这里拆成 platform + sourceID。
-func blacklistTargetFor(relayScope string, provider Provider) blacklistTarget {
-	target := blacklistTarget{name: provider.Name, providerID: provider.ID}
+func BlacklistTargetFor(relayScope string, provider Provider) BlacklistTarget {
+	target := BlacklistTarget{name: provider.Name, providerID: provider.ID}
 	normalized := strings.ToLower(strings.TrimSpace(relayScope))
 	if strings.HasPrefix(normalized, customProviderKindPrefix) {
 		target.platform = "custom"
@@ -60,12 +52,12 @@ func blacklistTargetFor(relayScope string, provider Provider) blacklistTarget {
 	return target
 }
 
-// blacklistTargetByName 仅有名字时的定位（Gemini，以及手动解除拉黑等 UI 入口）。
+// BlacklistTargetByName 仅有名字时的定位（Gemini，以及手动解除拉黑等 UI 入口）。
 //
 // 会尝试从 provider 表解析 ID：解析得到就按 ID 定位，
 // 解析不到则回退按名字（供应商已删除，或 Gemini 这类未并入 provider 表的平台）。
-func blacklistTargetByName(relayScope string, providerName string) blacklistTarget {
-	target := blacklistTarget{name: strings.TrimSpace(providerName)}
+func BlacklistTargetByName(relayScope string, providerName string) BlacklistTarget {
+	target := BlacklistTarget{name: strings.TrimSpace(providerName)}
 	normalized := strings.ToLower(strings.TrimSpace(relayScope))
 	if strings.HasPrefix(normalized, customProviderKindPrefix) {
 		target.platform = "custom"
@@ -98,7 +90,7 @@ func blacklistTargetByName(relayScope string, providerName string) blacklistTarg
 //
 // 有 ID 时按 (platform, source_id, provider_id) 定位——名字变了也能找到同一行。
 // 无 ID 时回退 (platform, source_id, provider_name)。
-func (t blacklistTarget) locator() (string, []any) {
+func (t BlacklistTarget) locator() (string, []any) {
 	if t.providerID != 0 {
 		return "platform = ? AND source_id = ? AND provider_id = ?",
 			[]any{t.platform, t.sourceID, t.providerID}
@@ -108,6 +100,12 @@ func (t blacklistTarget) locator() (string, []any) {
 }
 
 // nullableID 供插入时使用，0 转为 NULL
-func (t blacklistTarget) nullableID() any {
+func (t BlacklistTarget) nullableID() any {
 	return nullableProviderID(t.providerID)
 }
+
+// Platform 返回规范化平台 ID（relay 测试按定位字段查库用）
+func (t BlacklistTarget) Platform() string { return t.platform }
+
+// SourceID 返回自定义 CLI 的 toolId（非自定义平台为空）
+func (t BlacklistTarget) SourceID() string { return t.sourceID }

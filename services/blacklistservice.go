@@ -14,6 +14,8 @@ import (
 type BlacklistService struct {
 	settingsService     *SettingsService
 	notificationService *NotificationService
+	// cache 拉黑状态读缓存，写路径整体失效（见 blacklist_cache.go）
+	cache *blacklistCache
 }
 
 // BlacklistStatus 黑名单状态（用于前端展示）
@@ -37,17 +39,19 @@ func NewBlacklistService(settingsService *SettingsService, notificationService *
 	return &BlacklistService{
 		settingsService:     settingsService,
 		notificationService: notificationService,
+		cache:               newBlacklistCache(),
 	}
 }
 
 // RecordSuccess 记录 provider 成功，清零连续失败计数，执行降级和宽恕逻辑。
 // 兼容入口：内部解析成 provider_id 定位。
 func (bs *BlacklistService) RecordSuccess(platform string, providerName string) error {
-	return bs.recordSuccessFor(blacklistTargetByName(platform, providerName))
+	return bs.recordSuccessFor(BlacklistTargetByName(platform, providerName))
 }
 
 // recordSuccessFor 按 provider_id（回退 name）记录成功
-func (bs *BlacklistService) recordSuccessFor(target blacklistTarget) error {
+func (bs *BlacklistService) recordSuccessFor(target BlacklistTarget) error {
+	defer bs.cache.invalidateAll()
 	platform, providerName := target.platform, target.name
 	db, err := xdb.DB("default")
 	if err != nil {
@@ -179,7 +183,7 @@ func (bs *BlacklistService) recordSuccessFor(target blacklistTarget) error {
 
 // RecordFailure 记录失败（兼容入口，内部解析成 provider_id 定位）
 func (bs *BlacklistService) RecordFailure(platform string, providerName string) error {
-	return bs.recordFailureFor(blacklistTargetByName(platform, providerName))
+	return bs.recordFailureFor(BlacklistTargetByName(platform, providerName))
 }
 
 // recordFailureFor 按 provider_id（回退 name）记录 provider 失败，
@@ -189,7 +193,8 @@ func (bs *BlacklistService) RecordFailure(platform string, providerName string) 
 // 失败时带的是旧名字，原实现按名字查不到已改名的那一行，
 // 于是插入第二条黑名单行——失败计数被拆成两份，拉黑阈值永远达不到。
 // provider_alias 表当初就是为遮掩这一点而存在的。
-func (bs *BlacklistService) recordFailureFor(target blacklistTarget) error {
+func (bs *BlacklistService) recordFailureFor(target BlacklistTarget) error {
+	defer bs.cache.invalidateAll()
 	platform, providerName := target.platform, target.name
 	// 检查拉黑功能是否启用
 	if !bs.settingsService.IsBlacklistEnabled() {
@@ -206,14 +211,11 @@ func (bs *BlacklistService) recordFailureFor(target blacklistTarget) error {
 
 	// 如果功能关闭，使用旧的固定拉黑模式
 	if !levelConfig.EnableLevelBlacklist {
-		// 从数据库读取配置（优先使用数据库配置而非默认值）
-		threshold, duration, err := bs.settingsService.GetBlacklistSettings()
-		if err != nil {
-			logWarn("获取数据库拉黑配置失败，使用默认值", "error", err)
-			threshold = levelConfig.FailureThreshold
-			duration = levelConfig.FallbackDurationMinutes
-		}
-		return bs.recordFailureFixedMode(target, levelConfig.FallbackMode, duration, threshold)
+		// 阈值与时长直接取 levelConfig：收敛后 GetBlacklistSettings 读的
+		// 就是这两个字段，原先"再查一次数据库、失败才回落到 levelConfig"
+		// 是两处存储时代的补丁。
+		return bs.recordFailureFixedMode(target, levelConfig.FallbackMode,
+			levelConfig.FallbackDurationMinutes, levelConfig.FailureThreshold)
 	}
 
 	now := time.Now()
@@ -245,21 +247,43 @@ func (bs *BlacklistService) recordFailureFor(target blacklistTarget) error {
 			WHERE `+locator, locatorArgs...).Scan(&id, &failureCount, &blacklistedUntil, &blacklistLevel, &lastRecoveredAt, &lastFailureWindowStart)
 
 		if err == sql.ErrNoRows {
-			// 首次失败：UPSERT 避免并发下两条 INSERT 撞 UNIQUE(platform, provider_name)
+			// 首次失败：先建出计数为 0 的行，累加与阈值判断统一交给
+			// applyLevelFailureLocked，避免"插入时预置 1、判定里再自增"变成 2。
+			//
+			// UPSERT 避免并发下两条 INSERT 撞 UNIQUE(platform, provider_name)；
+			// 撞上时保留对方已有的计数（DO UPDATE 不动 failure_count）。
 			if _, err := tx.ExecContext(context.Background(), `
 				INSERT INTO provider_blacklist
-					(platform, source_id, provider_name, provider_id, failure_count, last_failure_at, last_failure_window_start, blacklist_level)
-				VALUES (?, ?, ?, ?, 1, ?, ?, 0)
+					(platform, source_id, provider_name, provider_id, failure_count, last_failure_at, blacklist_level)
+				VALUES (?, ?, ?, ?, 0, ?, 0)
 				ON CONFLICT(platform, provider_name) DO UPDATE SET
-					failure_count = failure_count + 1,
-					last_failure_at = excluded.last_failure_at,
 					provider_id = COALESCE(provider_blacklist.provider_id, excluded.provider_id)
-			`, platform, target.sourceID, providerName, target.nullableID(), now, now); err != nil {
+			`, platform, target.sourceID, providerName, target.nullableID(), now); err != nil {
 				return fmt.Errorf("插入失败记录失败: %w", err)
 			}
-			logDebug("记录首次失败", "platform", platform, "provider", providerName,
-				"threshold", levelConfig.FailureThreshold)
-			return nil
+
+			// 读回真实状态（并发下这一行可能已被对方写过），再走统一判定。
+			// 原实现在插入后直接 return，不比较阈值，于是阈值 1 永远达不到。
+			if err := tx.QueryRowContext(context.Background(), `
+				SELECT id, failure_count, blacklisted_until, blacklist_level,
+					last_recovered_at, last_failure_window_start
+				FROM provider_blacklist WHERE `+locator, locatorArgs...,
+			).Scan(&id, &failureCount, &blacklistedUntil, &blacklistLevel,
+				&lastRecoveredAt, &lastFailureWindowStart); err != nil {
+				return fmt.Errorf("读回失败记录失败: %w", err)
+			}
+			return bs.applyLevelFailureLocked(tx, levelFailureInput{
+				platform:               platform,
+				providerName:           providerName,
+				id:                     id,
+				failureCount:           failureCount,
+				blacklistedUntil:       blacklistedUntil,
+				blacklistLevel:         blacklistLevel,
+				lastRecoveredAt:        lastRecoveredAt,
+				lastFailureWindowStart: lastFailureWindowStart,
+				now:                    now,
+				levelConfig:            levelConfig,
+			}, &notify, &notifyLevel, &notifyMinute)
 		} else if err != nil {
 			return fmt.Errorf("查询黑名单记录失败: %w", err)
 		}
@@ -409,7 +433,7 @@ func (bs *BlacklistService) applyLevelFailureLocked(
 }
 
 // recordFailureFixedMode 固定拉黑模式（向后兼容）
-func (bs *BlacklistService) recordFailureFixedMode(target blacklistTarget, fallbackMode string, fallbackDuration int, failureThreshold int) error {
+func (bs *BlacklistService) recordFailureFixedMode(target BlacklistTarget, fallbackMode string, fallbackDuration int, failureThreshold int) error {
 	platform, providerName := target.platform, target.name
 	if fallbackMode == "none" {
 		logDebug("等级拉黑已关闭且 fallbackMode=none，不拉黑",
@@ -437,19 +461,41 @@ func (bs *BlacklistService) recordFailureFixedMode(target blacklistTarget, fallb
 		WHERE `+locator, locatorArgs...).Scan(&id, &failureCount, &blacklistedUntil)
 
 	if err == sql.ErrNoRows {
-		// 首次失败，插入新记录
+		// 首次失败，插入新记录。
+		//
+		// 阈值判断必须在这里也做一次：阈值为 1 时（UI 允许 1-9）
+		// 首次失败就该拉黑。原实现插入后直接 return，于是阈值 1
+		// 永远达不到——每次请求只重试一次就切换，坏 provider 一直被重试。
+		blacklistedAt := sql.NullTime{}
+		blacklistedUntil := sql.NullTime{}
+		if failureThreshold <= 1 {
+			blacklistedAt = sql.NullTime{Time: now, Valid: true}
+			blacklistedUntil = sql.NullTime{
+				Time:  now.Add(time.Duration(fallbackDuration) * time.Minute),
+				Valid: true,
+			}
+		}
 		err = dbExec(`
 			INSERT INTO provider_blacklist
-				(platform, source_id, provider_name, provider_id, failure_count, last_failure_at)
-			VALUES (?, ?, ?, ?, 1, ?)
-		`, platform, target.sourceID, providerName, target.nullableID(), now)
+				(platform, source_id, provider_name, provider_id, failure_count,
+				 last_failure_at, blacklisted_at, blacklisted_until)
+			VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+		`, platform, target.sourceID, providerName, target.nullableID(), now,
+			blacklistedAt, blacklistedUntil)
 
 		if err != nil {
 			return fmt.Errorf("插入失败记录失败: %w", err)
 		}
 
-		logDebug("记录首次失败（固定拉黑模式）",
-			"platform", platform, "provider", providerName, "threshold", failureThreshold)
+		if blacklistedUntil.Valid {
+			// 与下面达到阈值的分支一致，固定模式不发通知（只有等级模式发）
+			logWarn("首次失败即达到阈值，已拉黑（固定拉黑模式）",
+				"platform", platform, "provider", providerName,
+				"threshold", failureThreshold, "until", blacklistedUntil.Time.Format("15:04:05"))
+		} else {
+			logDebug("记录首次失败（固定拉黑模式）",
+				"platform", platform, "provider", providerName, "threshold", failureThreshold)
+		}
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("查询黑名单记录失败: %w", err)
@@ -524,15 +570,23 @@ func (bs *BlacklistService) getLevelDuration(level int, config *BlacklistLevelCo
 
 // IsBlacklisted 检查 provider 是否在黑名单中
 // IsBlacklisted 按名字查询拉黑状态（兼容入口）。
-// 内部解析成 provider_id 定位，见 IsBlacklistedFor。
+// 内部解析成 provider_id 定位，见 isBlacklistedFor。
 func (bs *BlacklistService) IsBlacklisted(platform string, providerName string) (bool, *time.Time) {
-	return bs.isBlacklistedFor(blacklistTargetByName(platform, providerName))
+	return bs.isBlacklistedFor(BlacklistTargetByName(platform, providerName))
 }
 
 // isBlacklistedFor 按 provider_id（回退 name）查询拉黑状态
-func (bs *BlacklistService) isBlacklistedFor(target blacklistTarget) (bool, *time.Time) {
+func (bs *BlacklistService) isBlacklistedFor(target BlacklistTarget) (bool, *time.Time) {
 	// 如果拉黑功能已关闭，始终返回未拉黑
 	if !bs.settingsService.IsBlacklistEnabled() {
+		return false, nil
+	}
+
+	key := target.cacheKey()
+	if until, hit := bs.cache.get(key); hit {
+		if until != nil && until.After(time.Now()) {
+			return true, until
+		}
 		return false, nil
 	}
 
@@ -553,22 +607,31 @@ func (bs *BlacklistService) isBlacklistedFor(target blacklistTarget) (bool, *tim
 	`, args...).Scan(&blacklistedUntil)
 
 	if err == sql.ErrNoRows {
+		bs.cache.set(key, nil)
 		return false, nil
 	} else if err != nil {
+		// 查询出错不进缓存，下次重试
 		logError("查询黑名单状态失败", "error", err)
 		return false, nil
 	}
 
-	if blacklistedUntil.Valid && blacklistedUntil.Time.After(time.Now()) {
-		return true, &blacklistedUntil.Time
+	if blacklistedUntil.Valid {
+		until := blacklistedUntil.Time
+		bs.cache.set(key, &until)
+		if until.After(time.Now()) {
+			return true, &until
+		}
+		return false, nil
 	}
 
+	bs.cache.set(key, nil)
 	return false, nil
 }
 
 // ManualUnblockAndReset 手动解除拉黑（保留等级，如需清零请调用 ManualResetLevel）
 func (bs *BlacklistService) ManualUnblockAndReset(platform string, providerName string) error {
-	target := blacklistTargetByName(platform, providerName)
+	defer bs.cache.invalidateAll()
+	target := BlacklistTargetByName(platform, providerName)
 	providerName = target.name
 	db, err := xdb.DB("default")
 	if err != nil {
@@ -617,7 +680,8 @@ func (bs *BlacklistService) ManualUnblock(platform string, providerName string) 
 
 // ManualResetLevel 手动清零等级（不解除拉黑，仅重置等级）
 func (bs *BlacklistService) ManualResetLevel(platform string, providerName string) error {
-	target := blacklistTargetByName(platform, providerName)
+	defer bs.cache.invalidateAll()
+	target := BlacklistTargetByName(platform, providerName)
 	providerName = target.name
 	db, err := xdb.DB("default")
 	if err != nil {
@@ -654,6 +718,7 @@ func (bs *BlacklistService) ManualResetLevel(platform string, providerName strin
 // AutoRecoverExpired 自动恢复过期的黑名单（由定时器调用）
 // 使用事务批量处理，避免多次单独写入导致的并发锁冲突
 func (bs *BlacklistService) AutoRecoverExpired() error {
+	defer bs.cache.invalidateAll()
 	db, err := xdb.DB("default")
 	if err != nil {
 		return fmt.Errorf("获取数据库连接失败: %w", err)
@@ -900,19 +965,16 @@ type RetryConfig struct {
 func (bs *BlacklistService) GetRetryConfig() *RetryConfig {
 	config, err := bs.settingsService.GetBlacklistLevelConfig()
 	if err != nil {
-		// 【修复】读取配置失败时，也尝试从数据库读取阈值
-		// 确保内层重试次数与实际拉黑阈值一致
+		// 读不到配置就用默认值。原先这里还会"再查一次数据库拿阈值"，
+		// 那是阈值存在独立键时代的补丁；收敛后 GetBlacklistSettings
+		// 读的是同一份配置，这一步失败时它也会失败。
+		logWarn("读取等级拉黑配置失败，重试配置使用默认值", "error", err)
 		defaultConfig := DefaultBlacklistLevelConfig()
-		result := &RetryConfig{
+		return &RetryConfig{
 			FailureThreshold:    defaultConfig.FailureThreshold,
 			RetryWaitSeconds:    defaultConfig.RetryWaitSeconds,
 			DedupeWindowSeconds: defaultConfig.DedupeWindowSeconds,
 		}
-		// 尝试从数据库读取阈值
-		if dbThreshold, _, dbErr := bs.settingsService.GetBlacklistSettings(); dbErr == nil && dbThreshold > 0 {
-			result.FailureThreshold = dbThreshold
-		}
-		return result
 	}
 	return &RetryConfig{
 		FailureThreshold:    config.FailureThreshold,

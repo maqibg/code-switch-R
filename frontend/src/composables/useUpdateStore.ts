@@ -4,7 +4,11 @@
  * @description 管理应用自动更新的状态、事件监听和 API 调用
  */
 import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
-import { Call, Events } from '@wailsio/runtime'
+// 服务调用走 frontend/bindings 生成的类型化函数，不用 Call.ByName：
+// 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了。
+// Events 仍需从 runtime 取。
+import { Events } from '@wailsio/runtime'
+import * as UpdateService from '../../bindings/codeswitch/services/updateservice'
 import {
   getStoredDismissedUpdateVersion,
   persistFrontendPreferencesPatch,
@@ -46,12 +50,10 @@ export interface ProgressEvent {
 
 // ==================== 服务调用 ====================
 
-const SERVICE_PREFIX = 'codeswitch/services.UpdateService'
-
 export async function checkUpdate(): Promise<UpdateInfo | null> {
   try {
-    const result = await Call.ByName(`${SERVICE_PREFIX}.CheckUpdate`)
-    return result as UpdateInfo | null
+    const result = await UpdateService.CheckUpdate()
+    return result as unknown as UpdateInfo | null
   } catch (e) {
     console.error('CheckUpdate failed:', e)
     throw e
@@ -60,7 +62,7 @@ export async function checkUpdate(): Promise<UpdateInfo | null> {
 
 export async function downloadUpdate(): Promise<void> {
   try {
-    await Call.ByName(`${SERVICE_PREFIX}.DownloadUpdate`)
+    await UpdateService.DownloadUpdate()
   } catch (e) {
     console.error('DownloadUpdate failed:', e)
     throw e
@@ -69,7 +71,7 @@ export async function downloadUpdate(): Promise<void> {
 
 export async function cancelDownload(): Promise<void> {
   try {
-    await Call.ByName(`${SERVICE_PREFIX}.CancelDownload`)
+    await UpdateService.CancelDownload()
   } catch (e) {
     console.error('CancelDownload failed:', e)
     throw e
@@ -78,7 +80,7 @@ export async function cancelDownload(): Promise<void> {
 
 export async function requestRestart(): Promise<void> {
   try {
-    await Call.ByName(`${SERVICE_PREFIX}.RequestRestart`)
+    await UpdateService.RequestRestart()
   } catch (e) {
     console.error('RequestRestart failed:', e)
     throw e
@@ -87,8 +89,8 @@ export async function requestRestart(): Promise<void> {
 
 export async function getUpdateState(): Promise<UpdateStateSnapshot> {
   try {
-    const result = await Call.ByName(`${SERVICE_PREFIX}.GetState`)
-    return result as UpdateStateSnapshot
+    const result = await UpdateService.GetState()
+    return result as unknown as UpdateStateSnapshot
   } catch (e) {
     console.error('GetState failed:', e)
     throw e
@@ -97,7 +99,7 @@ export async function getUpdateState(): Promise<UpdateStateSnapshot> {
 
 export async function dismissUpdate(version: string): Promise<void> {
   try {
-    await Call.ByName(`${SERVICE_PREFIX}.DismissUpdate`, version)
+    await UpdateService.DismissUpdate(version)
   } catch (e) {
     console.error('DismissUpdate failed:', e)
     throw e
@@ -106,8 +108,8 @@ export async function dismissUpdate(version: string): Promise<void> {
 
 export async function getDismissedVersion(): Promise<string> {
   try {
-    const result = await Call.ByName(`${SERVICE_PREFIX}.GetDismissedVersion`)
-    return (result as string) || ''
+    const result = await UpdateService.GetDismissedVersion()
+    return result || ''
   } catch (e) {
     console.error('GetDismissedVersion failed:', e)
     return ''

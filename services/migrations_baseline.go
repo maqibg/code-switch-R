@@ -40,7 +40,12 @@ func migrateAppSettingsTable(tx sqlExecutor) error {
 	)`); err != nil {
 		return err
 	}
-	// 默认黑名单配置
+	// 默认黑名单配置。
+	//
+	// 后两个键已被迁移 v7 折叠进 blacklist_level_config 行并删除，
+	// 这里仍然 seed 是因为基线是历史快照：v7 要读它们的现值做合并，
+	// 顺序上 baseline 必须先建出来。全新库上这两个值与
+	// DefaultBlacklistLevelConfig 一致，折叠结果就是默认配置。
 	defaults := []struct{ key, value string }{
 		{"enable_blacklist", "false"},
 		{"blacklist_failure_threshold", "3"},

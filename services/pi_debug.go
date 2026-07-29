@@ -39,7 +39,7 @@ func (s *PiSettingsService) SetDebugLogging(enabled bool) error {
 	return nil
 }
 
-func logPiDebugInbound(platform, endpoint string, query map[string]string, headers map[string]string, body []byte) {
+func LogPiDebugInbound(platform, endpoint string, query map[string]string, headers map[string]string, body []byte) {
 	if !piDebugLoggingEnabled() {
 		return
 	}
@@ -47,7 +47,7 @@ func logPiDebugInbound(platform, endpoint string, query map[string]string, heade
 		platform, endpoint, formatPiDebugMap(query), formatPiDebugMap(headers), formatPiDebugBody(body))
 }
 
-func logPiDebugRoute(platform, model, endpoint string, providers []Provider) {
+func LogPiDebugRoute(platform, model, endpoint string, providers []Provider) {
 	if !piDebugLoggingEnabled() {
 		return
 	}
@@ -59,7 +59,7 @@ func logPiDebugRoute(platform, model, endpoint string, providers []Provider) {
 		platform, model, endpoint, strings.Join(names, ", "))
 }
 
-func logPiDebugUpstream(platform string, provider Provider, endpoint string, query map[string]string, headers map[string]string, body []byte) {
+func LogPiDebugUpstream(platform string, provider Provider, endpoint string, query map[string]string, headers map[string]string, body []byte) {
 	if !piDebugLoggingEnabled() {
 		return
 	}
@@ -67,7 +67,7 @@ func logPiDebugUpstream(platform string, provider Provider, endpoint string, que
 		platform, provider.Name, sanitizePiDebugURL(endpoint), formatPiDebugMap(query), formatPiDebugMap(headers), formatPiDebugBody(body))
 }
 
-func logPiDebugResponse(provider string, status int) {
+func LogPiDebugResponse(provider string, status int) {
 	if !piDebugLoggingEnabled() {
 		return
 	}

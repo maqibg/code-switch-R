@@ -429,7 +429,7 @@
             </label>
             <!-- 直连应用按钮 -->
             <button
-              v-if="activeTab !== 'others' && activeTab !== 'pi'"
+              v-if="activeTab !== 'others'"
               class="ghost-icon direct-apply-btn"
               :class="{ 'is-active': isDirectApplied(card) && !activeProxyState }"
               :disabled="activeProxyState"
@@ -488,7 +488,6 @@
         :tool-id="selectedToolId"
         :tool-name="selectedCustomCliTool.name"
         :config-files="selectedCustomCliTool.configFiles"
-        @saved="onConfigFileSaved"
       />
       </section>
 
@@ -738,16 +737,7 @@
                 </div>
 
                 <div class="form-field">
-                  <RequestHeaderTemplateEditor
-                    v-if="modalState.tabId === 'pi'"
-                    :headers="modalState.form.headers"
-                    :metadata-user-id="modalState.form.metadataUserId"
-                    :metadata-allowed="piMetadataAllowed"
-                    @update:headers="modalState.form.headers = $event"
-                    @update:metadata-user-id="modalState.form.metadataUserId = $event"
-                    @validity="piHeadersValid = $event"
-                  />
-                  <HeaderEditor v-else v-model="modalState.form.headers" />
+                  <HeaderEditor v-model="modalState.form.headers" />
                 </div>
 
                 <div class="form-field">
@@ -824,20 +814,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.level') }}</span>
                 </div>
 
-                <div v-if="modalState.tabId === 'pi'" class="form-field">
-                  <PiModelConfigEditor
-                    :model-value="modalState.form.piModels"
-                    :model-overrides="modalState.form.piModelOverrides"
-                    :supported-models="modalState.form.supportedModels"
-                    :provider="modelDiscoveryProvider"
-                    @update:model-value="modalState.form.piModels = $event"
-                    @update:model-overrides="modalState.form.piModelOverrides = $event"
-                    @update:supported-models="modalState.form.supportedModels = $event"
-                    @validity="piModelsValid = $event"
-                  />
-                </div>
-
-                <div v-else class="form-field">
+                <div class="form-field">
                   <ModelWhitelistEditor
                     v-model="modalState.form.supportedModels"
                     :platform="modalState.tabId === 'others' && selectedToolId ? getCustomProviderKind(selectedToolId) : modalState.tabId"
@@ -849,17 +826,7 @@
                   <ModelMappingEditor v-model="modalState.form.modelMapping" />
                 </div>
 
-                <div v-if="modalState.tabId === 'pi'" class="form-field">
-                  <PiModelsJsonPreview
-                    :json="piPreviewJson"
-                    :current-model-ids="piPreviewCurrentModelIds"
-                    :diagnostics="piPreviewDiagnostics"
-                    :loading="piPreviewLoading"
-                    :error="piPreviewError"
-                  />
-                </div>
-
-                <div v-if="modalState.tabId !== 'pi'" class="form-field">
+                <div class="form-field">
                   <CLIConfigEditor
                     :platform="activeTab as CLIPlatform"
                     v-model="modalState.form.cliConfig"
@@ -920,12 +887,12 @@
                   <BaseButton variant="outline" type="button" @click="closeModal">
                     {{ t('components.main.form.actions.cancel') }}
                   </BaseButton>
-                  <BaseButton type="submit" :disabled="modalState.tabId === 'pi' && !piFormValid">
+                  <BaseButton type="submit">
                     {{ t('components.main.form.actions.save') }}
                   </BaseButton>
                   <!-- 保存并应用：仅在编辑模式、非代理模式、非 others 平台时显示 -->
                   <BaseButton
-                    v-if="modalState.editingId && modalState.tabId !== 'others' && modalState.tabId !== 'pi' && !activeProxyState"
+                    v-if="modalState.editingId && modalState.tabId !== 'others' && !activeProxyState"
                     type="button"
                     variant="primary"
                     @click="submitAndApplyModal"
@@ -1114,21 +1081,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headlessui/vue'
-import { Browser, Call, Events } from '@wailsio/runtime'
-import { type UsageHeatmapDay } from '../../data/usageHeatmap'
+import { Browser } from '@wailsio/runtime'
+import { useRouter } from 'vue-router'
 import { useAdaptiveHeatmap } from '../../composables/useAdaptiveHeatmap'
-import {
-  automationCardGroups,
-  createAutomationCards,
-  type AutomationCard,
-  type PiConfigDiagnostic,
-  type PiModelDefinition,
-  type PiModelOverride,
-} from '../../data/cards'
-import { ensureLobeIcon, lobeIconKeys } from '../../icons/lobeIconMap'
 import { useActivePolling } from '../../composables/useActivePolling'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
@@ -1136,45 +1094,37 @@ import BaseInput from '../common/BaseInput.vue'
 import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import HeaderEditor from '../common/HeaderEditor.vue'
-import PiModelConfigEditor from '../common/PiModelConfigEditor.vue'
-import PiModelsJsonPreview from '../common/PiModelsJsonPreview.vue'
-import RequestHeaderTemplateEditor from '../common/RequestHeaderTemplateEditor.vue'
 import CLIConfigEditor from '../common/CLIConfigEditor.vue'
 import CustomCliConfigEditor from '../common/CustomCliConfigEditor.vue'
-import { LoadProviders, SaveProviders, DuplicateProvider, RenameProvider } from '../../../bindings/codeswitch/services/providerservice'
-import { PreviewModelsJSON } from '../../../bindings/codeswitch/services/pisettingsservice'
-import { GetProviders as GetGeminiProviders, UpdateProvider as UpdateGeminiProvider, AddProvider as AddGeminiProvider, DeleteProvider as DeleteGeminiProvider, ReorderProviders as ReorderGeminiProviders } from '../../../bindings/codeswitch/services/geminiservice'
-import { fetchProxyStatus, enableProxy, disableProxy } from '../../services/claudeSettings'
-import { fetchGeminiProxyStatus, enableGeminiProxy, disableGeminiProxy } from '../../services/geminiSettings'
-import { fetchProviderDailyStats, type ProviderDailyStat } from '../../services/logs'
-import { fetchCurrentVersion } from '../../services/version'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
+import type { CLIPlatform } from '../../services/cliConfig'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
-import {
-  getStoredHomePlatformOrder,
-  persistFrontendPreferencesPatch,
-  setStoredHomePlatformOrder,
-} from '../../utils/frontendPreferences'
-import { useRouter } from 'vue-router'
 import { showToast } from '../../utils/toast'
-import { extractErrorMessage } from '../../utils/error'
-import { getBlacklistStatus, manualUnblock, type BlacklistStatus } from '../../services/blacklist'
-import { saveCLIConfig, type CLIPlatform } from '../../services/cliConfig'
+import { createMainState } from './state'
+import { providerTabIds } from './platformTabs'
 import {
-  listCustomCliTools,
-  createCustomCliTool,
-  updateCustomCliTool,
-  deleteCustomCliTool,
-  getCustomCliProxyStatus,
-  enableCustomCliProxy,
-  disableCustomCliProxy,
-  type CustomCliTool,
-  type ConfigFile,
-  type ProxyInjection,
-} from '../../services/customCliService'
+  formatOfficialSite,
+  getCustomProviderKind,
+  iconSvg,
+  openOfficialSite,
+  vendorInitials,
+} from './utils'
+import { useProviderCards } from './composables/useProviderCards'
+import { useProxyState } from './composables/useProxyState'
+import { useDirectApply } from './composables/useDirectApply'
+import { useProviderStats } from './composables/useProviderStats'
+import { useBlacklist } from './composables/useBlacklist'
+import { useLastUsed } from './composables/useLastUsed'
+import { useUsageTooltip } from './composables/useUsageTooltip'
+import { usePlatformOrderMenu } from './composables/usePlatformOrderMenu'
+import { useVendorModal } from './composables/useVendorModal'
+import { useCustomCliTools } from './composables/useCustomCliTools'
 
 const { t, locale } = useI18n()
 const router = useRouter()
+
+// ---------- 主题与导航 ----------
+
 const themeMode = ref<ThemeMode>(getCurrentTheme())
 const resolvedTheme = computed(() => {
   if (themeMode.value === 'systemdefault') {
@@ -1183,350 +1133,154 @@ const resolvedTheme = computed(() => {
   return themeMode.value
 })
 const themeIcon = computed(() => (resolvedTheme.value === 'dark' ? 'moon' : 'sun'))
+
+const toggleTheme = () => {
+  const next = resolvedTheme.value === 'dark' ? 'light' : 'dark'
+  themeMode.value = next
+  setTheme(next)
+}
+
 const projectGithubUrl = 'https://github.com/maqibg/code-switch-R'
-const releaseApiUrl = 'https://api.github.com/repos/Rogers-F/code-switch-R/releases/latest'
+const handleGithubClick = () => {
+  Browser.OpenURL(projectGithubUrl).catch(() => {
+    console.error('failed to open github')
+  })
+}
+const getGithubTooltip = () => t('components.main.controls.github')
+
+const goToSettings = () => {
+  router.push('/settings')
+}
+
+// ---------- 热力图与悬浮提示 ----------
 
 const heatmapContainerRef = ref<HTMLElement | null>(null)
-// 使用自适应热力图 composable
+const tooltipRef = ref<HTMLElement | null>(null)
 const {
   displayData: usageHeatmap,
   init: initHeatmap,
   cleanup: cleanupHeatmap,
   reload: reloadHeatmap,
 } = useAdaptiveHeatmap(heatmapContainerRef)
-const tooltipRef = ref<HTMLElement | null>(null)
-const proxyStates = reactive<Record<ProviderTab, boolean>>({
-  claude: false,
-  codex: false,
-  gemini: false,
-  reasonix: false,
-  pi: false,
-  others: false,
-})
-const proxyBusy = reactive<Record<ProviderTab, boolean>>({
-  claude: false,
-  codex: false,
-  gemini: false,
-  reasonix: false,
-  pi: false,
-  others: false,
-})
-
-// 直连应用状态
-const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
-  claude: null,
-  codex: null,
-  gemini: null,
-  reasonix: null,
-  pi: null,
-  others: null,
-})
-
-const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) => {
-  if (tab === 'others' || tab === 'pi') return
-
-  try {
-    let id: string | number | null = null
-    if (tab === 'claude') {
-      id = await Call.ByName('codeswitch/services.ClaudeSettingsService.GetDirectAppliedProviderID')
-    } else if (tab === 'codex') {
-      id = await Call.ByName('codeswitch/services.CodexSettingsService.GetDirectAppliedProviderID')
-    } else if (tab === 'gemini') {
-      id = await Call.ByName('codeswitch/services.GeminiService.GetDirectAppliedProviderID')
-    } else if (tab === 'reasonix') {
-      id = await Call.ByName('codeswitch/services.ReasonixSettingsService.GetDirectAppliedProviderID')
-    }
-    directAppliedIds[tab] = id
-  } catch (error) {
-    console.error(`Failed to get direct applied status for ${tab}`, error)
-  }
-}
-
-const handleDirectApply = async (card: AutomationCard) => {
-  if (activeProxyState.value) return
-  const tab = activeTab.value
-  try {
-    if (tab === 'claude') {
-      await Call.ByName('codeswitch/services.ClaudeSettingsService.ApplySingleProvider', card.id)
-    } else if (tab === 'codex') {
-      await Call.ByName('codeswitch/services.CodexSettingsService.ApplySingleProvider', card.id)
-    } else if (tab === 'gemini') {
-      // Gemini 使用字符串 ID，需要从 cache 中找到原始 provider
-      const index = cards.gemini.findIndex(c => c.id === card.id)
-      if (index === -1 || !geminiProvidersCache.value[index]) {
-        throw new Error('Gemini provider cache entry not found')
-      }
-      const realId = geminiProvidersCache.value[index].id
-      await Call.ByName('codeswitch/services.GeminiService.ApplySingleProvider', realId)
-    } else if (tab === 'reasonix') {
-      await Call.ByName('codeswitch/services.ReasonixSettingsService.ApplySingleProvider', card.id)
-    } else {
-      throw new Error(`Direct apply is not supported for ${tab}`)
-    }
-    await refreshDirectAppliedStatus(tab)
-    showToast(t('components.main.directApply.success', { name: card.name }), 'success')
-  } catch (error) {
-    console.error('Direct apply failed', error)
-    showToast(t('components.main.directApply.failed'), 'error')
-  }
-}
-
-const isDirectApplied = (card: AutomationCard) => {
-  const appliedId = directAppliedIds[activeTab.value]
-  if (appliedId === null) return false
-
-  if (activeTab.value === 'gemini') {
-    const index = cards.gemini.findIndex(c => c.id === card.id)
-    if (index === -1 || !geminiProvidersCache.value[index]) return false
-    return geminiProvidersCache.value[index].id === appliedId
-  }
-  return card.id === appliedId
-}
-
-const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDailyStat>>>({
-  claude: {},
-  codex: {},
-  gemini: {},
-  reasonix: {},
-  pi: {},
-  others: {},
-})
-const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
-  claude: false,
-  codex: false,
-  gemini: false,
-  reasonix: false,
-  pi: false,
-  others: false,
-})
-const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
-  claude: false,
-  codex: false,
-  gemini: false,
-  reasonix: false,
-  pi: false,
-  others: false,
-})
-let providerStatsTimer: number | undefined
-let mainPollingActive = false
-const showHeatmap = ref(true)
-const showHomeTitle = ref(true)
-const mcpIcon = computed(() => ensureLobeIcon('mcp'))
-const appVersion = ref('')
-
-// 自定义 CLI 工具状态
-const customCliTools = ref<CustomCliTool[]>([])
-const selectedToolId = ref<string | null>(null)
-const customCliProxyStates = reactive<Record<string, boolean>>({})  // toolId -> enabled
-
-// 当前选中的 CLI 工具（计算属性）
-const selectedCustomCliTool = computed(() => {
-  if (!selectedToolId.value) return null
-  return customCliTools.value.find(t => t.id === selectedToolId.value) || null
-})
-
-// 配置文件保存成功后的回调
-const onConfigFileSaved = () => {
-  // 配置文件保存成功，可以在这里添加额外逻辑（如刷新状态）
-  console.log('[CustomCliConfigEditor] Config file saved')
-}
-
-// 黑名单状态
-const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, BlacklistStatus>>>({
-  claude: {},
-  codex: {},
-  gemini: {},
-  reasonix: {},
-  pi: {},
-  others: {},
-})
-let blacklistTimer: number | undefined
-
-// 最后使用的供应商（用于高亮显示）
-// @author sm
-interface LastUsedProvider {
-  platform: string
-  provider_name: string
-  updated_at: number
-}
-const lastUsedProviders = reactive<Record<string, LastUsedProvider | null>>({
-  claude: null,
-  codex: null,
-  gemini: null,
-  reasonix: null,
-  pi: null,
-  others: null,
-})
-// 高亮闪烁的供应商名称
-const highlightedProvider = ref<string | null>(null)
-let highlightTimer: number | undefined
 
 const intensityClass = (value: number) => `gh-level-${value}`
 
-type TooltipPlacement = 'above' | 'below'
+const {
+  usageTooltip,
+  formattedTooltipLabel,
+  usageTooltipMetrics,
+  showUsageTooltip,
+  hideUsageTooltip,
+} = useUsageTooltip({ t, locale, tooltipRef, containerRef: heatmapContainerRef })
 
-const usageTooltip = reactive({
-  visible: false,
-  label: '',
-  dateKey: '',
-  left: 0,
-  top: 0,
-  placement: 'above' as TooltipPlacement,
-  requests: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-  reasoningTokens: 0,
-  cost: 0,
+// ---------- 状态层与各域 composable ----------
+
+const state = createMainState()
+const { tabs, selectedIndex, activeTab, activeCards, selectedToolId, customCliTools } = state
+
+const {
+  platformOrderMenu,
+  openPlatformOrderMenu,
+  closePlatformOrderMenu,
+  canMoveHomePlatform,
+  moveHomePlatform,
+} = usePlatformOrderMenu(state)
+
+const {
+  persistProviders,
+  loadProvidersFromDisk,
+  confirmState,
+  requestRemove,
+  closeConfirm,
+  confirmRemove,
+  handleDuplicate,
+  draggingId,
+  onDragStart,
+  onDrop,
+  onDragEnd,
+} = useProviderCards(state, t)
+
+const {
+  refreshProxyState,
+  onProxyToggle,
+  currentProxyLabel,
+  activeProxyState,
+  activeProxyBusy,
+} = useProxyState(state, t)
+
+const {
+  refreshDirectAppliedStatus,
+  applyProviderToCli,
+  handleDirectApply,
+  isDirectApplied,
+} = useDirectApply(state, t)
+
+const {
+  loadProviderStats,
+  providerStatDisplay,
+  startProviderStatsTimer,
+  stopProviderStatsTimer,
+} = useProviderStats(state, { t, locale })
+
+const {
+  loadBlacklistStatus,
+  handleUnblockAndReset,
+  handleResetLevel,
+  formatBlacklistCountdown,
+  getProviderBlacklistStatus,
+} = useBlacklist(state, t)
+
+const { highlightedProvider, isLastUsedProvider, scrollToCard } = useLastUsed(state, {
+  router,
+  loadBlacklistStatus,
 })
 
-const formatMetric = (value: number) => value.toLocaleString()
+const {
+  modalState,
+  iconSearchQuery,
+  filteredIconOptions,
+  getLevelDescription,
+  selectedAuthType,
+  customAuthHeader,
+  authTypeOptions,
+  userAgentOptions,
+  showUpstreamProtocolField,
+  isCodexChatProtocol,
+  effectiveUpstreamProtocolOptions,
+  upstreamProtocolHint,
+  modelDiscoveryProvider,
+  testingConnectivity,
+  connectivityTestResult,
+  handleTestConnectivity,
+  openCreateModal,
+  configure,
+  closeModal,
+  submitModal,
+  submitAndApplyModal,
+} = useVendorModal(state, { t, persistProviders, refreshDirectAppliedStatus, applyProviderToCli })
 
-/**
- * 格式化 token 数值，支持 k/M/B 单位换算
- * @author sm
- */
-const formatTokenNumber = (value: number) => {
-  if (value >= 1_000_000_000) {
-    return `${(value / 1_000_000_000).toFixed(2)}B`
-  }
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(2)}M`
-  }
-  if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(2)}k`
-  }
-  return value.toLocaleString()
-}
+const {
+  selectedCustomCliTool,
+  onToolSelect,
+  cliToolModalState,
+  cliToolConfirmState,
+  openCliToolModal,
+  editCurrentCliTool,
+  deleteCurrentCliTool,
+  closeCliToolModal,
+  closeCliToolConfirm,
+  addConfigFile,
+  removeConfigFile,
+  addProxyInjection,
+  removeProxyInjection,
+  submitCliToolModal,
+  confirmDeleteCliTool,
+} = useCustomCliTools(state, { t, loadProviderStats })
 
-const tooltipDateFormatter = computed(() =>
-  new Intl.DateTimeFormat(locale.value || 'en', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-)
+// ---------- 应用设置（热力图与标题开关） ----------
 
-const currencyFormatter = computed(() =>
-  new Intl.NumberFormat(locale.value || 'en', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-)
-
-const formattedTooltipLabel = computed(() => {
-  if (!usageTooltip.dateKey) return usageTooltip.label
-  const date = new Date(usageTooltip.dateKey)
-  if (Number.isNaN(date.getTime())) {
-    return usageTooltip.label
-  }
-  return tooltipDateFormatter.value.format(date)
-})
-
-const formattedTooltipAmount = computed(() =>
-  currencyFormatter.value.format(Math.max(usageTooltip.cost, 0))
-)
-
-const usageTooltipMetrics = computed(() => [
-  {
-    key: 'cost',
-    label: t('components.main.heatmap.metrics.cost'),
-    value: formattedTooltipAmount.value,
-  },
-  {
-    key: 'requests',
-    label: t('components.main.heatmap.metrics.requests'),
-    value: formatMetric(usageTooltip.requests),
-  },
-  {
-    key: 'inputTokens',
-    label: t('components.main.heatmap.metrics.inputTokens'),
-    value: formatTokenNumber(usageTooltip.inputTokens),
-  },
-  {
-    key: 'outputTokens',
-    label: t('components.main.heatmap.metrics.outputTokens'),
-    value: formatTokenNumber(usageTooltip.outputTokens),
-  },
-  {
-    key: 'reasoningTokens',
-    label: t('components.main.heatmap.metrics.reasoningTokens'),
-    value: formatTokenNumber(usageTooltip.reasoningTokens),
-  },
-])
-
-const clamp = (value: number, min: number, max: number) => {
-  if (max <= min) return min
-  return Math.min(Math.max(value, min), max)
-}
-
-const TOOLTIP_DEFAULT_WIDTH = 220
-const TOOLTIP_DEFAULT_HEIGHT = 120
-const TOOLTIP_VERTICAL_OFFSET = 12
-const TOOLTIP_HORIZONTAL_MARGIN = 20
-const TOOLTIP_VERTICAL_MARGIN = 24
-
-const getTooltipSize = () => {
-  const rect = tooltipRef.value?.getBoundingClientRect()
-  return {
-    width: rect?.width ?? TOOLTIP_DEFAULT_WIDTH,
-    height: rect?.height ?? TOOLTIP_DEFAULT_HEIGHT,
-  }
-}
-
-const viewportSize = () => {
-  if (typeof window !== 'undefined') {
-    return { width: window.innerWidth, height: window.innerHeight }
-  }
-  if (typeof document !== 'undefined' && document.documentElement) {
-    return {
-      width: document.documentElement.clientWidth,
-      height: document.documentElement.clientHeight,
-    }
-  }
-  return {
-    width: heatmapContainerRef.value?.clientWidth ?? 0,
-    height: heatmapContainerRef.value?.clientHeight ?? 0,
-  }
-}
-
-const showUsageTooltip = (day: UsageHeatmapDay, event: MouseEvent) => {
-  const target = event.currentTarget as HTMLElement | null
-  const cellRect = target?.getBoundingClientRect()
-  if (!cellRect) return
-  usageTooltip.label = day.label
-  usageTooltip.dateKey = day.dateKey
-  usageTooltip.requests = day.requests
-  usageTooltip.inputTokens = day.inputTokens
-  usageTooltip.outputTokens = day.outputTokens
-  usageTooltip.reasoningTokens = day.reasoningTokens
-  usageTooltip.cost = day.cost
-  const { width: tooltipWidth, height: tooltipHeight } = getTooltipSize()
-  const { width: viewportWidth, height: viewportHeight } = viewportSize()
-  const centerX = cellRect.left + cellRect.width / 2
-  const halfWidth = tooltipWidth / 2
-  const minLeft = TOOLTIP_HORIZONTAL_MARGIN + halfWidth
-  const maxLeft = viewportWidth > 0 ? viewportWidth - halfWidth - TOOLTIP_HORIZONTAL_MARGIN : centerX
-  usageTooltip.left = clamp(centerX, minLeft, maxLeft)
-
-  const anchorTop = cellRect.top
-  const anchorBottom = cellRect.bottom
-  const canShowAbove = anchorTop - tooltipHeight - TOOLTIP_VERTICAL_OFFSET >= TOOLTIP_VERTICAL_MARGIN
-  const viewportBottomLimit = viewportHeight > 0 ? viewportHeight - tooltipHeight - TOOLTIP_VERTICAL_MARGIN : anchorBottom
-  const shouldPlaceBelow = !canShowAbove
-  usageTooltip.placement = shouldPlaceBelow ? 'below' : 'above'
-  const desiredTop = shouldPlaceBelow
-    ? anchorBottom + TOOLTIP_VERTICAL_OFFSET
-    : anchorTop - tooltipHeight - TOOLTIP_VERTICAL_OFFSET
-  usageTooltip.top = clamp(desiredTop, TOOLTIP_VERTICAL_MARGIN, viewportBottomLimit)
-  usageTooltip.visible = true
-}
-
-const hideUsageTooltip = () => {
-  usageTooltip.visible = false
-}
+const showHeatmap = ref(true)
+const showHomeTitle = ref(true)
 
 const loadAppSettings = async () => {
   try {
@@ -1537,17 +1291,7 @@ const loadAppSettings = async () => {
     console.error('failed to load app settings', error)
     showHeatmap.value = true
     showHomeTitle.value = true
-    // 加载应用设置失败时提示用户
     showToast(t('components.main.errors.loadAppSettingsFailed'), 'warning')
-  }
-}
-
-const loadAppVersion = async () => {
-  try {
-    const version = await fetchCurrentVersion()
-    appVersion.value = version || ''
-  } catch (error) {
-    console.error('failed to load app version', error)
   }
 }
 
@@ -1555,488 +1299,44 @@ const handleAppSettingsUpdated = () => {
   void loadAppSettings()
 }
 
-const normalizeProviderKey = (value: string) => value?.trim().toLowerCase() ?? ''
-
-const normalizeVersion = (value: string) => value.replace(/^v/i, '').trim()
-
-const compareVersions = (current: string, remote: string) => {
-  const curParts = normalizeVersion(current).split('.').map((part) => parseInt(part, 10) || 0)
-  const remoteParts = normalizeVersion(remote).split('.').map((part) => parseInt(part, 10) || 0)
-  const maxLen = Math.max(curParts.length, remoteParts.length)
-  for (let i = 0; i < maxLen; i++) {
-    const cur = curParts[i] ?? 0
-    const rem = remoteParts[i] ?? 0
-    if (cur === rem) continue
-    return cur < rem ? -1 : 1
-  }
-  return 0
+// 导入等外部流程触发的 Provider 更新事件
+const handleProvidersUpdated = () => {
+  void loadProvidersFromDisk()
 }
 
-// 本地 GeminiProvider 类型定义（避免依赖 CI 生成的 bindings）
-interface GeminiProvider {
-  id: string
-  name: string
-  websiteUrl?: string
-  apiKeyUrl?: string
-  baseUrl?: string
-  apiKey?: string
-  model?: string
-  description?: string
-  category?: string
-  partnerPromotionKey?: string
-  enabled: boolean
-  proxyEnabled?: boolean
-  level?: number // 优先级分组 (1-10, 默认 1)
-  envConfig?: Record<string, string | undefined>
-  settingsConfig?: Record<string, any>
-}
+// ---------- Tab 切换与轮询 ----------
 
-const defaultTabs = [
-  { id: 'claude', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
-  { id: 'gemini', label: 'Gemini' },
-  { id: 'reasonix', label: 'Reasonix' },
-  { id: 'others', label: '其他' },
-] as const
-type HomeProviderTab = (typeof defaultTabs)[number]['id']
-type ProviderTab = HomeProviderTab | 'pi'
-type HomePlatformTab = { id: HomeProviderTab; label: string }
-
-const orderedHomePlatformTabs = (): HomePlatformTab[] => {
-  const tabsByID = new Map<HomeProviderTab, HomePlatformTab>(
-    defaultTabs.map((tab) => [tab.id, { ...tab }]),
-  )
-  const ordered: HomePlatformTab[] = []
-  for (const id of getStoredHomePlatformOrder()) {
-    const tab = tabsByID.get(id as HomeProviderTab)
-    if (!tab) continue
-    ordered.push(tab)
-    tabsByID.delete(tab.id)
-  }
-  for (const tab of defaultTabs) {
-    const remaining = tabsByID.get(tab.id)
-    if (remaining) ordered.push(remaining)
-  }
-  return ordered
-}
-
-const tabs = reactive<HomePlatformTab[]>(orderedHomePlatformTabs())
-const providerTabIds = defaultTabs.map((tab) => tab.id) as ProviderTab[]
-const platformOrderMenu = reactive<{ open: boolean; x: number; y: number; tab?: HomePlatformTab }>({
-  open: false,
-  x: 0,
-  y: 0,
-})
-
-const openPlatformOrderMenu = (event: MouseEvent, tab: HomePlatformTab) => {
-  platformOrderMenu.open = true
-  platformOrderMenu.tab = tab
-  platformOrderMenu.x = Math.max(8, Math.min(event.clientX, window.innerWidth - 208))
-  platformOrderMenu.y = Math.max(8, Math.min(event.clientY, window.innerHeight - 92))
-}
-
-const closePlatformOrderMenu = () => {
-  platformOrderMenu.open = false
-}
-
-const canMoveHomePlatform = (tab: HomePlatformTab | undefined, direction: -1 | 1) => {
-  if (!tab) return false
-  const index = tabs.findIndex((item) => item.id === tab.id)
-  const target = index + direction
-  return index >= 0 && target >= 0 && target < tabs.length
-}
-
-const moveHomePlatform = (direction: -1 | 1) => {
-  const tab = platformOrderMenu.tab
-  if (!canMoveHomePlatform(tab, direction) || !tab) return
-  const activeID = activeTab.value
-  const index = tabs.findIndex((item) => item.id === tab.id)
-  const target = index + direction
-  const [moved] = tabs.splice(index, 1)
-  tabs.splice(target, 0, moved)
-  selectedIndex.value = Math.max(0, tabs.findIndex((item) => item.id === activeID))
-
-  const order = tabs.map((item) => item.id)
-  setStoredHomePlatformOrder(order)
-  void persistFrontendPreferencesPatch({ home_platform_order: order })
+const onTabChange = (idx: number) => {
   closePlatformOrderMenu()
+  selectedIndex.value = idx
+  const nextTab = tabs[idx]?.id
+  if (nextTab) {
+    void refreshProxyState(nextTab)
+    void refreshDirectAppliedStatus(nextTab)
+    void loadProviderStats(nextTab)
+  }
 }
 
-const handlePlatformOrderMenuKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') closePlatformOrderMenu()
-}
-
-const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
-  claude: createAutomationCards(automationCardGroups.claude),
-  codex: createAutomationCards(automationCardGroups.codex),
-  gemini: [],
-  reasonix: [],
-  pi: [],
-  others: [],
-})
-const draggingId = ref<number | null>(null)
-
-// Gemini Provider 到 AutomationCard 的转换
-const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard => ({
-  id: 300 + index, // Gemini 使用 300+ 的 ID 范围
-  name: provider.name,
-  apiUrl: provider.baseUrl || '',
-  apiKey: provider.apiKey || '',
-  officialSite: provider.websiteUrl || '',
-  icon: 'gemini',
-  tint: 'rgba(251, 146, 60, 0.18)',
-  accent: '#fb923c',
-  enabled: provider.enabled,
-  proxyEnabled: !!provider.proxyEnabled,
-  level: provider.level || 1,
+// 切换 Tab 后立即刷新统计与黑名单状态
+watch(activeTab, (newTab) => {
+  if (!state.pollingActive.value || document.hidden) return
+  void loadProviderStats(newTab)
+  void loadBlacklistStatus(newTab)
 })
 
-// AutomationCard 到 Gemini Provider 的转换
-const cardToGemini = (card: AutomationCard, original: GeminiProvider): GeminiProvider => ({
-  ...original,
-  name: card.name,
-  baseUrl: card.apiUrl,
-  apiKey: card.apiKey,
-  websiteUrl: card.officialSite,
-  enabled: card.enabled,
-  proxyEnabled: !!card.proxyEnabled,
-  level: card.level || 1,
-})
+useActivePolling(
+  () => {
+    state.pollingActive.value = true
+    startProviderStatsTimer()
+  },
+  () => {
+    state.pollingActive.value = false
+    stopProviderStatsTimer()
+  },
+)
 
-const serializeProviders = (providers: AutomationCard[]) =>
-  providers.map((provider) => ({
-    ...provider,
-    proxyEnabled: !!provider.proxyEnabled,
-    // 保留认证方式配置（已从废弃字段升级为活跃字段）
-    connectivityAuthType: provider.connectivityAuthType || '',
-    codexReasoningContinueEnabled: !!provider.codexReasoningContinueEnabled,
-    codexReasoningContinueLogEnabled:
-      provider.codexReasoningContinueLogEnabled ?? true,
-  }))
+// ---------- 全量刷新 ----------
 
-// 生成 custom CLI 工具的 provider kind（后端需要 "custom:{toolId}" 格式）
-const getCustomProviderKind = (toolId: string): string => `custom:${toolId}`
-
-// 存储 Gemini 原始数据，用于转换回去
-const geminiProvidersCache = ref<GeminiProvider[]>([])
-
-const persistProviders = async (tabId: ProviderTab): Promise<{ ok: boolean; error?: string }> => {
-  try {
-    if (tabId === 'others') {
-      // 'others' Tab 需要使用 "custom:{toolId}" 格式
-      if (!selectedToolId.value) {
-        showToast(t('components.main.customCli.selectToolFirst'), 'error')
-        return { ok: false, error: t('components.main.customCli.selectToolFirst') }
-      }
-      await SaveProviders(getCustomProviderKind(selectedToolId.value), serializeProviders(cards.others))
-    } else if (tabId === 'gemini') {
-      // Gemini 使用独立的保存逻辑
-      // 1. 收集当前卡片的 name 集合
-      const currentNames = new Set(cards.gemini.map(c => c.name))
-
-      // 2. 删除不在当前卡片中的 provider
-      for (const cached of geminiProvidersCache.value) {
-        if (!currentNames.has(cached.name)) {
-          await DeleteGeminiProvider(cached.id)
-        }
-      }
-
-      // 3. 添加或更新 provider
-      for (const card of cards.gemini) {
-        const original = geminiProvidersCache.value.find(p => p.name === card.name)
-
-        if (original) {
-          // 已存在的 provider，更新
-          await UpdateGeminiProvider(cardToGemini(card, original))
-        } else {
-          // 新添加的 provider，调用 AddProvider
-          const newProvider: GeminiProvider = {
-            id: `gemini-${Date.now()}`,
-            name: card.name,
-            baseUrl: card.apiUrl,
-            apiKey: card.apiKey,
-            websiteUrl: card.officialSite,
-            enabled: card.enabled,
-            proxyEnabled: !!card.proxyEnabled,
-          }
-          await AddGeminiProvider(newProvider)
-        }
-      }
-
-      // 4. 刷新缓存以获取最新的 ID
-      const updatedProviders = await GetGeminiProviders()
-      geminiProvidersCache.value = updatedProviders
-
-      // 5. 保存排序：按 cards.gemini 的顺序构建 ID 列表
-      const orderedIds: string[] = []
-      for (const card of cards.gemini) {
-        const provider = updatedProviders.find(p => p.name === card.name)
-        if (provider) {
-          orderedIds.push(provider.id)
-        }
-      }
-      if (orderedIds.length > 0) {
-        await ReorderGeminiProviders(orderedIds)
-        // 重新获取排序后的数据
-        geminiProvidersCache.value = await GetGeminiProviders()
-      }
-    } else {
-      await SaveProviders(tabId, serializeProviders(cards[tabId]))
-    }
-    return { ok: true }
-  } catch (error) {
-    console.error('Failed to save providers', error)
-    const errorMsg = extractErrorMessage(error)
-    showToast(t('components.main.form.saveFailed') + ': ' + errorMsg, 'error')
-    return { ok: false, error: errorMsg }
-  }
-}
-
-const replaceProviders = (tabId: ProviderTab, data: AutomationCard[]) => {
-  cards[tabId].splice(0, cards[tabId].length, ...createAutomationCards(data))
-}
-
-const loadProvidersFromDisk = async () => {
-  for (const tab of providerTabIds) {
-    try {
-      if (tab === 'others') {
-        // 'others' Tab: 先加载自定义 CLI 工具列表，再加载每个工具的 providers
-        await loadCustomCliTools()
-      } else if (tab === 'gemini') {
-        // Gemini 使用独立的加载逻辑
-        const geminiProviders = await GetGeminiProviders()
-        geminiProvidersCache.value = geminiProviders
-        cards.gemini.splice(0, cards.gemini.length, ...geminiProviders.map(geminiToCard))
-        sortProvidersByLevel(cards.gemini)  // 初始排序：启用优先，Level 升序
-      } else {
-        const saved = await LoadProviders(tab)
-        if (Array.isArray(saved)) {
-          replaceProviders(tab, saved as AutomationCard[])
-          sortProvidersByLevel(cards[tab])  // 初始排序：启用优先，Level 升序
-        } else {
-          await persistProviders(tab)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load providers', error)
-      // 加载供应商失败时提示用户
-      showToast(t('components.main.errors.loadProvidersFailed', { tab }), 'error')
-    }
-  }
-}
-
-// 加载自定义 CLI 工具列表
-const loadCustomCliTools = async () => {
-  try {
-    const tools = await listCustomCliTools()
-    customCliTools.value = tools
-
-    // 自动选择第一个工具（如果有）
-    if (tools.length > 0 && !selectedToolId.value) {
-      selectedToolId.value = tools[0].id
-    }
-
-    // 为每个工具加载代理状态
-    for (const tool of tools) {
-      try {
-        const status = await getCustomCliProxyStatus(tool.id)
-        customCliProxyStates[tool.id] = Boolean(status?.enabled)
-      } catch (err) {
-        customCliProxyStates[tool.id] = false
-      }
-    }
-
-    // 如果当前选中了工具，更新 'others' Tab 的代理状态并加载 providers
-    if (selectedToolId.value) {
-      proxyStates.others = customCliProxyStates[selectedToolId.value] ?? false
-      await loadCustomCliProviders(selectedToolId.value)
-    }
-  } catch (error) {
-    console.error('Failed to load custom CLI tools', error)
-    customCliTools.value = []
-  }
-}
-
-// 加载特定 CLI 工具的 providers
-const loadCustomCliProviders = async (toolId: string) => {
-  if (!toolId) return
-  try {
-    const kind = getCustomProviderKind(toolId)
-    const saved = await LoadProviders(kind)
-    if (Array.isArray(saved)) {
-      cards.others.splice(0, cards.others.length, ...createAutomationCards(saved as AutomationCard[]))
-      sortProvidersByLevel(cards.others)
-    } else {
-      // 如果没有保存的数据，清空列表
-      cards.others.splice(0, cards.others.length)
-    }
-  } catch (error) {
-    console.error(`Failed to load providers for tool ${toolId}`, error)
-    cards.others.splice(0, cards.others.length)
-  }
-}
-
-const refreshProxyState = async (tab: ProviderTab) => {
-  try {
-    if (tab === 'others') {
-      // 'others' Tab 的代理状态依赖于选中的 CLI 工具
-      if (selectedToolId.value) {
-        const status = await getCustomCliProxyStatus(selectedToolId.value)
-        customCliProxyStates[selectedToolId.value] = Boolean(status?.enabled)
-        proxyStates[tab] = Boolean(status?.enabled)
-      } else {
-        proxyStates[tab] = false
-      }
-    } else if (tab === 'gemini') {
-      const status = await fetchGeminiProxyStatus()
-      proxyStates[tab] = Boolean(status?.enabled)
-    } else if (tab === 'pi') {
-      const status = await Call.ByName('codeswitch/services.PiSettingsService.ProxyStatus')
-      proxyStates[tab] = Boolean(status?.enabled)
-    } else {
-      const status = await fetchProxyStatus(tab as 'claude' | 'codex' | 'reasonix')
-      proxyStates[tab] = Boolean(status?.enabled)
-    }
-  } catch (error) {
-    console.error(`Failed to fetch proxy status for ${tab}`, error)
-    proxyStates[tab] = false
-  }
-}
-
-const onProxyToggle = async () => {
-  const tab = activeTab.value
-  if (proxyBusy[tab]) return
-  proxyBusy[tab] = true
-  const nextState = !proxyStates[tab]
-  try {
-    if (tab === 'others') {
-      // 'others' Tab 需要选中工具才能切换代理
-      if (!selectedToolId.value) {
-        showToast(t('components.main.customCli.selectToolFirst'), 'error')
-        return
-      }
-      if (nextState) {
-        await enableCustomCliProxy(selectedToolId.value)
-      } else {
-        await disableCustomCliProxy(selectedToolId.value)
-      }
-      customCliProxyStates[selectedToolId.value] = nextState
-    } else if (tab === 'gemini') {
-      if (nextState) {
-        await enableGeminiProxy()
-      } else {
-        await disableGeminiProxy()
-      }
-    } else if (tab === 'pi') {
-      if (nextState) {
-        await Call.ByName('codeswitch/services.PiSettingsService.EnableProxy')
-      } else {
-        await Call.ByName('codeswitch/services.PiSettingsService.DisableProxy')
-      }
-    } else {
-      if (nextState) {
-        await enableProxy(tab as 'claude' | 'codex' | 'reasonix')
-      } else {
-        await disableProxy(tab as 'claude' | 'codex' | 'reasonix')
-      }
-    }
-    proxyStates[tab] = nextState
-  } catch (error) {
-    console.error(`Failed to toggle proxy for ${tab}`, error)
-  } finally {
-    proxyBusy[tab] = false
-  }
-}
-
-const loadProviderStats = async (tab: ProviderTab) => {
-  providerStatsLoading[tab] = true
-  try {
-    if (tab === 'others' && !selectedToolId.value) {
-      providerStatsMap[tab] = {}
-      providerStatsLoaded[tab] = true
-      return
-    }
-    const stats = await fetchProviderDailyStats(
-      tab === 'others' ? 'custom' : tab,
-      'today',
-      '',
-      tab === 'others' ? selectedToolId.value || '' : '',
-    )
-    const mapped: Record<string, ProviderDailyStat> = {}
-    ;(stats ?? []).forEach((stat) => {
-      mapped[normalizeProviderKey(stat.provider)] = stat
-    })
-    providerStatsMap[tab] = mapped
-    providerStatsLoaded[tab] = true
-  } catch (error) {
-    console.error(`Failed to load provider stats for ${tab}`, error)
-    if (!providerStatsLoaded[tab]) {
-      providerStatsLoaded[tab] = true
-    }
-  } finally {
-    providerStatsLoading[tab] = false
-  }
-}
-
-// 加载黑名单状态
-const loadBlacklistStatus = async (tab: ProviderTab) => {
-  // 'others' Tab 暂不加载黑名单状态
-  if (tab === 'others') {
-    return
-  }
-
-  try {
-    const statuses = await getBlacklistStatus(tab)
-    const map: Record<string, BlacklistStatus> = {}
-    statuses.forEach(status => {
-      map[status.providerName] = status
-    })
-    blacklistStatusMap[tab] = map
-  } catch (err) {
-    console.error(`加载 ${tab} 黑名单状态失败:`, err)
-  }
-}
-
-// 手动解禁并重置（完全重置）
-const handleUnblockAndReset = async (providerName: string) => {
-  try {
-    await Call.ByName('codeswitch/services.BlacklistService.ManualUnblockAndReset', activeTab.value, providerName)
-    showToast(t('components.main.blacklist.unblockSuccess', { name: providerName }), 'success')
-    await loadBlacklistStatus(activeTab.value)
-  } catch (err) {
-    console.error('解除拉黑失败:', err)
-    showToast(t('components.main.blacklist.unblockFailed'), 'error')
-  }
-}
-
-// 手动清零等级（仅重置等级）
-const handleResetLevel = async (providerName: string) => {
-  try {
-    await Call.ByName('codeswitch/services.BlacklistService.ManualResetLevel', activeTab.value, providerName)
-    showToast(t('components.main.blacklist.resetLevelSuccess', { name: providerName }), 'success')
-    await loadBlacklistStatus(activeTab.value)
-  } catch (err) {
-    console.error('清零等级失败:', err)
-    showToast(t('components.main.blacklist.resetLevelFailed'), 'error')
-  }
-}
-
-// 手动解禁（向后兼容，调用 handleUnblockAndReset）
-const handleUnblock = handleUnblockAndReset
-
-// 格式化倒计时
-const formatBlacklistCountdown = (remainingSeconds: number): string => {
-  const minutes = Math.floor(remainingSeconds / 60)
-  const seconds = remainingSeconds % 60
-  return `${minutes}${t('components.main.blacklist.minutes')}${seconds}${t('components.main.blacklist.seconds')}`
-}
-
-// 获取 provider 黑名单状态
-const getProviderBlacklistStatus = (providerName: string): BlacklistStatus | null => {
-  return blacklistStatusMap[activeTab.value][providerName] || null
-}
-
-// 刷新所有数据
 const refreshing = ref(false)
 const refreshAllData = async () => {
   if (refreshing.value) return
@@ -2057,1430 +1357,27 @@ const refreshAllData = async () => {
   }
 }
 
-type ProviderStatDisplay =
-  | { state: 'loading' | 'empty'; message: string }
-  | {
-      state: 'ready'
-      requests: string
-      tokens: string
-      cost: string
-      successRateLabel: string
-      successRateClass: string
-    }
-
-const SUCCESS_RATE_THRESHOLDS = {
-  healthy: 0.95,
-  warning: 0.8,
-} as const
-
-const formatSuccessRateLabel = (value: number) => {
-  const percent = clamp(value, 0, 1) * 100
-  const decimals = percent >= 99.5 || percent === 0 ? 0 : 1
-  return `${t('components.main.providers.successRate')}: ${percent.toFixed(decimals)}%`
-}
-
-const successRateClassName = (value: number) => {
-  const rate = clamp(value, 0, 1)
-  if (rate >= SUCCESS_RATE_THRESHOLDS.healthy) {
-    return 'success-good'
-  }
-  if (rate >= SUCCESS_RATE_THRESHOLDS.warning) {
-    return 'success-warn'
-  }
-  return 'success-bad'
-}
-
-const providerStatDisplay = (providerName: string): ProviderStatDisplay => {
-  const tab = activeTab.value
-  if (!providerStatsLoaded[tab]) {
-    return { state: 'loading', message: t('components.main.providers.loading') }
-  }
-  const stat = providerStatsMap[tab]?.[normalizeProviderKey(providerName)]
-  if (!stat) {
-    return { state: 'empty', message: t('components.main.providers.noData') }
-  }
-  const totalTokens = stat.input_tokens + stat.output_tokens
-  const successRateValue = Number.isFinite(stat.success_rate) ? clamp(stat.success_rate, 0, 1) : null
-  const successRateLabel = successRateValue !== null ? formatSuccessRateLabel(successRateValue) : ''
-  const successRateClass = successRateValue !== null ? successRateClassName(successRateValue) : ''
-  return {
-    state: 'ready',
-    requests: `${t('components.main.providers.requests')}: ${formatMetric(stat.total_requests)}`,
-    tokens: `${t('components.main.providers.tokens')}: ${formatTokenNumber(totalTokens)}`,
-    cost: `${t('components.main.providers.cost')}: ${currencyFormatter.value.format(Math.max(stat.cost_total, 0))}`,
-    successRateLabel,
-    successRateClass,
-  }
-}
-
-const normalizeUrlWithScheme = (value: string) => {
-  if (!value) return ''
-  try {
-    const url = new URL(value)
-    return url.toString()
-  } catch {
-    return `https://${value}`
-  }
-}
-
-const openOfficialSite = (site: string) => {
-  const target = normalizeUrlWithScheme(site)
-  if (!target) return
-  Browser.OpenURL(target).catch(() => {
-    console.error('failed to open link', target)
-  })
-}
-
-const formatOfficialSite = (site: string) => {
-  if (!site) return ''
-  try {
-    const url = new URL(normalizeUrlWithScheme(site))
-    return url.hostname.replace(/^www\./, '')
-  } catch {
-    return site
-  }
-}
-
-const startProviderStatsTimer = () => {
-  stopProviderStatsTimer()
-  providerStatsTimer = window.setInterval(() => {
-	if (!mainPollingActive || document.hidden) return
-	void loadProviderStats(activeTab.value)
-  }, 60_000)
-}
-
-const stopProviderStatsTimer = () => {
-  if (providerStatsTimer) {
-    clearInterval(providerStatsTimer)
-    providerStatsTimer = undefined
-  }
-}
-
-// 加载最后使用的供应商
-// @author sm
-const loadLastUsedProviders = async () => {
-  try {
-    const result = await Call.ByName('codeswitch/services.ProviderRelayService.GetAllLastUsedProviders')
-    if (result) {
-      Object.keys(result).forEach(platform => {
-        if (result[platform]) {
-          lastUsedProviders[platform] = result[platform]
-        }
-      })
-    }
-  } catch (err) {
-    console.error('加载最后使用的供应商失败:', err)
-  }
-}
-
-// 切换到指定平台的 Tab 并高亮供应商
-// @author sm
-const switchToTabAndHighlight = (platform: string, providerName: string) => {
-  if (platform === 'pi') {
-    lastUsedProviders[platform] = {
-      platform,
-      provider_name: providerName,
-      updated_at: Date.now(),
-    }
-    void router.push('/pi')
-    return
-  }
-  // 切换到对应的 Tab
-  const tabIndex = tabs.findIndex(tab => tab.id === platform)
-  if (tabIndex >= 0 && selectedIndex.value !== tabIndex) {
-    selectedIndex.value = tabIndex
-  }
-
-  // 更新最后使用的供应商
-  lastUsedProviders[platform] = {
-    platform,
-    provider_name: providerName,
-    updated_at: Date.now(),
-  }
-
-  // 高亮闪烁供应商卡片
-  highlightedProvider.value = providerName
-
-  // 清除之前的高亮计时器
-  if (highlightTimer) {
-    clearTimeout(highlightTimer)
-  }
-
-  // 3 秒后取消高亮
-  highlightTimer = window.setTimeout(() => {
-    highlightedProvider.value = null
-  }, 3000)
-
-  // 刷新黑名单状态
-  void loadBlacklistStatus(platform as ProviderTab)
-}
-
-// 处理供应商切换事件
-// @author sm
-const handleProviderSwitched = (event: { data: { platform: string; toProvider: string } }) => {
-  const { platform, toProvider } = event.data
-  console.log('[Event] provider:switched', platform, toProvider)
-  switchToTabAndHighlight(platform, toProvider)
-}
-
-// 处理供应商拉黑事件
-// @author sm
-const handleProviderBlacklisted = (event: { data: { platform: string; providerName: string } }) => {
-  const { platform, providerName } = event.data
-  console.log('[Event] provider:blacklisted', platform, providerName)
-  switchToTabAndHighlight(platform, providerName)
-}
-
-// 判断供应商是否是最后使用的
-// @author sm
-const isLastUsedProvider = (providerName: string): boolean => {
-  const lastUsed = lastUsedProviders[activeTab.value]
-  return lastUsed?.provider_name === providerName
-}
-
-// 滚动到指定卡片
-// @author sm
-const scrollToCard = (el: HTMLElement | null) => {
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
-}
-
-// 事件取消订阅函数
-let unsubscribeSwitched: (() => void) | undefined
-let unsubscribeBlacklisted: (() => void) | undefined
+// ---------- 生命周期 ----------
 
 onMounted(async () => {
-  window.addEventListener('keydown', handlePlatformOrderMenuKeydown)
-  window.addEventListener('resize', closePlatformOrderMenu)
   void initHeatmap()
   await loadProvidersFromDisk()
   await Promise.all(providerTabIds.map(refreshProxyState))
   await Promise.all(providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)))
   await loadProviderStats(activeTab.value)
   await loadAppSettings()
-  await loadAppVersion()
-
-  // 加载初始黑名单状态
   await Promise.all(providerTabIds.map((tab) => loadBlacklistStatus(tab)))
 
-  // 每秒更新黑名单倒计时
-  blacklistTimer = window.setInterval(() => {
-	if (!mainPollingActive || document.hidden) return
-    const tab = activeTab.value
-    Object.keys(blacklistStatusMap[tab]).forEach(providerName => {
-      const status = blacklistStatusMap[tab][providerName]
-      if (status && status.isBlacklisted && status.remainingSeconds > 0) {
-        status.remainingSeconds--
-        if (status.remainingSeconds <= 0) {
-          loadBlacklistStatus(tab)
-        }
-      }
-    })
-  }, 1000)
-
-  // 窗口焦点事件：从最小化恢复时立即刷新黑名单状态
-  const handleWindowFocus = () => {
-	if (!mainPollingActive || document.hidden) return
-    void loadBlacklistStatus(activeTab.value)
-  }
-  window.addEventListener('focus', handleWindowFocus)
-
-  // 定期轮询黑名单状态（每 10 秒）
-  const blacklistPollingTimer = window.setInterval(() => {
-	if (!mainPollingActive || document.hidden) return
-    void loadBlacklistStatus(activeTab.value)
-  }, 10_000)
-
-  // 存储定时器 ID 以便清理
-  ;(window as any).__blacklistPollingTimer = blacklistPollingTimer
-  ;(window as any).__handleWindowFocus = handleWindowFocus
-
   window.addEventListener('app-settings-updated', handleAppSettingsUpdated)
-
-  // 监听导入等外部流程触发的 Provider 更新事件
-  const handleProvidersUpdated = () => {
-    void loadProvidersFromDisk()
-  }
   window.addEventListener('providers-updated', handleProvidersUpdated)
-  ;(window as any).__handleProvidersUpdated = handleProvidersUpdated
-
-  // 加载最后使用的供应商
-  await loadLastUsedProviders()
-
-  // 监听供应商切换和拉黑事件
-  unsubscribeSwitched = Events.On('provider:switched', handleProviderSwitched as Events.Callback)
-  unsubscribeBlacklisted = Events.On('provider:blacklisted', handleProviderBlacklisted as Events.Callback)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handlePlatformOrderMenuKeydown)
-  window.removeEventListener('resize', closePlatformOrderMenu)
   cleanupHeatmap()
   stopProviderStatsTimer()
   window.removeEventListener('app-settings-updated', handleAppSettingsUpdated)
-
-  // 清理黑名单相关定时器和事件监听
-  if (blacklistTimer) {
-    window.clearInterval(blacklistTimer)
-  }
-  if ((window as any).__blacklistPollingTimer) {
-    window.clearInterval((window as any).__blacklistPollingTimer)
-  }
-  if ((window as any).__handleWindowFocus) {
-    window.removeEventListener('focus', (window as any).__handleWindowFocus)
-  }
-  if ((window as any).__handleProvidersUpdated) {
-    window.removeEventListener('providers-updated', (window as any).__handleProvidersUpdated)
-  }
-
-  // 清理高亮计时器
-  if (highlightTimer) {
-    clearTimeout(highlightTimer)
-  }
-
-  // 取消事件订阅
-  if (unsubscribeSwitched) {
-    unsubscribeSwitched()
-  }
-  if (unsubscribeBlacklisted) {
-    unsubscribeBlacklisted()
-  }
+  window.removeEventListener('providers-updated', handleProvidersUpdated)
 })
-
-const selectedIndex = ref(0)
-const activeTab = computed<ProviderTab>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
-const activeCards = computed(() => cards[activeTab.value] ?? [])
-
-// 连通性测试状态
-const testingConnectivity = ref(false)
-const connectivityTestResult = ref<{ success: boolean; message: string } | null>(null)
-
-// 获取平台默认端点
-const getDefaultEndpoint = (platform: string) => {
-  const defaults: Record<string, string> = {
-    claude: '/v1/messages',
-    codex: '/responses',
-    reasonix: '/chat/completions',
-    pi: '/v1/chat/completions',
-  }
-  return defaults[platform] || '/v1/chat/completions'
-}
-
-// 获取平台默认认证方式
-const getDefaultAuthType = (_platform: string) => 'bearer'
-
-useActivePolling(() => {
-	mainPollingActive = true
-	startProviderStatsTimer()
-}, () => {
-	mainPollingActive = false
-	stopProviderStatsTimer()
-})
-
-const getEffectiveConnectivityEndpoint = (platform: string) => {
-  return modalState.form.apiEndpoint?.trim() || getDefaultEndpoint(platform)
-}
-
-// 手动测试连通性
-const handleTestConnectivity = async () => {
-  testingConnectivity.value = true
-  connectivityTestResult.value = null
-
-  try {
-    const platform = modalState.tabId
-    const result = await Call.ByName(
-      'codeswitch/services.ConnectivityTestService.TestProviderManual',
-      platform,
-      modalState.form.apiUrl,
-      modalState.form.apiKey,
-      getEffectiveConnectivityEndpoint(platform),
-      resolveEffectiveAuthType(),
-      !!modalState.form.proxyEnabled
-    )
-
-    connectivityTestResult.value = {
-      success: result.success,
-      message: result.message || (
-        result.success
-          ? t('components.main.form.connectivity.success', { latency: result.latencyMs })
-          : t('components.main.form.connectivity.failed')
-      )
-    }
-  } catch (error) {
-    connectivityTestResult.value = {
-      success: false,
-      message: t('components.main.form.connectivity.error', { error: extractErrorMessage(error) })
-    }
-  } finally {
-    testingConnectivity.value = false
-  }
-}
-
-// 监听 tab 切换，立即刷新黑名单状态
-watch(activeTab, (newTab) => {
-	if (!mainPollingActive || document.hidden) return
-	void loadProviderStats(newTab)
-  void loadBlacklistStatus(newTab)
-})
-const currentProxyLabel = computed(() => {
-  const tab = activeTab.value
-  if (tab === 'claude') {
-    return t('components.main.relayToggle.hostClaude')
-  } else if (tab === 'codex') {
-    return t('components.main.relayToggle.hostCodex')
-  } else if (tab === 'gemini') {
-    return t('components.main.relayToggle.hostGemini')
-  } else if (tab === 'reasonix') {
-    return t('components.main.relayToggle.hostReasonix')
-  } else if (tab === 'pi') {
-    return t('components.main.relayToggle.hostPi')
-  } else if (tab === 'others') {
-    // 显示选中的工具名称
-    const tool = customCliTools.value.find(t => t.id === selectedToolId.value)
-    return tool?.name || t('components.main.relayToggle.hostOthers')
-  }
-  return t('components.main.relayToggle.hostCodex')
-})
-const activeProxyState = computed(() => proxyStates[activeTab.value])
-const activeProxyBusy = computed(() => proxyBusy[activeTab.value])
-
-const goToLogs = () => {
-  router.push('/logs')
-}
-
-const goToMcp = () => {
-  router.push('/mcp')
-}
-
-const goToSkill = () => {
-  router.push('/skill')
-}
-
-const goToSettings = () => {
-  router.push('/settings')
-}
-
-const toggleTheme = () => {
-  const next = resolvedTheme.value === 'dark' ? 'light' : 'dark'
-  themeMode.value = next
-  setTheme(next)
-}
-
-const handleGithubClick = () => {
-  Browser.OpenURL(projectGithubUrl).catch(() => {
-    console.error('failed to open github')
-  })
-}
-
-// 获取 GitHub 图标的 tooltip
-const getGithubTooltip = () => {
-  return t('components.main.controls.github')
-}
-
-type VendorForm = {
-  name: string
-  apiUrl: string
-  apiKey: string
-  officialSite: string
-  icon: string
-  enabled: boolean
-  proxyEnabled?: boolean
-  supportedModels?: Record<string, boolean>
-  modelMapping?: Record<string, string>
-  level?: number
-  apiEndpoint?: string
-  cliConfig?: Record<string, any>
-  connectivityAuthType?: string
-  authScheme?: string
-  authHeader?: string
-  headers?: Record<string, string>
-  userAgentPreset?: string
-  customUserAgent?: string
-  modelsEndpoint?: string
-  piModels?: PiModelDefinition[]
-  piModelOverrides?: Record<string, PiModelOverride>
-  metadataUserId?: string
-  // 上游协议类型
-  upstreamProtocol?: string
-  codexReasoningContinueEnabled?: boolean
-  codexReasoningContinueLogEnabled?: boolean
-}
-
-const iconOptions = lobeIconKeys
-const defaultIconKey = iconOptions[0] ?? 'aicoding'
-
-// 图标搜索筛选
-const iconSearchQuery = ref('')
-const filteredIconOptions = computed(() => {
-  const query = iconSearchQuery.value.toLowerCase().trim()
-  if (!query) return iconOptions
-  return iconOptions.filter(name => name.toLowerCase().includes(query))
-})
-
-const defaultFormValues = (platform?: string): VendorForm => ({
-  name: '',
-  apiUrl: '',
-  apiKey: '',
-  officialSite: '',
-  icon: defaultIconKey,
-  level: 1,
-  enabled: true,
-  proxyEnabled: false,
-  supportedModels: {},
-  modelMapping: {},
-  cliConfig: {},
-  apiEndpoint: '', // API 端点（可选）
-  upstreamProtocol: 'auto', // 上游协议类型（anthropic/openai_chat/auto）
-  codexReasoningContinueEnabled: false,
-  codexReasoningContinueLogEnabled: true,
-  connectivityAuthType: '',
-  authScheme: '',
-  authHeader: '',
-  headers: {},
-  userAgentPreset: 'inherit',
-  customUserAgent: '',
-  modelsEndpoint: '',
-  piModels: [],
-  piModelOverrides: {},
-  metadataUserId: '',
-})
-
-// Level 描述文本映射（1-10）
-const getLevelDescription = (level: number) => {
-  const descriptions: Record<number, string> = {
-    1: t('components.main.levelDesc.highest'),
-    2: t('components.main.levelDesc.high'),
-    3: t('components.main.levelDesc.mediumHigh'),
-    4: t('components.main.levelDesc.medium'),
-    5: t('components.main.levelDesc.normal'),
-    6: t('components.main.levelDesc.mediumLow'),
-    7: t('components.main.levelDesc.low'),
-    8: t('components.main.levelDesc.lower'),
-    9: t('components.main.levelDesc.veryLow'),
-    10: t('components.main.levelDesc.lowest'),
-  }
-  return descriptions[level] || t('components.main.levelDesc.normal')
-}
-
-// 归一化 level：空/非法视为 1（最高优先级），范围限制 1-10
-const normalizeLevel = (level: number | string | undefined): number => {
-  const num = Number(level)
-  if (!Number.isFinite(num) || num < 1) return 1
-  if (num > 10) return 10
-  return Math.floor(num)  // 确保返回整数
-}
-
-// 按 enabled 和 level 排序：启用的排在前面，同启用状态下按 level 升序排序
-const sortProvidersByLevel = (list: AutomationCard[]) => {
-  if (!Array.isArray(list)) return
-  list.sort((a, b) => {
-    // 第一优先级：启用状态（enabled: true 排在前面）
-    if (a.enabled !== b.enabled) {
-      return a.enabled ? -1 : 1
-    }
-    // 第二优先级：Level 升序（1 -> 10）
-    return normalizeLevel(a.level) - normalizeLevel(b.level)
-  })
-}
-
-const modalState = reactive({
-  open: false,
-  tabId: tabs[0].id as ProviderTab,
-  editingId: null as number | null,
-  form: defaultFormValues(),
-  errors: {
-    apiUrl: '',
-  },
-})
-const piModelsValid = ref(true)
-const piHeadersValid = ref(true)
-const piPreviewJson = ref('')
-const piPreviewCurrentModelIds = ref<string[]>([])
-const piPreviewDiagnostics = ref<PiConfigDiagnostic[]>([])
-const piPreviewLoading = ref(false)
-const piPreviewError = ref('')
-let piPreviewTimer: number | undefined
-let piPreviewRequest = 0
-
-// 认证方式相关状态
-const selectedAuthType = ref<string>('bearer')
-const customAuthHeader = ref<string>('')
-const authTypeOptions = computed(() => [
-  { value: 'bearer', label: 'Bearer' },
-  { value: 'x-api-key', label: 'X-API-Key' },
-  { value: 'none', label: t('components.main.form.auth.none') },
-])
-const userAgentOptions = computed(() => [
-  { value: 'inherit', label: t('components.main.form.userAgent.inherit') },
-  { value: 'code-switch-r', label: 'code-switch-R' },
-  { value: 'pi-openai-sdk', label: 'Pi / OpenAI SDK' },
-  { value: 'pi-anthropic-sdk', label: 'Pi / Anthropic SDK' },
-  { value: 'claude-code', label: 'Claude Code' },
-  { value: 'codex-cli', label: 'Codex CLI' },
-  { value: 'gemini-cli', label: 'Gemini CLI' },
-  { value: 'custom', label: t('components.main.form.userAgent.custom') },
-])
-
-// 上游协议类型选项
-const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'pi', 'others'])
-const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
-const isCodexChatProtocol = computed(() =>
-  modalState.tabId === 'codex' && modalState.form.upstreamProtocol === 'openai_chat'
-)
-type UpstreamProtocolOption = {
-  value: string
-  label: string
-  desc: string
-  disabled?: boolean
-}
-
-const upstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => [
-  { value: 'auto', label: t('components.main.form.upstreamProtocol.auto'), desc: t('components.main.form.upstreamProtocol.autoDesc') },
-  { value: 'anthropic', label: t('components.main.form.upstreamProtocol.anthropic'), desc: t('components.main.form.upstreamProtocol.anthropicDesc') },
-  { value: 'openai_chat', label: t('components.main.form.upstreamProtocol.openaiChat'), desc: t('components.main.form.upstreamProtocol.openaiChatDesc') },
-  { value: 'openai_responses', label: t('components.main.form.upstreamProtocol.openaiResponses'), desc: t('components.main.form.upstreamProtocol.openaiResponsesDesc') },
-])
-const effectiveUpstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => {
-  if (modalState.tabId !== 'codex') return upstreamProtocolOptions.value
-  return [
-    {
-      value: 'auto',
-      label: t('components.main.form.upstreamProtocol.codexResponses'),
-      desc: t('components.main.form.upstreamProtocol.codexResponsesDesc'),
-    },
-    {
-      value: 'openai_responses',
-      label: t('components.main.form.upstreamProtocol.codexResponses'),
-      desc: t('components.main.form.upstreamProtocol.codexResponsesDesc'),
-    },
-    {
-      value: 'openai_chat',
-      label: t('components.main.form.upstreamProtocol.openaiChat'),
-      desc: t('components.main.form.upstreamProtocol.codexOpenAIChatDesc'),
-    },
-  ]
-})
-const upstreamProtocolHint = computed(() =>
-  modalState.tabId === 'codex'
-    ? t('components.main.form.hints.upstreamProtocolCodex')
-    : t('components.main.form.hints.upstreamProtocol')
-)
-
-const resolveEffectiveAuthType = () =>
-  customAuthHeader.value.trim() || selectedAuthType.value || getDefaultAuthType(modalState.tabId)
-
-const resolveAuthScheme = () => customAuthHeader.value.trim() ? 'custom' : selectedAuthType.value
-
-const modelDiscoveryProvider = computed(() => ({
-  apiUrl: modalState.form.apiUrl,
-  apiKey: modalState.form.apiKey,
-  apiEndpoint: modalState.form.apiEndpoint,
-  upstreamProtocol: modalState.form.upstreamProtocol,
-  authScheme: resolveAuthScheme(),
-  authHeader: customAuthHeader.value.trim(),
-  headers: modalState.form.headers,
-  userAgentPreset: modalState.form.userAgentPreset,
-  customUserAgent: modalState.form.customUserAgent,
-  modelsEndpoint: modalState.form.modelsEndpoint,
-  proxyEnabled: !!modalState.form.proxyEnabled,
-}))
-
-const piMetadataAllowed = computed(() => {
-  const protocol = modalState.form.upstreamProtocol || 'auto'
-  if (protocol === 'anthropic') return true
-  if (protocol !== 'auto') return false
-  const endpoint = (modalState.form.apiEndpoint || '/v1/chat/completions').toLowerCase()
-  return !endpoint.includes('/chat/completions') && !endpoint.includes('/responses')
-})
-
-const piFormValid = computed(() =>
-  piModelsValid.value &&
-  piHeadersValid.value &&
-  !piPreviewLoading.value &&
-  !piPreviewError.value &&
-  !piPreviewDiagnostics.value.some((diagnostic) => diagnostic.severity === 'error'),
-)
-
-const resolveSubmittedUpstreamProtocol = () =>
-  showUpstreamProtocolField.value ? modalState.form.upstreamProtocol || 'auto' : 'auto'
-
-const editingCard = ref<AutomationCard | null>(null)
-const confirmState = reactive({ open: false, card: null as AutomationCard | null, tabId: tabs[0].id as ProviderTab })
-
-const buildPiPreviewProvider = (): AutomationCard => ({
-  ...(editingCard.value || {} as AutomationCard),
-  id: modalState.editingId ?? -1,
-  name: modalState.form.name,
-  apiUrl: modalState.form.apiUrl,
-  apiKey: modalState.form.apiKey,
-  officialSite: modalState.form.officialSite,
-  icon: modalState.form.icon,
-  tint: editingCard.value?.tint || 'rgba(15, 23, 42, 0.12)',
-  accent: editingCard.value?.accent || '#0a84ff',
-  enabled: modalState.form.enabled,
-  proxyEnabled: !!modalState.form.proxyEnabled,
-  supportedModels: { ...(modalState.form.supportedModels || {}) },
-  modelMapping: { ...(modalState.form.modelMapping || {}) },
-  level: normalizeLevel(modalState.form.level),
-  apiEndpoint: modalState.form.apiEndpoint || '',
-  upstreamProtocol: resolveSubmittedUpstreamProtocol(),
-  connectivityAuthType: resolveEffectiveAuthType(),
-  authScheme: resolveAuthScheme(),
-  authHeader: customAuthHeader.value.trim(),
-  headers: { ...(modalState.form.headers || {}) },
-  userAgentPreset: modalState.form.userAgentPreset || 'inherit',
-  customUserAgent: modalState.form.customUserAgent || '',
-  modelsEndpoint: modalState.form.modelsEndpoint || '',
-  piModels: JSON.parse(JSON.stringify(modalState.form.piModels || [])),
-  piModelOverrides: JSON.parse(JSON.stringify(modalState.form.piModelOverrides || {})),
-  metadataUserId: modalState.form.metadataUserId || '',
-})
-
-const buildPiPreviewProviders = () => {
-  const draft = buildPiPreviewProvider()
-  if (modalState.editingId === null) return serializeProviders([...cards.pi, draft])
-  return serializeProviders(cards.pi.map((provider) => provider.id === modalState.editingId ? draft : provider))
-}
-
-const refreshPiPreview = async () => {
-  if (!modalState.open || modalState.tabId !== 'pi') return
-  const request = ++piPreviewRequest
-  piPreviewLoading.value = true
-  piPreviewError.value = ''
-  try {
-    const result = await PreviewModelsJSON({
-      providers: buildPiPreviewProviders(),
-      currentProviderId: modalState.editingId ?? -1,
-    })
-    if (request !== piPreviewRequest) return
-    piPreviewJson.value = result.json || ''
-    piPreviewCurrentModelIds.value = result.currentModelIds || []
-    piPreviewDiagnostics.value = result.diagnostics || []
-  } catch (error) {
-    if (request !== piPreviewRequest) return
-    piPreviewError.value = extractErrorMessage(error)
-    piPreviewCurrentModelIds.value = []
-    piPreviewDiagnostics.value = []
-  } finally {
-    if (request === piPreviewRequest) piPreviewLoading.value = false
-  }
-}
-
-watch(
-  () => modalState.open && modalState.tabId === 'pi'
-    ? JSON.stringify({ form: modalState.form, providers: cards.pi, authHeader: customAuthHeader.value })
-    : '',
-  (snapshot) => {
-    if (piPreviewTimer) window.clearTimeout(piPreviewTimer)
-    if (!snapshot) {
-      piPreviewRequest++
-      piPreviewLoading.value = false
-      piPreviewError.value = ''
-      piPreviewJson.value = ''
-      piPreviewCurrentModelIds.value = []
-      piPreviewDiagnostics.value = []
-      return
-    }
-    piPreviewTimer = window.setTimeout(refreshPiPreview, 200)
-  },
-  { flush: 'post' },
-)
-
-onUnmounted(() => {
-  if (piPreviewTimer) window.clearTimeout(piPreviewTimer)
-})
-
-const openCreateModal = () => {
-  modalState.tabId = activeTab.value
-  modalState.editingId = null
-  editingCard.value = null
-  Object.assign(modalState.form, defaultFormValues(activeTab.value))
-  // 初始化认证方式为平台默认
-  selectedAuthType.value = getDefaultAuthType(activeTab.value)
-  customAuthHeader.value = ''
-  piModelsValid.value = true
-  piHeadersValid.value = true
-  connectivityTestResult.value = null
-  modalState.errors.apiUrl = ''
-  modalState.open = true
-}
-
-const openEditModal = (card: AutomationCard) => {
-  modalState.tabId = activeTab.value
-  modalState.editingId = card.id
-  editingCard.value = card
-  Object.assign(modalState.form, {
-    name: card.name,
-    apiUrl: card.apiUrl,
-    apiKey: card.apiKey,
-    officialSite: card.officialSite,
-    icon: card.icon,
-    level: card.level || 1,
-    enabled: card.enabled,
-    proxyEnabled: !!card.proxyEnabled,
-    supportedModels: card.supportedModels || {},
-    modelMapping: card.modelMapping || {},
-    cliConfig: card.cliConfig || {},
-    apiEndpoint: card.apiEndpoint || '',
-    upstreamProtocol: card.upstreamProtocol || 'auto',
-    codexReasoningContinueEnabled: !!card.codexReasoningContinueEnabled,
-    codexReasoningContinueLogEnabled:
-      card.codexReasoningContinueLogEnabled ?? true,
-    connectivityAuthType: card.connectivityAuthType || '',
-    authScheme: card.authScheme || '',
-    authHeader: card.authHeader || '',
-    headers: { ...(card.headers || {}) },
-    userAgentPreset: card.userAgentPreset || 'inherit',
-    customUserAgent: card.customUserAgent || '',
-    modelsEndpoint: card.modelsEndpoint || '',
-    piModels: JSON.parse(JSON.stringify(card.piModels || [])),
-    piModelOverrides: JSON.parse(JSON.stringify(card.piModelOverrides || {})),
-    metadataUserId: card.metadataUserId || '',
-  })
-  // 初始化认证方式状态
-  const storedAuth = (card.authScheme || card.connectivityAuthType || '').trim()
-  const lower = storedAuth.toLowerCase()
-  if (!storedAuth) {
-    selectedAuthType.value = getDefaultAuthType(activeTab.value)
-    customAuthHeader.value = ''
-  } else if (lower === 'bearer' || lower === 'x-api-key' || lower === 'none') {
-    selectedAuthType.value = lower
-    customAuthHeader.value = ''
-  } else if (lower === 'custom') {
-    selectedAuthType.value = getDefaultAuthType(activeTab.value)
-    customAuthHeader.value = (card.authHeader || '').trim()
-  } else {
-    // 自定义 Header 名
-    selectedAuthType.value = getDefaultAuthType(activeTab.value)
-    customAuthHeader.value = storedAuth
-  }
-  connectivityTestResult.value = null
-  piModelsValid.value = true
-  piHeadersValid.value = true
-  modalState.errors.apiUrl = ''
-  modalState.open = true
-}
-
-const closeModal = () => {
-  modalState.open = false
-}
-
-const closeConfirm = () => {
-  confirmState.open = false
-  confirmState.card = null
-}
-
-const submitModal = async (): Promise<boolean> => {
-  const list = cards[modalState.tabId]
-  if (!list) return false
-  const name = modalState.form.name.trim()
-  const apiUrl = modalState.form.apiUrl.trim()
-  const apiKey = modalState.form.apiKey.trim()
-  const officialSite = modalState.form.officialSite.trim()
-  const icon = (modalState.form.icon || defaultIconKey).toString().trim().toLowerCase() || defaultIconKey
-  if (modalState.tabId === 'pi' && !piFormValid.value) {
-    showToast(t('components.provider.piPreview.fixBeforeSave'), 'error')
-    return false
-  }
-  modalState.errors.apiUrl = ''
-  try {
-    const parsed = new URL(apiUrl)
-    if (!/^https?:/.test(parsed.protocol)) throw new Error('protocol')
-  } catch {
-    modalState.errors.apiUrl = t('components.main.form.errors.invalidUrl')
-    return false
-  }
-  const submittedUpstreamProtocol = resolveSubmittedUpstreamProtocol()
-  if (modalState.tabId === 'pi' && name.includes('/')) {
-    showToast(t('components.main.form.errors.piProviderName'), 'error')
-    return false
-  }
-
-  if (editingCard.value) {
-    // 若 name 发生变化,先走独立 RenameProvider RPC(后端事务改名 request_log/blacklist/health_check_history 并写 48h alias)。
-    // Gemini 不走此路径(它的 persistProviders 通过 delete+add 处理改名)。
-    if (name && name !== editingCard.value.name && modalState.tabId !== 'gemini') {
-      // others tab 需要 custom:{toolId} 格式，与 persistProviders 逻辑保持一致
-      let renameKind: string
-      if (modalState.tabId === 'others') {
-        if (!selectedToolId.value) {
-          showToast(t('components.main.customCli.selectToolFirst'), 'error')
-          return false
-        }
-        renameKind = getCustomProviderKind(selectedToolId.value)
-      } else {
-        renameKind = modalState.tabId
-      }
-      try {
-        await RenameProvider(renameKind, editingCard.value.id, name)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        showToast(msg || 'Rename failed', 'error')
-        return false
-      }
-    }
-
-    // 仅当 level 变化时才重新排序，避免破坏同级拖拽顺序
-    const prevLevel = normalizeLevel(editingCard.value.level)
-    const nextLevel = normalizeLevel(modalState.form.level)
-    Object.assign(editingCard.value, {
-      name: name || editingCard.value.name,
-      apiUrl: apiUrl || editingCard.value.apiUrl,
-      apiKey,
-      officialSite,
-      icon,
-      level: nextLevel,
-      enabled: modalState.form.enabled,
-      proxyEnabled: !!modalState.form.proxyEnabled,
-      supportedModels: modalState.form.supportedModels || {},
-      modelMapping: modalState.form.modelMapping || {},
-      cliConfig: modalState.form.cliConfig || {},
-      apiEndpoint: modalState.form.apiEndpoint || '',
-      upstreamProtocol: submittedUpstreamProtocol,
-      codexReasoningContinueEnabled:
-        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-          ? !!modalState.form.codexReasoningContinueEnabled
-          : false,
-      codexReasoningContinueLogEnabled:
-        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-          ? !!modalState.form.codexReasoningContinueLogEnabled
-          : false,
-      connectivityAuthType: resolveEffectiveAuthType(),
-      authScheme: resolveAuthScheme(),
-      authHeader: customAuthHeader.value.trim(),
-      headers: { ...(modalState.form.headers || {}) },
-      userAgentPreset: modalState.form.userAgentPreset || 'inherit',
-      customUserAgent: modalState.form.customUserAgent || '',
-      modelsEndpoint: modalState.form.modelsEndpoint || '',
-      piModels: JSON.parse(JSON.stringify(modalState.form.piModels || [])),
-      piModelOverrides: JSON.parse(JSON.stringify(modalState.form.piModelOverrides || {})),
-      metadataUserId: modalState.form.metadataUserId?.trim() || '',
-    })
-    if (prevLevel !== nextLevel) {
-      sortProvidersByLevel(list)
-    }
-    const saveResult = await persistProviders(modalState.tabId)
-    if (!saveResult.ok) {
-      // 保存失败，不关闭弹窗，让用户修正配置
-      return false
-    }
-  } else {
-    const newCard: AutomationCard = {
-      id: Date.now(),
-      name: name || 'Untitled vendor',
-      apiUrl,
-      apiKey,
-      officialSite,
-      icon,
-      accent: '#0a84ff',
-      tint: 'rgba(15, 23, 42, 0.12)',
-      level: normalizeLevel(modalState.form.level),
-      enabled: modalState.form.enabled,
-      proxyEnabled: !!modalState.form.proxyEnabled,
-      supportedModels: modalState.form.supportedModels || {},
-      modelMapping: modalState.form.modelMapping || {},
-      cliConfig: modalState.form.cliConfig || {},
-      apiEndpoint: modalState.form.apiEndpoint || '',
-      upstreamProtocol: submittedUpstreamProtocol,
-      codexReasoningContinueEnabled:
-        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-          ? !!modalState.form.codexReasoningContinueEnabled
-          : false,
-      codexReasoningContinueLogEnabled:
-        modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-          ? !!modalState.form.codexReasoningContinueLogEnabled
-          : false,
-      connectivityAuthType: resolveEffectiveAuthType(),
-      authScheme: resolveAuthScheme(),
-      authHeader: customAuthHeader.value.trim(),
-      headers: { ...(modalState.form.headers || {}) },
-      userAgentPreset: modalState.form.userAgentPreset || 'inherit',
-      customUserAgent: modalState.form.customUserAgent || '',
-      modelsEndpoint: modalState.form.modelsEndpoint || '',
-      piModels: JSON.parse(JSON.stringify(modalState.form.piModels || [])),
-      piModelOverrides: JSON.parse(JSON.stringify(modalState.form.piModelOverrides || {})),
-      metadataUserId: modalState.form.metadataUserId?.trim() || '',
-    }
-    list.push(newCard)
-    sortProvidersByLevel(list)
-    const saveResult = await persistProviders(modalState.tabId)
-    if (!saveResult.ok) {
-      // 保存失败，从列表中移除刚添加的卡片，不关闭弹窗
-      const idx = list.indexOf(newCard)
-      if (idx !== -1) list.splice(idx, 1)
-      return false
-    }
-  }
-
-  // 保存 CLI 配置
-  const cliConfig = modalState.form.cliConfig
-  const supportedPlatforms: CLIPlatform[] = ['claude', 'codex', 'gemini', 'reasonix']
-  if (cliConfig && Object.keys(cliConfig).length > 0 && supportedPlatforms.includes(modalState.tabId as CLIPlatform)) {
-    try {
-      await saveCLIConfig(modalState.tabId as CLIPlatform, cliConfig)
-    } catch (error) {
-      console.error('保存 CLI 配置失败:', error)
-    }
-  }
-
-  closeModal()
-
-  // 通知其他 Provider 视图刷新
-  window.dispatchEvent(new CustomEvent('providers-updated'))
-  return true
-}
-
-// 保存并应用：先保存供应商配置，再直连应用到 CLI
-const submitAndApplyModal = async () => {
-  // 1. 执行普通保存逻辑
-  const editingId = modalState.editingId
-  const tabId = modalState.tabId as ProviderTab
-  if (!editingId || tabId === 'others') return
-
-  // 获取当前编辑的卡片
-  const editingCard = cards[tabId]?.find(c => c.id === editingId)
-  if (!editingCard) return
-
-  // 调用标准保存流程
-  const saved = await submitModal()
-  if (!saved) {
-    // 保存失败，不继续应用
-    return
-  }
-
-  // 2. 保存成功后，应用到 CLI（直连模式）
-  try {
-    if (tabId === 'claude') {
-      await Call.ByName('codeswitch/services.ClaudeSettingsService.ApplySingleProvider', editingId)
-    } else if (tabId === 'codex') {
-      await Call.ByName('codeswitch/services.CodexSettingsService.ApplySingleProvider', editingId)
-    } else if (tabId === 'gemini') {
-      // Gemini 使用字符串 ID，需要从 cache 中找到原始 provider
-      const index = cards.gemini.findIndex(c => c.id === editingId)
-      if (index !== -1 && geminiProvidersCache.value[index]) {
-        const realId = geminiProvidersCache.value[index].id
-        await Call.ByName('codeswitch/services.GeminiService.ApplySingleProvider', realId)
-      } else {
-        throw new Error('Gemini provider cache entry not found')
-      }
-    } else if (tabId === 'reasonix') {
-      await Call.ByName('codeswitch/services.ReasonixSettingsService.ApplySingleProvider', editingId)
-    } else {
-      throw new Error(`Direct apply is not supported for ${tabId}`)
-    }
-    await refreshDirectAppliedStatus(tabId)
-    showToast(t('components.main.directApply.success', { name: editingCard.name }), 'success')
-  } catch (error) {
-    console.error('Apply after save failed', error)
-    showToast(t('components.main.directApply.failed'), 'error')
-  }
-}
-
-const configure = (card: AutomationCard) => {
-  openEditModal(card)
-}
-
-const remove = async (id: number, tabId: ProviderTab = activeTab.value) => {
-  const list = cards[tabId]
-  if (!list) return
-  const index = list.findIndex((card) => card.id === id)
-  if (index > -1) {
-    list.splice(index, 1)
-    await persistProviders(tabId)
-  }
-}
-
-const requestRemove = (card: AutomationCard) => {
-  confirmState.card = card
-  confirmState.tabId = activeTab.value
-  confirmState.open = true
-}
-
-// 复制供应商
-const handleDuplicate = async (card: AutomationCard) => {
-  try {
-    const tab = activeTab.value
-
-    if (tab === 'gemini') {
-      // Gemini 使用字符串 ID，需要从 cache 中找到原始 provider
-      const index = cards.gemini.findIndex(c => c.id === card.id)
-      if (index === -1 || !geminiProvidersCache.value[index]) {
-        console.error('[Duplicate] 未找到 Gemini provider')
-        return
-      }
-
-      const originalProvider = geminiProvidersCache.value[index]
-      // 调用 Gemini 的 DuplicateProvider API（字符串 ID）
-      const newProvider = await Call.ByName(
-        'codeswitch/services.GeminiService.DuplicateProvider',
-        originalProvider.id
-      )
-
-      if (!newProvider) {
-        console.warn('[Duplicate] DuplicateProvider 返回空结果，已跳过刷新')
-        return
-      }
-
-      console.log(`[Duplicate] Gemini Provider "${card.name}" duplicated`)
-    } else {
-      // Claude/Codex 使用数字 ID
-      const newProvider = await DuplicateProvider(tab, card.id)
-      if (!newProvider) {
-        console.warn('[Duplicate] DuplicateProvider 返回空结果，已跳过刷新')
-        return
-      }
-      console.log(`[Duplicate] Provider "${card.name}" duplicated as "${newProvider.name}"`)
-    }
-
-    // 刷新列表以显示新副本
-    await loadProvidersFromDisk()
-  } catch (error) {
-    console.error('[Duplicate] Failed to duplicate provider:', error)
-  }
-}
-
-const confirmRemove = async () => {
-  if (!confirmState.card) return
-  await remove(confirmState.card.id, confirmState.tabId)
-  closeConfirm()
-}
-
-const onDragStart = (id: number) => {
-  draggingId.value = id
-}
-
-const onDrop = async (targetId: number) => {
-  if (draggingId.value === null || draggingId.value === targetId) return
-  const currentTab = activeTab.value
-  const list = cards[currentTab]
-  if (!list) return
-  const fromIndex = list.findIndex((card) => card.id === draggingId.value)
-  const toIndex = list.findIndex((card) => card.id === targetId)
-  if (fromIndex === -1 || toIndex === -1) return
-  const [moved] = list.splice(fromIndex, 1)
-  const newIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
-  list.splice(newIndex, 0, moved)
-  draggingId.value = null
-  await persistProviders(currentTab)
-}
-
-const onDragEnd = () => {
-  draggingId.value = null
-}
-
-const iconSvg = (name: string) => {
-	if (!name) return ''
-	return ensureLobeIcon(name)
-}
-
-const vendorInitials = (name: string) => {
-  if (!name) return 'AI'
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-}
-
-const onTabChange = (idx: number) => {
-  closePlatformOrderMenu()
-  selectedIndex.value = idx
-  const nextTab = tabs[idx]?.id
-  if (nextTab) {
-    void refreshProxyState(nextTab as ProviderTab)
-    void refreshDirectAppliedStatus(nextTab as ProviderTab)
-    void loadProviderStats(nextTab as ProviderTab)
-  }
-}
-
-// ========== 自定义 CLI 工具管理 ==========
-
-// CLI 工具模态框状态
-const cliToolModalState = reactive({
-  open: false,
-  editingId: null as string | null,
-  form: {
-    name: '',
-    configFiles: [] as Array<{
-      id: string
-      label: string
-      path: string
-      format: 'json' | 'toml' | 'env'
-      isPrimary: boolean
-    }>,
-    proxyInjection: [] as Array<{
-      targetFileId: string
-      baseUrlField: string
-      authTokenField: string
-    }>,
-  },
-})
-
-// CLI 工具删除确认状态
-const cliToolConfirmState = reactive({
-  open: false,
-  tool: null as CustomCliTool | null,
-})
-
-// 切换选中的 CLI 工具
-const onToolSelect = async () => {
-  if (selectedToolId.value) {
-    // 更新当前 tab 的代理状态
-    proxyStates.others = customCliProxyStates[selectedToolId.value] ?? false
-    // 加载该工具的 providers 列表
-    await loadCustomCliProviders(selectedToolId.value)
-    await loadProviderStats('others')
-  } else {
-    // 未选中任何工具，清空 providers 列表
-    cards.others.splice(0, cards.others.length)
-    providerStatsMap.others = {}
-    providerStatsLoaded.others = true
-  }
-}
-
-// 仅在只有一个配置文件时自动选中，避免多配置场景下造成"意外选择"
-const getAutoSelectedProxyTargetFileId = () => {
-  const files = cliToolModalState.form.configFiles
-  if (files.length === 1) return files[0].id
-  return ''
-}
-
-// 打开新建 CLI 工具模态框
-const openCliToolModal = () => {
-  cliToolModalState.editingId = null
-  cliToolModalState.form.name = ''
-  cliToolModalState.form.configFiles = [{
-    id: `cfg-${Date.now()}`,
-    label: t('components.main.customCli.primaryConfig'),
-    path: '',
-    format: 'json',
-    isPrimary: true,
-  }]
-  // 默认占位行保持全空，允许用户选择不配置代理注入
-  // 保存时会自动补齐 targetFileId（如果用户填写了字段且只有一个配置文件）
-  cliToolModalState.form.proxyInjection = [{
-    targetFileId: '',
-    baseUrlField: '',
-    authTokenField: '',
-  }]
-  cliToolModalState.open = true
-}
-
-// 编辑当前选中的 CLI 工具
-const editCurrentCliTool = async () => {
-  if (!selectedToolId.value) return
-  const tool = customCliTools.value.find(t => t.id === selectedToolId.value)
-  if (!tool) return
-
-  cliToolModalState.editingId = tool.id
-  cliToolModalState.form.name = tool.name
-  cliToolModalState.form.configFiles = tool.configFiles.length > 0
-    ? tool.configFiles.map(cf => ({
-        id: cf.id,
-        label: cf.label,
-        path: cf.path,
-        format: cf.format,
-        isPrimary: cf.isPrimary ?? false,
-      }))
-    : [{
-        id: `cfg-${Date.now()}`,
-        label: t('components.main.customCli.primaryConfig'),
-        path: '',
-        format: 'json' as const,
-        isPrimary: true,
-      }]
-  // 加载已有的代理注入配置，默认占位行保持全空
-  // 保存时会自动补齐 targetFileId（如果用户填写了字段且只有一个配置文件）
-  cliToolModalState.form.proxyInjection = tool.proxyInjection && tool.proxyInjection.length > 0
-    ? tool.proxyInjection.map(pi => ({
-        targetFileId: pi.targetFileId ?? '',
-        baseUrlField: pi.baseUrlField ?? '',
-        authTokenField: pi.authTokenField ?? '',
-      }))
-    : [{
-        targetFileId: '',
-        baseUrlField: '',
-        authTokenField: '',
-      }]
-  cliToolModalState.open = true
-}
-
-// 请求删除当前选中的 CLI 工具
-const deleteCurrentCliTool = () => {
-  if (!selectedToolId.value) return
-  const tool = customCliTools.value.find(t => t.id === selectedToolId.value)
-  if (!tool) return
-  cliToolConfirmState.tool = tool
-  cliToolConfirmState.open = true
-}
-
-// 关闭 CLI 工具模态框
-const closeCliToolModal = () => {
-  cliToolModalState.open = false
-}
-
-// 关闭 CLI 工具删除确认框
-const closeCliToolConfirm = () => {
-  cliToolConfirmState.open = false
-  cliToolConfirmState.tool = null
-}
-
-// 添加配置文件
-const addConfigFile = () => {
-  cliToolModalState.form.configFiles.push({
-    id: `cfg-${Date.now()}`,
-    label: '',
-    path: '',
-    format: 'json',
-    isPrimary: false,
-  })
-}
-
-// 删除配置文件
-const removeConfigFile = (index: number) => {
-  if (cliToolModalState.form.configFiles.length <= 1) return
-  cliToolModalState.form.configFiles.splice(index, 1)
-}
-
-// 添加代理注入配置
-const addProxyInjection = () => {
-  cliToolModalState.form.proxyInjection.push({
-    targetFileId: getAutoSelectedProxyTargetFileId(),
-    baseUrlField: '',
-    authTokenField: '',
-  })
-}
-
-// 删除代理注入配置
-const removeProxyInjection = (index: number) => {
-  if (cliToolModalState.form.proxyInjection.length <= 1) return
-  cliToolModalState.form.proxyInjection.splice(index, 1)
-}
-
-// 提交 CLI 工具模态框
-const submitCliToolModal = async () => {
-  const name = cliToolModalState.form.name.trim()
-  if (!name) {
-    showToast(t('components.main.customCli.nameRequired'), 'error')
-    return
-  }
-
-  // 过滤掉空的配置文件
-  const validConfigFiles = cliToolModalState.form.configFiles.filter(cf => cf.path.trim())
-  if (validConfigFiles.length === 0) {
-    showToast(t('components.main.customCli.configRequired'), 'error')
-    return
-  }
-
-  // 验证至少有一个主配置文件
-  const hasPrimary = validConfigFiles.some(cf => cf.isPrimary)
-  if (!hasPrimary) {
-    // 如果没有选中主配置文件，自动将第一个设为主配置
-    validConfigFiles[0].isPrimary = true
-  }
-
-  // 代理注入配置：允许全空（表示不使用），但不允许"半填"
-  // 单一配置文件时，自动选中作为代理注入目标（避免用户忘记选择）
-  const autoTargetFileId = validConfigFiles.length === 1 ? validConfigFiles[0].id : ''
-
-  const proxyInjectionsToSave = cliToolModalState.form.proxyInjection
-    .map(pi => {
-      const baseUrlField = pi.baseUrlField.trim()
-      const authTokenField = pi.authTokenField.trim()
-      // 如果用户填写了字段但忘记选择目标文件，且只有一个配置文件，自动补充
-      const targetFileId = pi.targetFileId.trim() || ((baseUrlField || authTokenField) ? autoTargetFileId : '')
-      return { targetFileId, baseUrlField, authTokenField }
-    })
-    .filter(pi => pi.targetFileId || pi.baseUrlField || pi.authTokenField)
-
-  const hasIncompleteProxyInjection = proxyInjectionsToSave.some(
-    pi => !pi.targetFileId || !pi.baseUrlField
-  )
-  if (hasIncompleteProxyInjection) {
-    showToast(t('components.main.customCli.proxyInjectionIncomplete'), 'error')
-    return
-  }
-
-  // 先校验"目标 ID 是否存在"，再校验"目标文件路径是否有效"，避免报错信息误导
-  const allFileIds = new Set(cliToolModalState.form.configFiles.map(cf => cf.id))
-  const validFileIds = new Set(validConfigFiles.map(cf => cf.id))
-
-  const hasInvalidProxyTarget = proxyInjectionsToSave.some(pi => !allFileIds.has(pi.targetFileId))
-  if (hasInvalidProxyTarget) {
-    showToast(t('components.main.customCli.invalidProxyTarget'), 'error')
-    return
-  }
-
-  const hasProxyTargetPathMissing = proxyInjectionsToSave.some(pi => !validFileIds.has(pi.targetFileId))
-  if (hasProxyTargetPathMissing) {
-    showToast(t('components.main.customCli.proxyTargetPathRequired'), 'error')
-    return
-  }
-
-  try {
-    if (cliToolModalState.editingId) {
-      // 更新现有工具
-      await updateCustomCliTool(cliToolModalState.editingId, {
-        id: cliToolModalState.editingId,
-        name,
-        configFiles: validConfigFiles,
-        proxyInjection: proxyInjectionsToSave,
-      })
-      showToast(t('components.main.customCli.updateSuccess'), 'success')
-    } else {
-      // 创建新工具
-      const newTool = await createCustomCliTool({
-        name,
-        configFiles: validConfigFiles,
-        proxyInjection: proxyInjectionsToSave,
-      })
-      selectedToolId.value = newTool.id
-      showToast(t('components.main.customCli.createSuccess'), 'success')
-    }
-
-    // 刷新工具列表
-    await loadCustomCliTools()
-    closeCliToolModal()
-  } catch (error) {
-    console.error('Failed to save CLI tool', error)
-    // 处理各种错误类型：Error 对象、字符串、其他
-    const msg = error instanceof Error ? error.message : String(error ?? '')
-    if (msg.includes('ERR_CUSTOM_CLI_PROXY_INJECTION_INCOMPLETE')) {
-      showToast(t('components.main.customCli.proxyInjectionIncomplete'), 'error')
-      return
-    }
-    if (msg.includes('ERR_CUSTOM_CLI_INVALID_PROXY_TARGET')) {
-      showToast(t('components.main.customCli.invalidProxyTarget'), 'error')
-      return
-    }
-    showToast(t('components.main.customCli.saveFailed'), 'error')
-  }
-}
-
-// 确认删除 CLI 工具
-const confirmDeleteCliTool = async () => {
-  if (!cliToolConfirmState.tool) return
-  try {
-    await deleteCustomCliTool(cliToolConfirmState.tool.id)
-    showToast(t('components.main.customCli.deleteSuccess'), 'success')
-
-    // 如果删除的是当前选中的工具，清空选择
-    if (selectedToolId.value === cliToolConfirmState.tool.id) {
-      selectedToolId.value = null
-      proxyStates.others = false
-    }
-
-    // 刷新工具列表
-    await loadCustomCliTools()
-    closeCliToolConfirm()
-  } catch (error) {
-    console.error('Failed to delete CLI tool', error)
-    showToast(t('components.main.customCli.deleteFailed'), 'error')
-  }
-}
 </script>
 
 <style scoped>

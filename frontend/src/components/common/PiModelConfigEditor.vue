@@ -177,7 +177,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { Call } from '@wailsio/runtime'
+// 走 bindings 生成的类型化函数，不用 Call.ByName：
+// 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
+import * as ProviderModelDiscoveryService from '../../../bindings/codeswitch/services/providermodeldiscoveryservice'
 import { useI18n } from 'vue-i18n'
 import type { PiModelCost, PiModelDefinition, PiModelOverride } from '../../data/cards'
 import { formatPiAPIOption, isPiAPIID, PI_API_OPTIONS } from '../../data/piApiOptions'
@@ -627,10 +629,10 @@ const fetchModels = async () => {
   discoveryMessage.value = ''
   discoveryError.value = false
   try {
-    const result = await Call.ByName(
-      'codeswitch/services.ProviderModelDiscoveryService.FetchProviderModels',
-      { platform: 'pi', provider: props.provider },
-    ) as { models?: Array<{ id?: string; name?: string }> }
+    const result = (await ProviderModelDiscoveryService.FetchProviderModels({
+      platform: 'pi',
+      provider: props.provider,
+    } as never)) as unknown as { models?: Array<{ id?: string; name?: string }> }
     const existing = new Set(localModels.value.map((model) => model.id))
     let added = 0
     for (const fetched of result.models || []) {

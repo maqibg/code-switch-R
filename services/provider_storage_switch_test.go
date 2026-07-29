@@ -99,7 +99,7 @@ func TestMigrationMarksImportedJSONFiles(t *testing.T) {
 		{ID: 1, Name: "Imported", APIURL: "u", APIKey: "k", Enabled: true},
 	})
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 

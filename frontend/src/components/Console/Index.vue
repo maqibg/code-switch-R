@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Call } from '@wailsio/runtime'
+// 走 bindings 生成的类型化函数，不用 Call.ByName：
+// 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
+import * as ConsoleService from '../../../bindings/codeswitch/services/consoleservice'
 import { useActivePolling } from '../../composables/useActivePolling'
 
 interface ConsoleLog {
@@ -28,7 +30,7 @@ const loadLogs = async () => {
 	if (fetchingLogs) return
 	fetchingLogs = true
 	try {
-		const result = await Call.ByName('codeswitch/services.ConsoleService.GetLogsSince', lastSequence, 1000) as {
+		const result = (await ConsoleService.GetLogsSince(lastSequence, 1000)) as unknown as {
 			logs?: ConsoleLog[]
 			latest_sequence?: number
 			reset?: boolean
@@ -56,7 +58,7 @@ const clearLogs = async () => {
   }
 
   try {
-		await Call.ByName('codeswitch/services.ConsoleService.ClearLogs')
+		await ConsoleService.ClearLogs()
 		logs.value = []
 		lastSequence = 0
   } catch (error) {

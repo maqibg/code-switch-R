@@ -53,7 +53,7 @@ func (ls *LogService) StopMaintenance() {
 
 func (ls *LogService) runMaintenance(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
-	if ls.pricingService != nil || ls.pricing != nil {
+	if ls.pricingService != nil {
 		for {
 			updated, err := ls.backfillStoredRequestCostsBatch(requestCostBackfillBatch)
 			if err != nil {

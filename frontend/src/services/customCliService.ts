@@ -1,4 +1,12 @@
-import { Call } from '@wailsio/runtime'
+/**
+ * 自定义 CLI 工具 API 封装
+ *
+ * 走 frontend/bindings 生成的类型化函数，不用 Call.ByName：
+ * 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了。
+ * 返回值仍由本文件的 normalizeTool / normalizeProxyStatus 收口。
+ */
+import * as CustomCliService from '../../bindings/codeswitch/services/customcliservice'
+import type { CustomCliTool as GeneratedCustomCliTool } from '../../bindings/codeswitch/services/models'
 
 // 类型定义
 export interface ConfigFile {
@@ -26,8 +34,6 @@ export interface CustomCliProxyStatus {
   enabled: boolean
   baseUrl: string
 }
-
-const serviceName = 'codeswitch/services.CustomCliService'
 
 // 归一化代理状态（兼容 Wails 返回的 Go 导出字段名）
 const normalizeProxyStatus = (raw: any): CustomCliProxyStatus => {
@@ -64,14 +70,14 @@ const normalizeTool = (raw: any): CustomCliTool => {
 // ========== 工具 CRUD ==========
 
 export const listCustomCliTools = async (): Promise<CustomCliTool[]> => {
-  const raw = await Call.ByName(`${serviceName}.ListTools`)
+  const raw = await CustomCliService.ListTools()
   if (!Array.isArray(raw)) return []
   return raw.map(normalizeTool)
 }
 
 export const getCustomCliTool = async (id: string): Promise<CustomCliTool | null> => {
   try {
-    const raw = await Call.ByName(`${serviceName}.GetTool`, id)
+    const raw = await CustomCliService.GetTool(id)
     return normalizeTool(raw)
   } catch {
     return null
@@ -79,44 +85,44 @@ export const getCustomCliTool = async (id: string): Promise<CustomCliTool | null
 }
 
 export const createCustomCliTool = async (tool: Omit<CustomCliTool, 'id'>): Promise<CustomCliTool> => {
-  const raw = await Call.ByName(`${serviceName}.CreateTool`, tool)
+  const raw = await CustomCliService.CreateTool(tool as unknown as GeneratedCustomCliTool)
   return normalizeTool(raw)
 }
 
 export const updateCustomCliTool = async (id: string, tool: CustomCliTool): Promise<void> => {
-  await Call.ByName(`${serviceName}.UpdateTool`, id, tool)
+  await CustomCliService.UpdateTool(id, tool as unknown as GeneratedCustomCliTool)
 }
 
 export const deleteCustomCliTool = async (id: string): Promise<void> => {
-  await Call.ByName(`${serviceName}.DeleteTool`, id)
+  await CustomCliService.DeleteTool(id)
 }
 
 // ========== 代理管理 ==========
 
 export const getCustomCliProxyStatus = async (toolId: string): Promise<CustomCliProxyStatus> => {
-  const raw = await Call.ByName(`${serviceName}.ProxyStatus`, toolId)
+  const raw = await CustomCliService.ProxyStatus(toolId)
   return normalizeProxyStatus(raw)
 }
 
 export const enableCustomCliProxy = async (toolId: string): Promise<void> => {
-  await Call.ByName(`${serviceName}.EnableProxy`, toolId)
+  await CustomCliService.EnableProxy(toolId)
 }
 
 export const disableCustomCliProxy = async (toolId: string): Promise<void> => {
-  await Call.ByName(`${serviceName}.DisableProxy`, toolId)
+  await CustomCliService.DisableProxy(toolId)
 }
 
 // ========== 配置文件读写 ==========
 
 export const getCustomCliConfigContent = async (toolId: string, fileId: string): Promise<string> => {
-  return await Call.ByName(`${serviceName}.GetConfigContent`, toolId, fileId)
+  return await CustomCliService.GetConfigContent(toolId, fileId)
 }
 
 export const saveCustomCliConfigContent = async (toolId: string, fileId: string, content: string): Promise<void> => {
-  await Call.ByName(`${serviceName}.SaveConfigContent`, toolId, fileId, content)
+  await CustomCliService.SaveConfigContent(toolId, fileId, content)
 }
 
 export const getCustomCliLockedFields = async (toolId: string): Promise<string[]> => {
-  const raw = await Call.ByName(`${serviceName}.GetLockedFields`, toolId)
+  const raw = await CustomCliService.GetLockedFields(toolId)
   return Array.isArray(raw) ? raw : []
 }

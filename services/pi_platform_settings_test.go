@@ -122,7 +122,7 @@ func TestPiPlatformProxyEnableDisableIsIndependentAndRestorable(t *testing.T) {
 	if err != nil || len(suppliers) != 1 {
 		t.Fatalf("首次开启应导入一个供应商: suppliers=%#v err=%v", suppliers, err)
 	}
-	if suppliers[0].piPlatformKey() != "anthropic" || suppliers[0].APIURL != "https://api.anthropic.com" || suppliers[0].APIKey != "original-key" {
+	if suppliers[0].PiPlatformKey() != "anthropic" || suppliers[0].APIURL != "https://api.anthropic.com" || suppliers[0].APIKey != "original-key" {
 		t.Fatalf("导入供应商内容错误: %#v", suppliers[0])
 	}
 	if err := service.DisablePlatformProxy("anthropic"); err != nil {

@@ -78,8 +78,8 @@ func TestPiIsExcludedFromBackgroundChecks(t *testing.T) {
 }
 
 func TestDeepSeekCodePlatformIsRemoved(t *testing.T) {
-	if slices.Contains(providerPlatformIDs(), "deepseekcode") {
-		t.Fatalf("DeepSeekCode 不应继续注册为 Provider 平台: %#v", providerPlatformIDs())
+	if slices.Contains(ProviderPlatformIDs(), "deepseekcode") {
+		t.Fatalf("DeepSeekCode 不应继续注册为 Provider 平台: %#v", ProviderPlatformIDs())
 	}
 	if _, ok := platformDefinition("deepseekcode"); ok {
 		t.Fatal("DeepSeekCode 不应存在协议平台注册")

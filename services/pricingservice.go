@@ -39,7 +39,7 @@ const (
 	pricingMaximumPageSize    = 100
 	pricingSourceEmbedded     = "embedded"
 	pricingSourceDownloaded   = "downloaded"
-	pricingSourceCustom       = "custom"
+	PricingSourceCustom       = "custom"
 	pricingSourcePiCustom     = "pi-custom"
 	pricingSourcePiOverride   = "pi-override"
 	pricingSourcePiBuiltin    = "pi-builtin"
@@ -832,7 +832,7 @@ func (ps *PricingService) TestPricingMatch(model string) PricingMatchResult {
 	}
 	if rule := matchCompiledPricingRule(runtime.rules, model); rule != nil {
 		return PricingMatchResult{
-			Matched: true, Source: pricingSourceCustom, RuleID: rule.rule.ID,
+			Matched: true, Source: PricingSourceCustom, RuleID: rule.rule.ID,
 			RuleName: rule.rule.Name, Rates: rule.rule.Rates,
 			Version: "custom:" + shortPricingVersion(runtime.customRevision),
 		}
@@ -896,7 +896,7 @@ func (ps *PricingService) UpdateBuiltinPricing() (PricingUpdateResult, error) {
 	req.Header.Set("User-Agent", "code-switch-R/model-pricing")
 	response, err := client.Do(req)
 	if err != nil {
-		return PricingUpdateResult{}, fmt.Errorf("下载模型价格失败: %s", describeProxyTransportError(err, proxy))
+		return PricingUpdateResult{}, fmt.Errorf("下载模型价格失败: %s", DescribeProxyTransportError(err, proxy))
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
@@ -979,7 +979,7 @@ func pricingProxyDescription(proxy ProxyConfig) string {
 		return "直连"
 	}
 	normalized := normalizeProxyConfig(proxy)
-	return strings.ToUpper(normalized.Protocol) + " " + normalized.address()
+	return strings.ToUpper(normalized.Protocol) + " " + normalized.Address()
 }
 
 func matchCompiledPricingRule(rules []compiledPricingRule, model string) *compiledPricingRule {
@@ -1062,7 +1062,7 @@ func calculateGlobalPricing(runtime *pricingRuntime, model string, usage modelpr
 		cost := runtime.engine.CalculateCostWithPricing(model, usage, pricingEntryFromRates(rates))
 		cost.HasPricing = true
 		return PricingResult{
-			Cost: cost, Source: pricingSourceCustom,
+			Cost: cost, Source: PricingSourceCustom,
 			Version: "custom:" + shortPricingVersion(runtime.customRevision), RuleID: rule.rule.ID,
 		}
 	}

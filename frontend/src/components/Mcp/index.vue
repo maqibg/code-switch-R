@@ -662,6 +662,8 @@ const currentPlatformActive = (server: McpServer) => {
       return server.enabled_in_codex
     case 'gemini':
       return server.enabled_in_gemini
+    case 'reasonix':
+      return server.enabled_in_reasonix
     default:
       return false
   }
@@ -1014,6 +1016,10 @@ const submitModal = async () => {
       modalState.editingName === trimmedName
         ? existing?.enabled_in_gemini ?? false
         : servers.value.find((server) => server.name === modalState.editingName)?.enabled_in_gemini ?? false,
+    enabled_in_reasonix:
+      modalState.editingName === trimmedName
+        ? existing?.enabled_in_reasonix ?? false
+        : servers.value.find((server) => server.name === modalState.editingName)?.enabled_in_reasonix ?? false,
     missing_placeholders: [],
   }
 

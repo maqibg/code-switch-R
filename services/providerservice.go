@@ -126,7 +126,7 @@ func defaultConnectivityAuthType(_ string) string {
 	return "bearer"
 }
 
-func (p Provider) piPlatformKey() string {
+func (p Provider) PiPlatformKey() string {
 	if value := strings.TrimSpace(p.PiPlatform); value != "" {
 		return value
 	}
@@ -334,9 +334,9 @@ func validatePiSupplierURLUniqueness(providers []Provider) []string {
 		if err != nil || canonicalURL == "" {
 			continue
 		}
-		platformID := strings.ToLower(provider.piPlatformKey())
+		platformID := strings.ToLower(provider.PiPlatformKey())
 		if platformID == "" {
-			platformID = string(resolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions")))
+			platformID = string(ResolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions")))
 		}
 		key := platformID + "\x00" + canonicalURL
 		if existingName, exists := seen[key]; exists {
@@ -507,7 +507,7 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		CustomUserAgent:      source.CustomUserAgent,
 		RequestIdentity:      nil,
 		ModelsEndpoint:       source.ModelsEndpoint,
-		PiPlatform:           source.piPlatformKey(),
+		PiPlatform:           source.PiPlatformKey(),
 		MetadataUserID:       source.MetadataUserID,
 	}
 
@@ -694,7 +694,7 @@ func (p *Provider) ResolveUpstreamProtocol(effectiveEndpoint string) UpstreamPro
 	return protocol
 }
 
-func resolveProviderUpstreamProtocol(platform string, provider Provider, effectiveEndpoint string) UpstreamProtocolType {
+func ResolveProviderUpstreamProtocol(platform string, provider Provider, effectiveEndpoint string) UpstreamProtocolType {
 	if strings.TrimSpace(provider.UpstreamProtocol) != "" {
 		return provider.ResolveUpstreamProtocol(effectiveEndpoint)
 	}
@@ -778,7 +778,7 @@ func (p *Provider) ValidateConfiguration() []string {
 	if err := applyUserAgentPolicy(map[string]string{}, *p); err != nil {
 		errors = append(errors, err.Error())
 	}
-	actualProtocol := string(resolveProviderUpstreamProtocol("pi", *p, p.GetEffectiveEndpoint("/v1/messages")))
+	actualProtocol := string(ResolveProviderUpstreamProtocol("pi", *p, p.GetEffectiveEndpoint("/v1/messages")))
 	if p.RequestIdentity != nil {
 		for _, message := range validateProviderRequestIdentity(*p.RequestIdentity, actualProtocol) {
 			errors = append(errors, "requestIdentity: "+message)

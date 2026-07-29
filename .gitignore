@@ -1,13 +1,28 @@
-frontend/node_modules
-frontend/dist
+.agents/
+.claude/
+.codex/
+.task/
+tmp/
+
+frontend/node_modules/
+frontend/dist/
 .DS_Store
-.task
-bin
+bin/
 CLAUDE.md
 .ace-tool/
+
 # 本地构建产物
 codeswitch.exe
+*.exe
+*.test
+*.dll
+*.pdb
+*.msi
+*.zip
+*.AppImage
+*.deb
+*.rpm
+*.sha256
+
 # Go 构建缓存
 .tmp-gocache/
-# 外部参考项目，仅本地查阅
-tmp/

@@ -97,7 +97,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Call } from '@wailsio/runtime'
+// 走 bindings 生成的类型化函数，不用 Call.ByName：
+// 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
+import * as ProviderModelDiscoveryService from '../../../bindings/codeswitch/services/providermodeldiscoveryservice'
 import BaseInput from './BaseInput.vue'
 import BaseButton from './BaseButton.vue'
 
@@ -160,10 +162,10 @@ const fetchModels = async () => {
   discoveryMessage.value = ''
   discoveryError.value = false
   try {
-    const result = await Call.ByName(
-      'codeswitch/services.ProviderModelDiscoveryService.FetchProviderModels',
-      { platform: props.platform || '', provider: props.provider },
-    ) as { models?: Array<{ id?: string }>; sourceUrl?: string }
+    const result = (await ProviderModelDiscoveryService.FetchProviderModels({
+      platform: props.platform || '',
+      provider: props.provider,
+    } as never)) as unknown as { models?: Array<{ id?: string }>; sourceUrl?: string }
     const updated = { ...props.modelValue }
     let added = 0
     for (const model of result.models ?? []) {

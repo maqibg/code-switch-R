@@ -12,7 +12,7 @@ import (
 func setupProviderRepoEnv(t *testing.T) *sql.DB {
 	t.Helper()
 	db := setupProviderImportEnv(t)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	return db

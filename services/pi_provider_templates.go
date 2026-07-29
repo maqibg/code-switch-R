@@ -198,10 +198,10 @@ func deletePiProviderTemplate(path string, templates []PiProviderTemplate, provi
 }
 
 func inferPiProviderTemplateID(provider Provider, templates []PiProviderTemplate) string {
-	if id := provider.piPlatformKey(); id != "" {
+	if id := provider.PiPlatformKey(); id != "" {
 		return id
 	}
-	protocol := string(resolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions")))
+	protocol := string(ResolveProviderUpstreamProtocol("pi", provider, provider.GetEffectiveEndpoint("/v1/chat/completions")))
 	for _, template := range templates {
 		if template.UpstreamProtocol == protocol {
 			return template.ID

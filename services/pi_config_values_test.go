@@ -58,7 +58,7 @@ func TestBuildUpstreamHeadersResolvesPiConfigValuesOnlyForPi(t *testing.T) {
 		APIKey: "$PI_CONFIG_TEST_KEY", AuthScheme: "x-api-key",
 		Headers: map[string]string{"X-Tenant": "${PI_CONFIG_TEST_KEY}-tenant"},
 	}
-	headers, err := buildUpstreamHeaders(provider, "pi", nil, UpstreamProtocolAnthropic)
+	headers, err := BuildUpstreamHeaders(provider, "pi", nil, UpstreamProtocolAnthropic)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestBuildUpstreamHeadersResolvesPiConfigValuesOnlyForPi(t *testing.T) {
 		t.Fatalf("Pi 配置值未解析: %#v", headers)
 	}
 
-	nonPiHeaders, err := buildUpstreamHeaders(provider, "claude", nil, UpstreamProtocolAnthropic)
+	nonPiHeaders, err := BuildUpstreamHeaders(provider, "claude", nil, UpstreamProtocolAnthropic)
 	if err != nil {
 		t.Fatal(err)
 	}

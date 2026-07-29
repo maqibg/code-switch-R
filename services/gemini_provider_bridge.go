@@ -21,6 +21,17 @@ import (
 // geminiScope Gemini provider 在 provider 表中的范围
 var geminiScope = providerScope{platform: "gemini"}
 
+// GeminiDefaultModel 返回 Gemini provider 配置里的默认模型名。
+//
+// 转发时优先从 endpoint 提取模型（如 gemini-2.5-pro），
+// 提取不到才回落到这个值。
+func (p Provider) GeminiDefaultModel() string {
+	if p.gemini == nil {
+		return ""
+	}
+	return p.gemini.Model
+}
+
 // toProvider 把 GeminiProvider 转成统一的 Provider。
 //
 // numericID 为 0 表示新增（由 SQLite 分配主键）；
@@ -129,4 +140,3 @@ func saveGeminiProvidersToDB(providers []GeminiProvider) error {
 	}
 	return nil
 }
-

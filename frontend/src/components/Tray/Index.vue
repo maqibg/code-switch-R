@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, proxyRefs, ref } from 'vue'
-import { Call } from '@wailsio/runtime'
+// 走 bindings 生成的类型化函数，不用 Call.ByName：
+// 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
+import * as AppService from '../../../bindings/codeswitch/appservice'
 import { fetchCostSince, fetchLogStats } from '../../services/logs'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
 import { fetchProxyStatus } from '../../services/claudeSettings'
@@ -333,7 +335,7 @@ const resizeToContent = async () => {
   const height = Math.ceil(rootRef.value.getBoundingClientRect().height)
   if (height <= 0) return
   try {
-    await Call.ByName('main.AppService.SetTrayWindowHeight', height)
+    await AppService.SetTrayWindowHeight(height)
   } catch (error) {
     console.error('failed to resize tray window', error)
   }

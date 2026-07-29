@@ -83,7 +83,7 @@ func providerFileNameFor(kind string) (filename string, customToolID string, err
 	return "", "", fmt.Errorf("unknown provider type: %s", kind)
 }
 
-func providerPlatformIDs() []string {
+func ProviderPlatformIDs() []string {
 	ids := make([]string, 0, len(providerPlatformDefinitions))
 	for _, definition := range providerPlatformDefinitions {
 		ids = append(ids, definition.ID)
@@ -117,7 +117,7 @@ func resolveProviderTestEndpoint(platform string, provider Provider, configuredE
 	if strings.TrimSpace(provider.APIEndpoint) != "" {
 		return provider.GetEffectiveEndpoint("")
 	}
-	protocol := resolveProviderUpstreamProtocol(platform, provider, "")
+	protocol := ResolveProviderUpstreamProtocol(platform, provider, "")
 	switch protocol {
 	case UpstreamProtocolOpenAIChat:
 		return "/v1/chat/completions"

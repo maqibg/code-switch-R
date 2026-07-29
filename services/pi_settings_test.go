@@ -144,7 +144,7 @@ func TestPiSettingsDisableRemovesInjectedProvidersObject(t *testing.T) {
 }
 
 func TestBuildPiGatewayProviderProtocols(t *testing.T) {
-	gateway, err := buildPiGatewayProvider([]Provider{
+	gateway, err := BuildPiGatewayProvider([]Provider{
 		{Name: "anthropic", Enabled: true, UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"claude-sonnet": true}},
 		{Name: "responses", Enabled: true, UpstreamProtocol: "openai_responses", SupportedModels: map[string]bool{"gpt-5": true}},
 	}, "http://127.0.0.1:18100/pi/v1")
@@ -174,7 +174,7 @@ func TestBuildPiGatewayProviderAppliesModelOverrides(t *testing.T) {
 	contextWindow := 1_000_000
 	outputCost := 8.0
 	high := "high"
-	gateway, err := buildPiGatewayProvider([]Provider{{
+	gateway, err := BuildPiGatewayProvider([]Provider{{
 		Name: "openai", Enabled: true, UpstreamProtocol: "openai_responses",
 		PiModels: []PiModelEntry{{
 			ID: "gpt-test", Name: "Original", ThinkingLevelMap: map[string]*string{"high": &high},
@@ -225,7 +225,7 @@ func TestValidatePiProviderRejectsOverrideWithoutModel(t *testing.T) {
 }
 
 func TestBuildPiGatewayProviderPreservesModelIDsContainingSlash(t *testing.T) {
-	gateway, err := buildPiGatewayProvider([]Provider{{
+	gateway, err := BuildPiGatewayProvider([]Provider{{
 		Name: "openrouter", Enabled: true, UpstreamProtocol: "openai_chat",
 		PiModels: []PiModelEntry{{ID: "anthropic/claude-sonnet-4"}},
 	}}, "http://127.0.0.1:18100/pi/v1")
@@ -311,7 +311,7 @@ func TestBuildPiGatewayProviderPreservesCompleteModelDefinitionAndOrder(t *testi
 	contextWindow := 1_000_000
 	maxTokens := 128_000
 	high := "high"
-	gateway, err := buildPiGatewayProvider([]Provider{{
+	gateway, err := BuildPiGatewayProvider([]Provider{{
 		ID: 1, Name: "complete", Enabled: true, UpstreamProtocol: "openai_responses",
 		PiModels: []PiModelEntry{{
 			ID: "gpt-test", Name: "GPT Test",
@@ -361,49 +361,6 @@ func TestReadJSONObjectAcceptsPiJSONComments(t *testing.T) {
 	providers, err := nestedJSONObject(root, "providers")
 	if err != nil || providers["foreign"] == nil {
 		t.Fatalf("带注释 models.json 解析错误: providers=%#v err=%v", providers, err)
-	}
-}
-
-func TestPiModelsPreviewPreservesPlatformsAndHighlightsCurrentPlatformModels(t *testing.T) {
-	service := newTestPiSettingsService(t, nil)
-	if err := AtomicWriteJSON(service.modelsPath(), map[string]any{"providers": map[string]any{
-		"foreign": map[string]any{"baseUrl": "https://example.com"},
-		"current": map[string]any{"baseUrl": "https://current.example.com", "apiKey": "secret", "api": "openai-completions", "models": []map[string]any{{"id": "gpt-test"}}},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	result, err := service.PreviewModelsJSON(PiModelsPreviewRequest{CurrentPlatformID: "current"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(result.JSON, `"foreign"`) || !strings.Contains(result.JSON, `"current"`) || !strings.Contains(result.JSON, `"apiKey": "secret"`) || strings.Contains(result.JSON, `"***"`) {
-		t.Fatalf("预览未包含完整 providers: %s", result.JSON)
-	}
-	if len(result.CurrentModelIDs) != 1 || result.CurrentModelIDs[0] != "gpt-test" {
-		t.Fatalf("当前供应商模型定位错误: %#v", result.CurrentModelIDs)
-	}
-}
-
-func TestPiModelsPreviewWarnsModelBaseURLBypassingPlatformGateway(t *testing.T) {
-	service := newTestPiSettingsService(t, nil)
-	if err := AtomicWriteJSON(service.modelsPath(), map[string]any{"providers": map[string]any{
-		"direct": map[string]any{"api": "openai-completions", "models": []map[string]any{{"id": "model", "baseUrl": "https://upstream.example.com/v1"}}},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	result, err := service.PreviewModelsJSON(PiModelsPreviewRequest{CurrentPlatformID: "direct"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, diagnostic := range result.Diagnostics {
-		if diagnostic.Severity == "warning" && diagnostic.ModelID == "model" && diagnostic.Field == "baseUrl" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("外部单模型 baseUrl 应显示绕过警告: %#v", result.Diagnostics)
 	}
 }
 

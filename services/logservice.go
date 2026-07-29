@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,13 +34,17 @@ const (
 	seriesBucketHour     = "hour"
 	seriesBucketDay      = "day"
 	seriesBucketMonth    = "month"
-	appDatabaseFilename  = "app.db"
 	requestLogSuccessSQL = "COALESCE(http_code, 0) >= 200 AND COALESCE(http_code, 0) < 300 AND COALESCE(error_type, '') = ''"
 	requestLogFailureSQL = "NOT (" + requestLogSuccessSQL + ")"
 )
 
 type LogService struct {
-	pricing         *modelpricing.Service
+	// pricingService 是唯一的定价来源。
+	//
+	// 原先还有一个 pricing *modelpricing.Service 内嵌回退：pricingService 为 nil 时
+	// 用它算成本，产出的 pricing_source 是 "embedded-v1"，与正规路径的口径不同。
+	// 那个回退是 SetPricingService 后置注入留下的"已构造未注入"窗口态的产物，
+	// 而生产路径上 pricingService 在 LogService 之前就构造好了，永远走不到回退。
 	pricingService  *PricingService
 	providerService *ProviderService // 用于校验供应商是否仍存在于配置中
 	appSettings     *AppSettingsService
@@ -329,25 +332,21 @@ func buildSnapshotFromRecord(record xdb.Record) modelpricing.UsageSnapshot {
 	return snap
 }
 
-func NewLogService(providerService *ProviderService) *LogService {
-	return NewLogServiceWithPricingAndSettings(providerService, nil, nil)
-}
-
-func NewLogServiceWithPricing(providerService *ProviderService, pricingService *PricingService) *LogService {
-	return NewLogServiceWithPricingAndSettings(providerService, pricingService, nil)
-}
-
-func NewLogServiceWithPricingAndSettings(providerService *ProviderService, pricingService *PricingService, appSettings *AppSettingsService) *LogService {
-	var svc *modelpricing.Service
-	if pricingService == nil {
-		var err error
-		svc, err = modelpricing.DefaultService()
-		if err != nil {
-			log.Printf("pricing service init failed: %v", err)
-		}
-	}
+// NewLogService 构造日志服务。
+//
+// 原先有三个构造变体（不带定价 / 带定价 / 带定价和设置），配合一个内嵌定价回退，
+// 于是同一进程可能同时存在多套定价引擎、计费口径可分叉。根因是
+// ProviderRelayService.SetPricingService 那种后置注入造出的"已构造未注入"窗口态；
+// 依赖顺序上 pricingService 本来就在这之前构造好，直接传进来即可。
+func NewLogService(
+	providerService *ProviderService,
+	pricingService *PricingService,
+	appSettings *AppSettingsService,
+) *LogService {
 	return &LogService{
-		pricing: svc, pricingService: pricingService, providerService: providerService, appSettings: appSettings,
+		pricingService:  pricingService,
+		providerService: providerService,
+		appSettings:     appSettings,
 	}
 }
 
@@ -944,13 +943,10 @@ func (ls *LogService) calculateCost(platform, sourceID, model string, usage mode
 	if ls == nil {
 		return PricingResult{}
 	}
-	if ls.pricingService != nil {
-		return ls.pricingService.newRequestSnapshot(platform, sourceID, model).Calculate(model, usage)
-	}
-	if ls.pricing == nil {
+	if ls.pricingService == nil {
 		return PricingResult{}
 	}
-	return PricingResult{Cost: ls.pricing.CalculateCost(model, usage), Source: pricingSourceEmbedded, Version: "embedded-v1"}
+	return ls.pricingService.newRequestSnapshot(platform, sourceID, model).Calculate(model, usage)
 }
 
 func (ls *LogService) costForRecord(record xdb.Record) modelpricing.CostBreakdown {

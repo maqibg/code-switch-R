@@ -1,4 +1,11 @@
-import { Call } from '@wailsio/runtime'
+/**
+ * 应用设置 API 封装
+ *
+ * 走 frontend/bindings 生成的类型化函数，不用 Call.ByName：
+ * 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了。
+ */
+import * as AppSettingsService from '../../bindings/codeswitch/services/appsettingsservice'
+import type { AppSettings as GeneratedAppSettings } from '../../bindings/codeswitch/services/models'
 
 export type AppSettings = {
   show_heatmap: boolean
@@ -73,12 +80,13 @@ const DEFAULT_SETTINGS: AppSettings = {
 }
 
 export const fetchAppSettings = async (): Promise<AppSettings> => {
-  const data = await Call.ByName('codeswitch/services.AppSettingsService.GetAppSettings')
-  return data ?? DEFAULT_SETTINGS
+  const data = await AppSettingsService.GetAppSettings()
+  return (data as unknown as AppSettings) ?? DEFAULT_SETTINGS
 }
 
 export const saveAppSettings = async (settings: AppSettings): Promise<AppSettings> => {
-  return Call.ByName('codeswitch/services.AppSettingsService.SaveAppSettings', settings)
+  const saved = await AppSettingsService.SaveAppSettings(settings as unknown as GeneratedAppSettings)
+  return saved as unknown as AppSettings
 }
 
 export const testGlobalProxy = async (
@@ -86,5 +94,5 @@ export const testGlobalProxy = async (
   host: string,
   port: number
 ): Promise<GlobalProxyTestResult> => {
-  return Call.ByName('codeswitch/services.AppSettingsService.TestGlobalProxy', protocol, host, port)
+  return (await AppSettingsService.TestGlobalProxy(protocol, host, port)) as unknown as GlobalProxyTestResult
 }

@@ -331,16 +331,18 @@ func doRenameTxCtx(ctx context.Context, tx dbTxExecutor, scope providerDataScope
 	return nil
 }
 
-
 // resolvePlatform 把 kind 归一到 DB 使用的 platform 值(与 request_log/blacklist 一致)。
 //
 // 别名匹配统一交给 platform_registry.go 的 resolvePlatformID，
 // 不再在这里重复维护一份别名列表——之前 claude 的三种写法在多个文件里各写一遍，
 // 新增平台时漏改任何一处都会让同一平台在日志和黑名单里出现两个不同的 scope key。
 //
-// gemini 不在 provider 注册表里（它由独立的 GeminiService 管理，不走
-// ProviderService 的 JSON 存储），但 DB 侧仍用 "gemini" 作为 platform 值，
-// 所以这里单独处理。
+// gemini 有意不进 provider 注册表，尽管它的数据已在 provider 表里：
+// 注册表的 ProviderFile 驱动迁移 v2 的 JSON 导入，而 Gemini 的导入由
+// 迁移 v6 单独负责——它要处理 string ID → int64 主键的映射，
+// 且 gemini-providers.json 是裸数组，不是 v2 期望的 envelope 格式。
+// 加进注册表会让 v2 先把文件改名 .migrated，v6 再也读不到，legacyId 全丢。
+// platform 值仍是 "gemini"，所以这里单独放行。
 func resolvePlatform(kind string) (string, error) {
 	trimmed := strings.TrimSpace(kind)
 	normalized := strings.ToLower(trimmed)

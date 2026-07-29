@@ -38,9 +38,9 @@ func (cts *ConnectivityTestService) buildTargetURL(provider *Provider, platform 
 	return baseURL + endpoint
 }
 
-// isTimeoutError 检测错误是否为超时类型
+// IsTimeoutError 检测错误是否为超时类型
 // 超时包括：context.DeadlineExceeded、net.Error.Timeout()、以及错误消息中包含 timeout 的情况
-func isTimeoutError(err error) bool {
+func IsTimeoutError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -105,11 +105,11 @@ func (cts *ConnectivityTestService) probeProviderLatency(
 		if err != nil {
 			return nil, err
 		}
-		headers, err := buildUpstreamHeaders(
+		headers, err := BuildUpstreamHeaders(
 			provider,
 			platform,
 			map[string]string{"User-Agent": "code-switch-R"},
-			resolveProviderUpstreamProtocol(platform, provider, cts.getEffectiveEndpoint(&provider, platform)),
+			ResolveProviderUpstreamProtocol(platform, provider, cts.getEffectiveEndpoint(&provider, platform)),
 		)
 		if err != nil {
 			return nil, err
@@ -135,7 +135,7 @@ func (cts *ConnectivityTestService) probeProviderLatency(
 	)
 	result.LatencyMs = int(time.Since(start).Milliseconds())
 	if err != nil {
-		message := describeProxyTransportError(err, usedProxyConfig)
+		message := DescribeProxyTransportError(err, usedProxyConfig)
 		if !provider.ProxyEnabled {
 			message = fmt.Sprintf("网络错误: %s", message)
 		}

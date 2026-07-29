@@ -68,7 +68,7 @@ func TestPiPricingFallsBackToGlobalCustomWhenPiMisses(t *testing.T) {
 	result := pricing.newRequestSnapshot("pi", "openai", "missing-model").Calculate(
 		"mapped-upstream-model", modelpricing.UsageSnapshot{InputTokens: 1_000_000},
 	)
-	if result.Source != pricingSourceCustom || result.RuleID != "fallback" || math.Abs(result.Cost.TotalCost-5) > 1e-9 {
+	if result.Source != PricingSourceCustom || result.RuleID != "fallback" || math.Abs(result.Cost.TotalCost-5) > 1e-9 {
 		t.Fatalf("Pi 未命中后应按请求模型回退全局自定义价格: %#v", result)
 	}
 }

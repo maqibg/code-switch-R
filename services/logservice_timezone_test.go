@@ -56,7 +56,7 @@ func TestListRequestLogsByRangeAppliesUpperBoundBeforeLimit(t *testing.T) {
 	insertLogFixture(t, db, "InsideToday", todayStart.Add(now.Sub(todayStart)/2))
 	insertLogFixture(t, db, "FutureOutsideToday", todayStart.Add(25*time.Hour))
 
-	logs, err := NewLogService(nil).ListRequestLogsByRange("", "", statsRangeToday, 1)
+	logs, err := NewLogService(nil, nil, nil).ListRequestLogsByRange("", "", statsRangeToday, 1)
 	if err != nil {
 		t.Fatalf("查询日志失败: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestListRequestLogsByRangeAppliesUpperBoundBeforeLimit(t *testing.T) {
 func TestListRequestLogsByRangeReturnsEmptyForMissingProvider(t *testing.T) {
 	setupRenameTestEnv(t)
 
-	logs, err := NewLogService(nil).ListRequestLogsByRange("claude", "MissingProvider", statsRangeToday, 10)
+	logs, err := NewLogService(nil, nil, nil).ListRequestLogsByRange("claude", "MissingProvider", statsRangeToday, 10)
 	if err != nil {
 		t.Fatalf("查询空日志集失败: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestListRequestLogsByRangeReturnsEmptyForMissingProvider(t *testing.T) {
 func TestListProvidersReturnsEmptyForEmptyTable(t *testing.T) {
 	setupRenameTestEnv(t)
 
-	providers, err := NewLogService(nil).ListProviders("claude")
+	providers, err := NewLogService(nil, nil, nil).ListProviders("claude")
 	if err != nil {
 		t.Fatalf("查询空供应商列表失败: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestStatsByProviderAndRangeFiltersProvider(t *testing.T) {
 	insertLogStatsFixture(t, db, "ProviderA", previousCreatedAt, 20, 2)
 	insertLogStatsFixture(t, db, "ProviderB", previousCreatedAt.Add(time.Hour), 300, 30)
 
-	service := NewLogService(nil)
+	service := NewLogService(nil, nil, nil)
 	weeklyStats, err := service.StatsByProviderAndRange("claude", "ProviderA", statsRange7Days)
 	if err != nil {
 		t.Fatalf("查询供应商周统计失败: %v", err)
@@ -141,7 +141,7 @@ func TestProviderStatsByProviderAndRangeFiltersProvider(t *testing.T) {
 	insertLogStatsFixture(t, db, "ProviderA", createdAt, 10, 1)
 	insertLogStatsFixture(t, db, "ProviderB", createdAt.Add(time.Hour), 300, 30)
 
-	stats, err := NewLogService(nil).ProviderStatsByProviderAndRange("claude", "ProviderA", statsRange7Days)
+	stats, err := NewLogService(nil, nil, nil).ProviderStatsByProviderAndRange("claude", "ProviderA", statsRange7Days)
 	if err != nil {
 		t.Fatalf("查询供应商明细失败: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestPublicStatsExcludeErroredTwoHundredResponses(t *testing.T) {
 		('pi', 'ProviderA', 'model-a', 200, 'client_abort', ?)`, createdAt, createdAt); err != nil {
 		t.Fatal(err)
 	}
-	service := NewLogService(nil)
+	service := NewLogService(nil, nil, nil)
 	overview, err := service.DashboardOverviewByRange("pi", statsRangeToday)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestProviderStatsBySourceAndRangeIsolatesCustomTools(t *testing.T) {
 		('custom', 'tool-b', 'Shared', 'model-a', 200, ?)`, createdAt, createdAt, createdAt); err != nil {
 		t.Fatal(err)
 	}
-	stats, err := NewLogService(nil).ProviderStatsBySourceAndRange("custom", "tool-a", statsRangeToday)
+	stats, err := NewLogService(nil, nil, nil).ProviderStatsBySourceAndRange("custom", "tool-a", statsRangeToday)
 	if err != nil {
 		t.Fatal(err)
 	}

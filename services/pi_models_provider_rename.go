@@ -24,7 +24,7 @@ func (s *PiSettingsService) RenameModelsProvider(originalID string, input PiMode
 	defer s.modelsMu.Unlock()
 
 	originalID = strings.TrimSpace(originalID)
-	if originalID == "" || len(originalID) > 64 || !piModelsProviderIDPattern.MatchString(originalID) {
+	if originalID == "" || len(originalID) > 64 || !PiModelsProviderIDPattern.MatchString(originalID) {
 		return fmt.Errorf("原 Provider key 格式无效")
 	}
 	var err error
@@ -253,13 +253,13 @@ func (s *PiSettingsService) renamePiSupplierPlatformReferences(originalID, newID
 		return nil, false, fmt.Errorf("读取 Pi 上游供应商失败: %w", err)
 	}
 	for _, provider := range providers {
-		if provider.piPlatformKey() == newID {
+		if provider.PiPlatformKey() == newID {
 			return nil, false, fmt.Errorf("Pi 上游供应商已占用目标平台: %s", newID)
 		}
 	}
 	changed := false
 	for index := range providers {
-		if providers[index].piPlatformKey() != originalID {
+		if providers[index].PiPlatformKey() != originalID {
 			continue
 		}
 		providers[index].PiPlatform = newID

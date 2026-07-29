@@ -68,7 +68,7 @@ func TestProviderImportPreservesExistingIDs(t *testing.T) {
 		{ID: 2002, Name: "Beta", APIURL: "https://b.com", APIKey: "kb", Enabled: false, Level: 1},
 	})
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -79,9 +79,9 @@ func TestProviderImportPreservesExistingIDs(t *testing.T) {
 	defer rows.Close()
 
 	type row struct {
-		id                          int64
-		name, apiURL, apiKey        string
-		enabled, level, order       int
+		id                    int64
+		name, apiURL, apiKey  string
+		enabled, level, order int
 	}
 	var got []row
 	for rows.Next() {
@@ -119,7 +119,7 @@ func TestProviderImportCoversAllPlatformsAndCustomCLI(t *testing.T) {
 		{ID: 5, Name: "T", APIURL: "u", APIKey: "k", Enabled: true},
 	})
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -152,7 +152,7 @@ func TestProviderImportPreservesLongTailConfig(t *testing.T) {
 	original := fullyPopulatedProvider()
 	writeProviderFixture(t, "claude-code.json", []Provider{original})
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
@@ -195,7 +195,7 @@ func TestProviderImportIsIdempotent(t *testing.T) {
 	})
 
 	for i := 0; i < 3; i++ {
-		if err := runMigrationsOn(db); err != nil {
+		if err := RunMigrationsOn(db); err != nil {
 			t.Fatalf("第 %d 次迁移失败: %v", i+1, err)
 		}
 	}
@@ -208,7 +208,7 @@ func TestProviderImportIsIdempotent(t *testing.T) {
 func TestProviderImportHandlesNoFiles(t *testing.T) {
 	db := setupProviderImportEnv(t)
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("全新安装迁移应成功，实际: %v", err)
 	}
 	if got := providerRowCount(t, db); got != 0 {
@@ -224,7 +224,7 @@ func TestProviderImportToleratesDuplicateNames(t *testing.T) {
 		{ID: 11, Name: "Dup", APIURL: "u2", APIKey: "k2", Enabled: true},
 	})
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("重名不应导致迁移失败: %v", err)
 	}
 	// UNIQUE(platform, source_id, name) 下只能留一行

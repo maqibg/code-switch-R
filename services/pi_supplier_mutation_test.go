@@ -23,7 +23,7 @@ func TestPiSupplierMutationAddsSelectedModelsAndSavesProvider(t *testing.T) {
 		t.Fatalf("保存结果不完整: %#v", result)
 	}
 	providers, err := providerService.LoadProviders("pi")
-	if err != nil || len(providers) != 1 || providers[0].piPlatformKey() != "custom" {
+	if err != nil || len(providers) != 1 || providers[0].PiPlatformKey() != "custom" {
 		t.Fatalf("供应商未保存: %#v err=%v", providers, err)
 	}
 	platform, err := service.GetModelsProvider("custom")

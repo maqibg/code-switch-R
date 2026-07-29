@@ -20,7 +20,7 @@ func TestStoredRequestCostRemainsFrozenAfterPricingRulesChange(t *testing.T) {
 		"total_cost":        5.25,
 		"has_pricing":       int64(1),
 		"pricing_version":   "custom:frozen",
-		"pricing_source":    pricingSourceCustom,
+		"pricing_source":    PricingSourceCustom,
 		"pricing_rule_id":   "old-rule",
 		"model":             "frozen-model",
 		"input_tokens":      int64(1_000_000),

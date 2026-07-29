@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Call } from '@wailsio/runtime'
+// 走 bindings 生成的类型化函数，不用 Call.ByName：
+// 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
+import * as LogService from '../../../bindings/codeswitch/services/logservice'
 import { useRouter } from 'vue-router'
 import ListItem from '../Setting/ListRow.vue'
 import LanguageSwitcher from '../Setting/LanguageSwitcher.vue'
@@ -566,8 +568,8 @@ const handleRetentionChange = async () => {
   await persistAppSettings()
   if (logRetentionDays.value <= 0) return
   try {
-    const result = await Call.ByName('codeswitch/services.LogService.ApplyRetentionPolicy')
-    if (result?.storage) recordStorageInfo.value = result.storage
+    const result = await LogService.ApplyRetentionPolicy()
+    if (result?.storage) recordStorageInfo.value = result.storage as unknown as RecordStorageInfo
   } catch (error) {
     console.error('failed to apply log retention policy', error)
   }

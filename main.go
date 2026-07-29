@@ -1,6 +1,7 @@
 package main
 
 import (
+	"codeswitch/internal/relay"
 	"codeswitch/services"
 	"embed"
 	_ "embed"
@@ -127,14 +128,13 @@ func main() {
 	geminiService := services.NewGeminiService(relayAddr)
 	piSettings := services.NewPiSettingsService(relayAddr, providerService)
 	pricingService := services.NewPricingService(appSettings, piSettings)
-	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, notificationService, appSettings, relayAddr)
-	providerRelay.SetPricingService(pricingService)
+	providerRelay := relay.NewProviderRelayService(providerService, blacklistService, notificationService, appSettings, pricingService, relayAddr)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
 	providerModelDiscovery := services.NewProviderModelDiscoveryService(appSettings)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
-	logService := services.NewLogServiceWithPricingAndSettings(providerService, pricingService, appSettings)
+	logService := services.NewLogService(providerService, pricingService, appSettings)
 	logService.StartMaintenance()
 	mcpService := services.NewMCPService()
 	skillService := services.NewSkillService(appSettings)

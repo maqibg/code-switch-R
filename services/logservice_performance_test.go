@@ -13,7 +13,7 @@ func BenchmarkQueryLogStats100K(b *testing.B) {
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(1)
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		b.Fatal(err)
 	}
 	tx, err := db.Begin()

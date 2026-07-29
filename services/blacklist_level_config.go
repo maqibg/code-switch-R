@@ -1,12 +1,52 @@
 package services
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 )
+
+// boolToSettingValue 把布尔值转成 app_settings 里存储的文本形式
+func boolToSettingValue(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+// settingsRowQuerier 覆盖 *sql.DB 与事务连接，让配置读取在两种场景下共用一份实现
+type settingsRowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// loadBlacklistLevelConfigFrom 从 app_settings 读出整份等级拉黑配置。
+//
+// 以默认配置为基底再覆盖：新增字段在旧数据里缺失时保留默认值而不是零值。
+func loadBlacklistLevelConfigFrom(ctx context.Context, q settingsRowQuerier) (*BlacklistLevelConfig, error) {
+	config := DefaultBlacklistLevelConfig()
+
+	var stored string
+	err := q.QueryRowContext(ctx,
+		`SELECT value FROM app_settings WHERE key = ?`, blacklistLevelConfigSettingKey,
+	).Scan(&stored)
+	switch {
+	case err == sql.ErrNoRows:
+		// 配置行还不存在（迁移前的库或全新库）：用默认值
+		return config, nil
+	case err != nil:
+		return nil, fmt.Errorf("读取等级拉黑配置失败: %w", err)
+	}
+	if stored == "" {
+		return config, nil
+	}
+	if err := json.Unmarshal([]byte(stored), config); err != nil {
+		return nil, fmt.Errorf("解析等级拉黑配置失败: %w", err)
+	}
+	return config, nil
+}
 
 // GetBlacklistLevelConfigPath 获取等级拉黑配置文件路径
 func GetBlacklistLevelConfigPath() (string, error) {
@@ -18,8 +58,12 @@ func GetBlacklistLevelConfigPath() (string, error) {
 	return filepath.Join(configDir, "blacklist-config.json"), nil
 }
 
-// GetBlacklistLevelConfig 获取等级拉黑配置
-// 【修复】开关状态从数据库读取，其他配置从 JSON 文件读取
+// GetBlacklistLevelConfig 获取等级拉黑配置。
+//
+// 单一来源是 app_settings 的 blacklist_level_config 行（迁移 v7 收敛）。
+// 原先这份配置有两处真相：JSON 文件存全部字段，而 UI 改动的开关、阈值和
+// 拉黑时长只写 app_settings 的三个独立键，读取时要"先读 JSON、
+// 再用数据库覆盖那几个字段"打补丁维持一致（原注释自称【关键修复】）。
 func (ss *SettingsService) GetBlacklistLevelConfig() (*BlacklistLevelConfig, error) {
 	ss.cacheMu.Lock()
 	if ss.blacklistLevelConfig != nil && time.Now().Before(ss.blacklistLevelConfigUntil) {
@@ -29,46 +73,14 @@ func (ss *SettingsService) GetBlacklistLevelConfig() (*BlacklistLevelConfig, err
 	}
 	ss.cacheMu.Unlock()
 
-	configPath, err := GetBlacklistLevelConfigPath()
+	db, err := dbHandle()
 	if err != nil {
 		return nil, err
 	}
-
-	var config *BlacklistLevelConfig
-
-	// 【修复】始终以默认配置为基础，再用 JSON 覆盖存在的字段
-	// 这样旧版 JSON 中没有的新字段（如 RetryWaitSeconds）会保留默认值，而不是零值
-	config = DefaultBlacklistLevelConfig()
-
-	// 如果配置文件存在，用其内容覆盖默认值
-	if _, err := os.Stat(configPath); err == nil {
-		data, err := os.ReadFile(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("读取配置文件失败: %w", err)
-		}
-
-		// JSON Unmarshal 只会覆盖 JSON 中存在的字段，未出现的字段保持默认值
-		if err := json.Unmarshal(data, config); err != nil {
-			return nil, fmt.Errorf("解析配置文件失败: %w", err)
-		}
+	config, err := loadBlacklistLevelConfigFrom(context.Background(), db)
+	if err != nil {
+		return nil, err
 	}
-	// 如果文件不存在，直接使用默认配置（已在上面初始化）
-
-	// 【关键修复】从数据库读取开关状态，覆盖 JSON 文件中的值
-	// 因为 UI 开关是通过 SetLevelBlacklistEnabled() 写入数据库的
-	dbEnabled, err := ss.GetLevelBlacklistEnabled()
-	if err == nil {
-		config.EnableLevelBlacklist = dbEnabled
-	}
-	// 如果数据库读取失败，保留 JSON 文件中的值（向后兼容）
-
-	// 【关键修复】从数据库读取阈值，覆盖 JSON 文件中的值
-	// 因为 UI 设置的阈值是通过 UpdateBlacklistSettings() 写入数据库的
-	dbThreshold, _, err := ss.GetBlacklistSettings()
-	if err == nil && dbThreshold > 0 {
-		config.FailureThreshold = dbThreshold
-	}
-	// 如果数据库读取失败，保留 JSON 文件中的值（向后兼容）
 
 	ss.cacheMu.Lock()
 	cached := *config
@@ -79,26 +91,62 @@ func (ss *SettingsService) GetBlacklistLevelConfig() (*BlacklistLevelConfig, err
 	return &result, nil
 }
 
-// SaveBlacklistLevelConfig 保存等级拉黑配置
+// SaveBlacklistLevelConfig 保存等级拉黑配置。
+//
+// 只写配置行。收敛前这里写 JSON 文件、而 UI 的开关与阈值写 app_settings
+// 独立键，两条写路径天然分叉；现在读写同一行。
+//
+// 注意不要在这里顺带同步 enable_blacklist：那是拉黑总开关，
+// 与本配置里的 EnableLevelBlacklist（等级拉黑开关）是两个概念，
+// ShouldUseFixedMode 会分别读取再组合判断。
 func (ss *SettingsService) SaveBlacklistLevelConfig(config *BlacklistLevelConfig) error {
-	configPath, err := GetBlacklistLevelConfigPath()
-	if err != nil {
-		return err
-	}
-
-	// 序列化配置
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := json.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
 
-	// 统一走 atomicWriteFile：自建的 temp+rename 缺少 fsync，
-	// 断电时 rename 可能已持久化而数据还没落盘，得到一个空文件或旧内容。
-	if err := atomicWriteFile(configPath, data, 0o644); err != nil {
-		return fmt.Errorf("写入配置文件失败: %w", err)
+	if err := dbExec(
+		`INSERT INTO app_settings (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		blacklistLevelConfigSettingKey, string(data),
+	); err != nil {
+		return fmt.Errorf("写入等级拉黑配置失败: %w", err)
 	}
 	ss.invalidateBlacklistLevelConfigCache()
 
+	return nil
+}
+
+// updateBlacklistLevelConfigFields 就地改配置行里的若干字段。
+//
+// 用读-改-写而不是 SQL 的 json_set：json_set 遇到非法 JSON 返回 NULL，
+// 会把整份配置静默清空。这里在 BEGIN IMMEDIATE 事务内完成，
+// 解析失败就报错回滚，配置行缺失时以默认值为基底建行。
+func (ss *SettingsService) updateBlacklistLevelConfigFields(
+	mutate func(*BlacklistLevelConfig),
+) error {
+	err := dbExecInImmediateTx(context.Background(), func(tx dbTxExecutor) error {
+		config, err := loadBlacklistLevelConfigFrom(context.Background(), tx)
+		if err != nil {
+			return err
+		}
+		mutate(config)
+
+		data, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("序列化配置失败: %w", err)
+		}
+		_, err = tx.ExecContext(context.Background(),
+			`INSERT INTO app_settings (key, value) VALUES (?, ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			blacklistLevelConfigSettingKey, string(data),
+		)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	ss.invalidateBlacklistLevelConfigCache()
 	return nil
 }
 

@@ -87,21 +87,15 @@ export function PlatformProxyStatus(providerID: string): $CancellablePromise<$mo
     });
 }
 
-export function PreviewModelsJSON(input: $models.PiModelsPreviewRequest): $CancellablePromise<$models.PiModelsPreviewResult> {
-    return $Call.ByID(3412279864, input).then(($result: any) => {
-        return $$createType7($result);
-    });
-}
-
 export function PreviewPlatformModeChange(providerID: string, targetMode: string): $CancellablePromise<$models.PiPlatformChangePlan> {
     return $Call.ByID(4273163056, providerID, targetMode).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType7($result);
     });
 }
 
 export function ProxyStatus(): $CancellablePromise<$models.ClaudeProxyStatus> {
     return $Call.ByID(2361587658).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType8($result);
     });
 }
 
@@ -119,7 +113,7 @@ export function ResolvePlatformConflict(providerID: string, action: string, expe
 
 export function RuntimeSnapshot(): $CancellablePromise<$models.PiRuntimeSnapshot> {
     return $Call.ByID(2024724712).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType9($result);
     });
 }
 
@@ -129,7 +123,7 @@ export function SavePlatformOrder(providerIDs: string[], expectedRevision: strin
 
 export function SaveSupplierMutation(input: $models.PiSupplierMutationRequest): $CancellablePromise<$models.PiSupplierMutationResult> {
     return $Call.ByID(1690937910, input).then(($result: any) => {
-        return $$createType11($result);
+        return $$createType10($result);
     });
 }
 
@@ -164,8 +158,7 @@ const $$createType3 = $models.PiPlatformConflictDetail.createFrom;
 const $$createType4 = $models.Provider.createFrom;
 const $$createType5 = $models.PiModelsCatalogSnapshot.createFrom;
 const $$createType6 = $models.PiPlatformProxyStatus.createFrom;
-const $$createType7 = $models.PiModelsPreviewResult.createFrom;
-const $$createType8 = $models.PiPlatformChangePlan.createFrom;
-const $$createType9 = $models.ClaudeProxyStatus.createFrom;
-const $$createType10 = $models.PiRuntimeSnapshot.createFrom;
-const $$createType11 = $models.PiSupplierMutationResult.createFrom;
+const $$createType7 = $models.PiPlatformChangePlan.createFrom;
+const $$createType8 = $models.ClaudeProxyStatus.createFrom;
+const $$createType9 = $models.PiRuntimeSnapshot.createFrom;
+const $$createType10 = $models.PiSupplierMutationResult.createFrom;

@@ -29,7 +29,7 @@ func initBlacklistTestDB(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	if err := runMigrationsOn(db); err != nil {
+	if err := RunMigrationsOn(db); err != nil {
 		t.Fatalf("建表失败: %v", err)
 	}
 	if _, err := db.Exec(`DELETE FROM provider_blacklist`); err != nil {

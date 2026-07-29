@@ -43,7 +43,7 @@ func TestCustomPricingRulesAreCaseInsensitiveAndFirstMatchWins(t *testing.T) {
 	service := newPricingServiceForTest(t, rules)
 	snapshot := service.newRequestSnapshot("codex", "", "GPT-TEST")
 	result := snapshot.Calculate("GPT-TEST", modelpricing.UsageSnapshot{InputTokens: 1_000_000})
-	if result.Source != pricingSourceCustom || result.RuleID != "generic" {
+	if result.Source != PricingSourceCustom || result.RuleID != "generic" {
 		t.Fatalf("应由第一条忽略大小写的规则命中: %#v", result)
 	}
 	if math.Abs(result.Cost.TotalCost-2) > 1e-9 || !result.Cost.HasPricing {

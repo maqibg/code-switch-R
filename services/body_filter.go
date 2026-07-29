@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var schemaNameContainers = map[string]struct{}{
@@ -53,4 +56,21 @@ func filterPrivateJSONValue(value any, parentKey string) any {
 	default:
 		return value
 	}
+}
+
+// ReplaceModelInRequestBody 替换请求体中的模型名
+// 使用 gjson + sjson 实现高性能 JSON 操作，避免完整反序列化。
+// （原在 providerrelay.go；pi 的模型映射也用它，relay 拆出后归属留在 services 的 body 工具）
+func ReplaceModelInRequestBody(bodyBytes []byte, newModel string) ([]byte, error) {
+	result := gjson.GetBytes(bodyBytes, "model")
+	if !result.Exists() {
+		return bodyBytes, fmt.Errorf("请求体中未找到 model 字段")
+	}
+
+	modified, err := sjson.SetBytes(bodyBytes, "model", newModel)
+	if err != nil {
+		return bodyBytes, fmt.Errorf("替换模型名失败: %w", err)
+	}
+
+	return modified, nil
 }
