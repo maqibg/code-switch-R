@@ -30,6 +30,24 @@ func TestBuildRoutePlanCodexOpenAIChatRequiresBridge(t *testing.T) {
 	}
 }
 
+func TestBuildRoutePlanGrokSupportsAllUpstreamProtocols(t *testing.T) {
+	tests := []struct {
+		upstream string
+		protocol Protocol
+		bridge   Bridge
+	}{
+		{upstream: "openai_responses", protocol: OpenAIResponses, bridge: BridgeNone},
+		{upstream: "openai_chat", protocol: OpenAIChat, bridge: BridgeCodexResponsesToChat},
+		{upstream: "anthropic", protocol: AnthropicMessages, bridge: BridgeOpenAIResponsesToAnthropic},
+	}
+	for _, test := range tests {
+		plan := BuildRoutePlan("grok", test.upstream, "/v1/responses")
+		if plan.ClientProtocol != OpenAIResponses || plan.UpstreamProtocol != test.protocol || plan.Bridge != test.bridge {
+			t.Fatalf("upstream=%s plan=%#v", test.upstream, plan)
+		}
+	}
+}
+
 func TestBuildRoutePlanAnthropicOpenAIChatRequiresBridge(t *testing.T) {
 	plan := BuildRoutePlan("claude", "openai_chat", "/v1/messages")
 

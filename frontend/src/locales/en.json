@@ -768,6 +768,7 @@
     "platforms": {
       "claude": "Claude Code",
       "codex": "Codex",
+      "grok": "Grok Build",
       "gemini": "Gemini",
       "reasonix": "Reasonix",
       "pi": "Pi",
@@ -1827,5 +1828,26 @@
       "tabPreview": "Preview",
       "tabCurrent": "Current"
     }
+  },
+  "grok": {
+    "title": "Grok Build",
+    "tabs": { "build": "Grok Build", "oauth": "Grok Build OAuth" },
+    "mode": { "unmanaged": "Unmanaged", "grok_relay": "Relay Active", "grok_oauth": "OAuth Applied" },
+    "loading": "Loading...",
+    "actions": { "logs": "Logs", "stats": "Stats", "reapply": "Reapply", "abandon": "Abandon", "disable": "Disable", "enableRelay": "Enable Relay", "addProvider": "Add Provider", "edit": "Edit", "delete": "Delete", "cancel": "Cancel", "save": "Save", "confirm": "Confirm" },
+    "stats": { "requests": "Requests", "tokens": "Tokens", "cost": "Cost", "success": "Success rate" },
+    "build": { "directory": "Grok config directory", "directoryPlaceholder": "Default ~/.grok", "providers": "Providers", "inboundModel": "Inbound model", "emptyProviders": "No providers", "enabled": "Enabled", "addTitle": "Add Grok Provider", "editTitle": "Edit Grok Provider" },
+    "form": { "name": "Name", "url": "API URL", "apiKey": "API Key", "showKey": "Show API key", "hideKey": "Hide API key", "protocol": "Upstream protocol", "upstreamModel": "Upstream model", "upstreamModelPlaceholder": "Select or enter the actual upstream model", "upstreamModelHint": "Saving maps grok-build to this exact model.", "selectUpstreamModel": "Select a fetched model", "fetchModels": "Fetch models", "endpoint": "API endpoint", "level": "Priority", "auth": "Authentication", "customHeader": "Custom Header", "authHeader": "Authentication header", "useProxy": "Use global proxy" },
+    "oauth": { "deviceCode": "Device Code", "importCurrent": "Import current auth.json", "importFiles": "Import credential files", "importDirectory": "Import directory", "refreshAll": "Refresh all quotas", "userCode": "User code", "copyCode": "Copy code", "cancel": "Cancel", "accounts": "OAuth accounts", "emptyAccounts": "No OAuth accounts", "plan": "Plan", "week": "Weekly", "month": "Monthly", "expires": "Expires", "refreshToken": "Refresh token", "refreshQuota": "Refresh quota", "apply": "Apply account", "applied": "Applied" },
+    "confirm": {
+      "disable": { "title": "Disable management", "message": "The model fields from before the first takeover will be restored." },
+      "abandon": { "title": "Abandon management", "message": "The current disk configuration stays unchanged and only the application record is removed." },
+      "delete-provider": { "title": "Delete Provider", "message": "This removes the Provider and its related blacklist records." },
+      "delete-account": { "title": "Delete OAuth account", "message": "Only the account copy in the portable application directory is removed." },
+      "modeSwitchTitle": "Switch Grok runtime mode",
+      "switchToRelay": "This switches from official OAuth to Grok Build Relay. Accounts and Provider data are retained while managed fields are updated atomically.",
+      "switchToOAuth": "This switches from Grok Build Relay to official OAuth. Provider data is retained while managed fields are updated atomically."
+    },
+    "toast": { "directorySaved": "Config directory saved", "relayEnabled": "Grok Relay enabled", "reapplied": "Management reapplied", "required": "Name, API URL, and upstream model are required", "noEligibleProvider": "Enable at least one valid Grok Provider first", "providerSaved": "Provider saved", "accountApplied": "OAuth account applied", "tokenRefreshed": "Token refreshed", "quotaRefreshed": "Quota refreshed", "quotaRefreshFailed": "Quota refresh failed", "deviceCompleted": "Device Code sign-in completed" }
   }
 }

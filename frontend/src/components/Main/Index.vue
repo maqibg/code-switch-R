@@ -140,7 +140,26 @@
           </button>
         </div>
         <div class="section-controls">
-          <div class="relay-toggle" :aria-label="currentProxyLabel">
+          <template v-if="isGrokOAuthTab">
+            <BaseButton :disabled="grokRuntimeBusy" @click="runGrokOAuthToolbarAction('startDeviceLogin')">
+              {{ t('grok.oauth.deviceCode') }}
+            </BaseButton>
+            <Menu as="div" class="oauth-import-menu">
+              <MenuButton class="ghost-icon" :disabled="grokRuntimeBusy" :data-tooltip="t('grok.oauth.importFiles')">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6l2 2h8v14H4zM4 4v16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
+              </MenuButton>
+              <MenuItems class="oauth-import-items">
+                <MenuItem v-slot="{ active }"><button :class="{ active }" type="button" @click="runGrokOAuthToolbarAction('importCurrentAuth')">{{ t('grok.oauth.importCurrent') }}</button></MenuItem>
+                <MenuItem v-slot="{ active }"><button :class="{ active }" type="button" @click="runGrokOAuthToolbarAction('importFiles')">{{ t('grok.oauth.importFiles') }}</button></MenuItem>
+                <MenuItem v-slot="{ active }"><button :class="{ active }" type="button" @click="runGrokOAuthToolbarAction('importDirectory')">{{ t('grok.oauth.importDirectory') }}</button></MenuItem>
+              </MenuItems>
+            </Menu>
+            <button class="ghost-icon" :class="{ rotating: grokRuntimeBusy }" :disabled="grokRuntimeBusy" :data-tooltip="t('grok.oauth.refreshAll')" @click="runGrokOAuthToolbarAction('refreshAllQuota')">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+            </button>
+          </template>
+          <template v-else>
+          <div v-if="!isGrokBuildTab" class="relay-toggle" :aria-label="currentProxyLabel">
             <div class="relay-switch">
               <label class="mac-switch sm">
                 <input
@@ -152,6 +171,15 @@
                 <span></span>
               </label>
               <span class="relay-tooltip-content">{{ currentProxyLabel }} · {{ t('components.main.relayToggle.tooltip') }}</span>
+            </div>
+          </div>
+          <div v-else class="relay-toggle" :aria-label="t('grok.actions.enableRelay')">
+            <div class="relay-switch">
+              <label class="mac-switch sm">
+                <input type="checkbox" :checked="grokRelayActive" :disabled="grokRuntimeBusy || Boolean(grokRuntime?.conflict) || (!grokRelayActive && !hasEligibleGrokRelayProvider)" @change="onGrokRelayToggle" />
+                <span></span>
+              </label>
+              <span class="relay-tooltip-content">{{ grokRelayToggleTooltip }}</span>
             </div>
           </div>
           <button
@@ -188,9 +216,31 @@
               />
             </svg>
           </button>
+          </template>
         </div>
       </div>
 
+      <GrokRuntimeBar
+        v-if="isGrokPlatformTab"
+        :status="grokRuntime"
+        :busy="grokRuntimeBusy"
+        @save-directory="(directory) => runGrokRuntimeAction(() => setGrokCustomDirectory(directory))"
+        @disable="runGrokRuntimeAction(disableGrokManagement)"
+        @reapply="runGrokRuntimeAction(reapplyGrokManagement)"
+        @abandon="runGrokRuntimeAction(abandonGrokManagement)"
+      />
+
+      <GrokOAuthPanel
+        v-if="isGrokOAuthTab"
+        ref="grokOAuthPanel"
+        :runtime="grokRuntime"
+        :refresh-key="grokOAuthRefreshKey"
+        :external-busy="grokRuntimeBusy"
+        @apply-account="requestApplyGrokOAuthAccount"
+        @accounts-changed="refreshGrokRuntime"
+      />
+
+      <template v-else>
       <!-- 'others' Tab: CLI 工具选择器 -->
       <div v-if="activeTab === 'others'" class="cli-tool-selector">
         <div class="tool-selector-row">
@@ -424,12 +474,12 @@
           </div>
           <div class="card-actions">
             <label class="mac-switch sm">
-              <input type="checkbox" v-model="card.enabled" @change="persistProviders(activeTab)" />
+              <input type="checkbox" v-model="card.enabled" @change="persistActiveProviders" />
               <span></span>
             </label>
             <!-- 直连应用按钮 -->
             <button
-              v-if="activeTab !== 'others'"
+              v-if="activeTab !== 'others' && activeTab !== 'grok'"
               class="ghost-icon direct-apply-btn"
               :class="{ 'is-active': isDirectApplied(card) && !activeProxyState }"
               :disabled="activeProxyState"
@@ -489,6 +539,7 @@
         :tool-name="selectedCustomCliTool.name"
         :config-files="selectedCustomCliTool.configFiles"
       />
+      </template>
       </section>
 
       <div
@@ -609,6 +660,14 @@
                     </div>
                   </Listbox>
                   <span class="field-hint">{{ upstreamProtocolHint }}</span>
+                </div>
+
+                <div v-if="isGrokProviderModal" class="form-field">
+                  <GrokUpstreamModelField
+                    v-model="modalState.form.grokUpstreamModel"
+                    :provider="modelDiscoveryProvider"
+                  />
+                  <span class="field-hint">{{ t('grok.form.upstreamModelHint') }}</span>
                 </div>
 
                 <div v-if="modalState.tabId === 'codex'" class="form-field switch-field">
@@ -814,7 +873,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.level') }}</span>
                 </div>
 
-                <div class="form-field">
+                <div v-if="!isGrokProviderModal" class="form-field">
                   <ModelWhitelistEditor
                     v-model="modalState.form.supportedModels"
                     :platform="modalState.tabId === 'others' && selectedToolId ? getCustomProviderKind(selectedToolId) : modalState.tabId"
@@ -822,11 +881,11 @@
                   />
                 </div>
 
-                <div class="form-field">
+                <div v-if="!isGrokProviderModal" class="form-field">
                   <ModelMappingEditor v-model="modalState.form.modelMapping" />
                 </div>
 
-                <div class="form-field">
+                <div v-if="!isGrokProviderModal" class="form-field">
                   <CLIConfigEditor
                     :platform="activeTab as CLIPlatform"
                     v-model="modalState.form.cliConfig"
@@ -892,7 +951,7 @@
                   </BaseButton>
                   <!-- 保存并应用：仅在编辑模式、非代理模式、非 others 平台时显示 -->
                   <BaseButton
-                    v-if="modalState.editingId && modalState.tabId !== 'others' && !activeProxyState"
+                    v-if="modalState.editingId && modalState.tabId !== 'others' && modalState.tabId !== 'grok' && !activeProxyState"
                     type="button"
                     variant="primary"
                     @click="submitAndApplyModal"
@@ -921,6 +980,18 @@
           {{ t('components.main.form.actions.delete') }}
         </BaseButton>
       </footer>
+      </BaseModal>
+      <BaseModal
+        :open="grokModeConfirm.open"
+        :title="t('grok.confirm.modeSwitchTitle')"
+        variant="confirm"
+        @close="grokModeConfirm.open = false"
+      >
+        <div class="confirm-body"><p>{{ grokModeConfirmMessage }}</p></div>
+        <footer class="form-actions confirm-actions">
+          <BaseButton variant="outline" type="button" @click="grokModeConfirm.open = false">{{ t('grok.actions.cancel') }}</BaseButton>
+          <BaseButton variant="primary" type="button" :disabled="grokRuntimeBusy" @click="confirmGrokModeSwitch">{{ t('grok.actions.confirm') }}</BaseButton>
+        </footer>
       </BaseModal>
 
       <!-- CLI 工具配置模态框 -->
@@ -1081,9 +1152,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headlessui/vue'
+import { Listbox, ListboxButton, ListboxOptions, ListboxOption, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { Browser } from '@wailsio/runtime'
 import { useRouter } from 'vue-router'
 import { useAdaptiveHeatmap } from '../../composables/useAdaptiveHeatmap'
@@ -1091,6 +1162,9 @@ import { useActivePolling } from '../../composables/useActivePolling'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
+import GrokOAuthPanel from './GrokOAuthPanel.vue'
+import GrokRuntimeBar from './GrokRuntimeBar.vue'
+import GrokUpstreamModelField from './GrokUpstreamModelField.vue'
 import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import HeaderEditor from '../common/HeaderEditor.vue'
@@ -1119,6 +1193,16 @@ import { useUsageTooltip } from './composables/useUsageTooltip'
 import { usePlatformOrderMenu } from './composables/usePlatformOrderMenu'
 import { useVendorModal } from './composables/useVendorModal'
 import { useCustomCliTools } from './composables/useCustomCliTools'
+import {
+  abandonGrokManagement,
+  applyGrokOAuthAccount,
+  disableGrokManagement,
+  enableGrokRelay,
+  fetchGrokRuntimeStatus,
+  reapplyGrokManagement,
+  setGrokCustomDirectory,
+  type GrokRuntimeStatus,
+} from '../../services/grok'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -1176,7 +1260,108 @@ const {
 // ---------- 状态层与各域 composable ----------
 
 const state = createMainState()
-const { tabs, selectedIndex, activeTab, activeCards, selectedToolId, customCliTools } = state
+const { tabs, selectedIndex, activeTab, activeProviderTab, activeCards, selectedToolId, customCliTools } = state
+
+const isGrokBuildTab = computed(() => activeTab.value === 'grok')
+const isGrokOAuthTab = computed(() => activeTab.value === 'grok-oauth')
+const isGrokPlatformTab = computed(() => isGrokBuildTab.value || isGrokOAuthTab.value)
+const providerProxyTabIds = providerTabIds.filter((tab) => tab !== 'grok')
+
+const grokRuntime = ref<GrokRuntimeStatus | null>(null)
+const grokRuntimeBusy = ref(false)
+const grokOAuthRefreshKey = ref(0)
+type GrokOAuthPanelActions = {
+  startDeviceLogin: () => Promise<void>
+  importCurrentAuth: () => Promise<void>
+  importFiles: () => Promise<void>
+  importDirectory: () => Promise<void>
+  refreshAllQuota: () => Promise<void>
+}
+const grokOAuthPanel = ref<GrokOAuthPanelActions | null>(null)
+const grokModeConfirm = reactive<{ open: boolean; action: 'relay' | 'oauth' | ''; accountID: string }>({
+  open: false,
+  action: '',
+  accountID: '',
+})
+const refreshGrokRuntime = async () => { grokRuntime.value = await fetchGrokRuntimeStatus() }
+const grokRelayActive = computed(() => grokRuntime.value?.mode === 'grok_relay')
+const hasEligibleGrokRelayProvider = computed(() => state.cards.grok.some((card) => {
+  const authScheme = (card.authScheme || card.connectivityAuthType || 'bearer').trim().toLowerCase()
+  const upstreamModel = card.modelMapping?.['grok-build']?.trim() || ''
+  return card.enabled && Boolean(card.apiUrl.trim()) && Boolean(upstreamModel) &&
+    Boolean(card.supportedModels?.[upstreamModel]) && (authScheme === 'none' || Boolean(card.apiKey.trim()))
+}))
+const grokRelayToggleTooltip = computed(() => {
+  if (!grokRelayActive.value && !hasEligibleGrokRelayProvider.value) return t('grok.toast.noEligibleProvider')
+  return grokRelayActive.value ? t('grok.actions.disable') : t('grok.actions.enableRelay')
+})
+const grokModeConfirmMessage = computed(() => (
+  grokModeConfirm.action === 'relay' ? t('grok.confirm.switchToRelay') : t('grok.confirm.switchToOAuth')
+))
+const runGrokRuntimeAction = async (action: () => Promise<GrokRuntimeStatus>) => {
+  if (grokRuntimeBusy.value) return
+  grokRuntimeBusy.value = true
+  try {
+    grokRuntime.value = await action()
+    grokOAuthRefreshKey.value++
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), 'error')
+  } finally {
+    grokRuntimeBusy.value = false
+  }
+}
+const requestEnableGrokRelay = () => {
+  if (!hasEligibleGrokRelayProvider.value) {
+    showToast(t('grok.toast.noEligibleProvider'), 'error')
+    return
+  }
+  if (grokRuntime.value?.mode === 'grok_oauth') {
+    grokModeConfirm.action = 'relay'
+    grokModeConfirm.open = true
+    return
+  }
+  void runGrokRuntimeAction(enableGrokRelay)
+}
+const onGrokRelayToggle = () => {
+  if (grokRelayActive.value) {
+    void runGrokRuntimeAction(disableGrokManagement)
+    return
+  }
+  requestEnableGrokRelay()
+}
+const requestApplyGrokOAuthAccount = (accountID: string) => {
+  if (grokRuntime.value?.mode === 'grok_relay') {
+    grokModeConfirm.action = 'oauth'
+    grokModeConfirm.accountID = accountID
+    grokModeConfirm.open = true
+    return
+  }
+  void runGrokRuntimeAction(() => applyGrokOAuthAccount(accountID))
+}
+const confirmGrokModeSwitch = () => {
+  const action = grokModeConfirm.action
+  const accountID = grokModeConfirm.accountID
+  grokModeConfirm.open = false
+  grokModeConfirm.action = ''
+  grokModeConfirm.accountID = ''
+  if (action === 'relay') void runGrokRuntimeAction(enableGrokRelay)
+  if (action === 'oauth') void runGrokRuntimeAction(() => applyGrokOAuthAccount(accountID))
+}
+const persistActiveProviders = async () => {
+  const tab = activeProviderTab.value
+  if (tab) await persistProviders(tab)
+}
+const runGrokOAuthToolbarAction = async (method: keyof GrokOAuthPanelActions) => {
+  if (grokRuntimeBusy.value || !grokOAuthPanel.value) return
+  grokRuntimeBusy.value = true
+  try {
+    await grokOAuthPanel.value[method]()
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), 'error')
+  } finally {
+    grokRuntimeBusy.value = false
+  }
+}
 
 const {
   platformOrderMenu,
@@ -1245,6 +1430,7 @@ const {
   authTypeOptions,
   userAgentOptions,
   showUpstreamProtocolField,
+  isGrokProviderModal,
   isCodexChatProtocol,
   effectiveUpstreamProtocolOptions,
   upstreamProtocolHint,
@@ -1311,15 +1497,21 @@ const onTabChange = (idx: number) => {
   selectedIndex.value = idx
   const nextTab = tabs[idx]?.id
   if (nextTab) {
-    void refreshProxyState(nextTab)
-    void refreshDirectAppliedStatus(nextTab)
-    void loadProviderStats(nextTab)
+    if (nextTab === 'grok' || nextTab === 'grok-oauth') void refreshGrokRuntime()
+    if (nextTab !== 'grok-oauth') {
+      void loadProviderStats(nextTab)
+      void loadBlacklistStatus(nextTab)
+    }
+    if (nextTab !== 'grok' && nextTab !== 'grok-oauth') {
+      void refreshProxyState(nextTab)
+      void refreshDirectAppliedStatus(nextTab)
+    }
   }
 }
 
 // 切换 Tab 后立即刷新统计与黑名单状态
 watch(activeTab, (newTab) => {
-  if (!state.pollingActive.value || document.hidden) return
+  if (!state.pollingActive.value || document.hidden || newTab === 'grok-oauth') return
   void loadProviderStats(newTab)
   void loadBlacklistStatus(newTab)
 })
@@ -1345,8 +1537,9 @@ const refreshAllData = async () => {
     await Promise.all([
       reloadHeatmap(),
       loadProvidersFromDisk(),
-      ...providerTabIds.map(refreshProxyState),
-      ...providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)),
+      refreshGrokRuntime(),
+      ...providerProxyTabIds.map(refreshProxyState),
+      ...providerProxyTabIds.map((tab) => refreshDirectAppliedStatus(tab)),
       ...providerTabIds.map((tab) => loadProviderStats(tab)),
       ...providerTabIds.map((tab) => loadBlacklistStatus(tab)),
     ])
@@ -1362,9 +1555,9 @@ const refreshAllData = async () => {
 onMounted(async () => {
   void initHeatmap()
   await loadProvidersFromDisk()
-  await Promise.all(providerTabIds.map(refreshProxyState))
-  await Promise.all(providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)))
-  await loadProviderStats(activeTab.value)
+  await Promise.all(providerProxyTabIds.map(refreshProxyState))
+  await Promise.all(providerProxyTabIds.map((tab) => refreshDirectAppliedStatus(tab)))
+  await Promise.all([refreshGrokRuntime(), activeProviderTab.value ? loadProviderStats(activeProviderTab.value) : Promise.resolve()])
   await loadAppSettings()
   await Promise.all(providerTabIds.map((tab) => loadBlacklistStatus(tab)))
 
@@ -1381,6 +1574,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.oauth-import-menu { position: relative; }
+.oauth-import-items { position: absolute; top: calc(100% + 6px); right: 0; z-index: 80; display: grid; min-width: 168px; padding: 5px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .18); }
+.oauth-import-items button { width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--mac-text); padding: 8px 9px; font-size: .78rem; text-align: left; cursor: pointer; }.oauth-import-items button.active, .oauth-import-items button:hover { background: var(--mac-surface-strong); }
 .platform-order-context-menu {
   position: fixed;
   z-index: 1200;

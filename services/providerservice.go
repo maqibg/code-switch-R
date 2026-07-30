@@ -286,6 +286,11 @@ func prepareProviderSave(kind string, providers, existingProviders []Provider, a
 				validationErrors = append(validationErrors, fmt.Sprintf("[%s] %s", p.Name, errMsg))
 			}
 		}
+		if strings.EqualFold(strings.TrimSpace(kind), "grok") {
+			for _, errMsg := range validateGrokProviderConfiguration(*p) {
+				validationErrors = append(validationErrors, fmt.Sprintf("[%s] %s", p.Name, errMsg))
+			}
+		}
 
 		// 规则：name 不可修改（走独立 RenameProvider 路径,SaveProviders 只允许既有 name）
 		if oldName, ok := nameByID[p.ID]; ok && oldName != p.Name && p.ID != allowedRenameID {
@@ -386,6 +391,9 @@ func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
 	// 与原实现一致：读出后填充配置校验结果，供 UI 显示与 relay 过滤使用
 	for i := range providers {
 		providers[i].ValidateConfiguration()
+		if strings.EqualFold(strings.TrimSpace(kind), "grok") {
+			providers[i].configErrors = append(providers[i].configErrors, validateGrokProviderConfiguration(providers[i])...)
+		}
 	}
 	return providers, nil
 }
@@ -699,13 +707,32 @@ func ResolveProviderUpstreamProtocol(platform string, provider Provider, effecti
 		return provider.ResolveUpstreamProtocol(effectiveEndpoint)
 	}
 	switch strings.ToLower(strings.TrimSpace(platform)) {
-	case "codex":
+	case "codex", "grok":
 		return UpstreamProtocolOpenAIResponses
 	case "reasonix", "pi":
 		return UpstreamProtocolOpenAIChat
 	default:
 		return UpstreamProtocolAnthropic
 	}
+}
+
+func validateGrokProviderConfiguration(provider Provider) []string {
+	errors := make([]string, 0)
+	upstreamModel := strings.TrimSpace(provider.ModelMapping[grokInboundModel])
+	if upstreamModel == "" {
+		errors = append(errors, "必须配置 grok-build 到真实上游模型的精确 modelMapping")
+		return errors
+	}
+	if strings.Contains(upstreamModel, "*") {
+		errors = append(errors, "grok-build 必须映射到不含通配符的真实上游模型")
+	}
+	if len(provider.ModelMapping) != 1 {
+		errors = append(errors, "Grok Build 只允许一个 grok-build 入站模型映射")
+	}
+	if !provider.SupportedModels[upstreamModel] {
+		errors = append(errors, fmt.Sprintf("上游模型 %q 必须在 supportedModels 中启用", upstreamModel))
+	}
+	return errors
 }
 
 // ValidateConfiguration 验证 provider 的模型配置

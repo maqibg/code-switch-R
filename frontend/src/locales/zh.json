@@ -768,6 +768,7 @@
     "platforms": {
       "claude": "Claude Code",
       "codex": "Codex",
+      "grok": "Grok Build",
       "gemini": "Gemini",
       "reasonix": "Reasonix",
       "pi": "Pi",
@@ -1829,5 +1830,26 @@
       "tabPreview": "预览效果",
       "tabCurrent": "当前磁盘"
     }
+  },
+  "grok": {
+    "title": "Grok Build",
+    "tabs": { "build": "Grok Build", "oauth": "Grok Build OAuth" },
+    "mode": { "unmanaged": "未接管", "grok_relay": "Relay 已启用", "grok_oauth": "OAuth 已应用" },
+    "loading": "加载中...",
+    "actions": { "logs": "日志", "stats": "统计", "reapply": "重新接管", "abandon": "放弃接管", "disable": "停用接管", "enableRelay": "启用 Relay", "addProvider": "新增 Provider", "edit": "编辑", "delete": "删除", "cancel": "取消", "save": "保存", "confirm": "确认" },
+    "stats": { "requests": "请求", "tokens": "Token", "cost": "成本", "success": "成功率" },
+    "build": { "directory": "Grok 配置目录", "directoryPlaceholder": "默认 ~/.grok", "providers": "Provider", "inboundModel": "入站模型", "emptyProviders": "暂无 Provider", "enabled": "启用", "addTitle": "新增 Grok Provider", "editTitle": "编辑 Grok Provider" },
+    "form": { "name": "名称", "url": "API URL", "apiKey": "API Key", "showKey": "显示 API Key", "hideKey": "隐藏 API Key", "protocol": "上游协议", "upstreamModel": "上游模型", "upstreamModelPlaceholder": "选择或输入上游实际模型名", "upstreamModelHint": "保存时固定映射 grok-build 到该模型。", "selectUpstreamModel": "选择已拉取的模型", "fetchModels": "拉取模型", "endpoint": "API 端点", "level": "优先级", "auth": "认证方式", "customHeader": "自定义 Header", "authHeader": "认证 Header", "useProxy": "使用全局代理" },
+    "oauth": { "deviceCode": "Device Code 登录", "importCurrent": "导入当前 auth.json", "importFiles": "导入凭据文件", "importDirectory": "导入目录", "refreshAll": "刷新全部额度", "userCode": "授权码", "copyCode": "复制授权码", "cancel": "取消登录", "accounts": "OAuth 账号", "emptyAccounts": "暂无 OAuth 账号", "plan": "套餐", "week": "周额度", "month": "月额度", "expires": "过期", "refreshToken": "刷新 Token", "refreshQuota": "刷新额度", "apply": "应用账号", "applied": "已应用" },
+    "confirm": {
+      "disable": { "title": "停用接管", "message": "将恢复首次接管前的模型字段。" },
+      "abandon": { "title": "放弃接管", "message": "保留当前磁盘配置，仅清除应用的接管记录。" },
+      "delete-provider": { "title": "删除 Provider", "message": "将删除此 Provider 及其关联的黑名单记录。" },
+      "delete-account": { "title": "删除 OAuth 账号", "message": "仅删除应用便携目录中的账号副本。" },
+      "modeSwitchTitle": "切换 Grok 运行模式",
+      "switchToRelay": "将从 OAuth 官方模式切换到 Grok Build Relay。账号和 Provider 数据会保留；受管配置字段将原子更新。",
+      "switchToOAuth": "将从 Grok Build Relay 切换到 OAuth 官方模式。Provider 数据会保留；受管配置字段将原子更新。"
+    },
+    "toast": { "directorySaved": "配置目录已保存", "relayEnabled": "Grok Relay 已启用", "reapplied": "已重新接管", "required": "请填写名称、API URL 和上游模型", "noEligibleProvider": "请先启用至少一个有效的 Grok Provider", "providerSaved": "Provider 已保存", "accountApplied": "OAuth 账号已应用", "tokenRefreshed": "Token 已刷新", "quotaRefreshed": "额度已刷新", "quotaRefreshFailed": "额度刷新失败", "deviceCompleted": "Device Code 登录完成" }
   }
 }

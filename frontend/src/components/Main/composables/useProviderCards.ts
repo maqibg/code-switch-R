@@ -48,8 +48,10 @@ export function useProviderCards(state: MainState, t: Translate) {
   })
 
   const requestRemove = (card: AutomationCard) => {
+    const tabId = state.activeProviderTab.value
+    if (!tabId) return
     confirmState.card = card
-    confirmState.tabId = state.activeTab.value
+    confirmState.tabId = tabId
     confirmState.open = true
   }
 
@@ -77,8 +79,10 @@ export function useProviderCards(state: MainState, t: Translate) {
   // ---------- 复制 ----------
 
   const handleDuplicate = async (card: AutomationCard) => {
+    const tabId = state.activeProviderTab.value
+    if (!tabId) return
     try {
-      const duplicated = await platformAdapters[state.activeTab.value].duplicate(state, card)
+      const duplicated = await platformAdapters[tabId].duplicate(state, card)
       if (!duplicated) return
       await loadProvidersFromDisk()
     } catch (error) {
@@ -96,7 +100,8 @@ export function useProviderCards(state: MainState, t: Translate) {
 
   const onDrop = async (targetId: number) => {
     if (draggingId.value === null || draggingId.value === targetId) return
-    const currentTab = state.activeTab.value
+    const currentTab = state.activeProviderTab.value
+    if (!currentTab) return
     const list = state.cards[currentTab]
     if (!list) return
     const fromIndex = list.findIndex((card) => card.id === draggingId.value)

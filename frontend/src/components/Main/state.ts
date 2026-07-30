@@ -7,7 +7,12 @@
 import { computed, reactive, ref } from 'vue'
 import { automationCardGroups, createAutomationCards, type AutomationCard } from '../../data/cards'
 import type { CustomCliTool } from '../../services/customCliService'
-import { orderedHomePlatformTabs, type HomePlatformTab, type ProviderTab } from './platformTabs'
+import {
+  orderedHomePlatformTabs,
+  type HomePlatformTab,
+  type HomePlatformTabID,
+  type ProviderTab,
+} from './platformTabs'
 
 // 本地 GeminiProvider 类型：比生成类型窄（id 固定为 string）。
 // 存储层已并入统一 provider 表，但 Gemini 对外仍暴露 string ID
@@ -30,28 +35,35 @@ export interface GeminiProvider {
   settingsConfig?: Record<string, any>
 }
 
-// 生成一份「每个 Tab 一个初值」的记录，避免手写五份重复字面量
+// 生成一份「每个 Provider Tab 一个初值」的记录，避免手写重复字面量。
 export const tabRecord = <T>(value: () => T): Record<ProviderTab, T> => ({
   claude: value(),
   codex: value(),
   gemini: value(),
   reasonix: value(),
+  grok: value(),
   others: value(),
 })
 
 export function createMainState() {
   const tabs = reactive<HomePlatformTab[]>(orderedHomePlatformTabs())
   const selectedIndex = ref(0)
-  const activeTab = computed<ProviderTab>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
+  const activeTab = computed<HomePlatformTabID>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
+  const activeProviderTab = computed<ProviderTab | null>(() => (
+    activeTab.value === 'grok-oauth' ? null : activeTab.value
+  ))
 
   const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
     claude: createAutomationCards(automationCardGroups.claude),
     codex: createAutomationCards(automationCardGroups.codex),
     gemini: [],
     reasonix: [],
+    grok: [],
     others: [],
   })
-  const activeCards = computed(() => cards[activeTab.value] ?? [])
+  const activeCards = computed(() => (
+    activeProviderTab.value ? cards[activeProviderTab.value] ?? [] : []
+  ))
 
   const proxyStates = reactive(tabRecord(() => false))
   const proxyBusy = reactive(tabRecord(() => false))
@@ -76,6 +88,7 @@ export function createMainState() {
     tabs,
     selectedIndex,
     activeTab,
+    activeProviderTab,
     cards,
     activeCards,
     proxyStates,

@@ -39,6 +39,7 @@ type VendorForm = {
   customUserAgent?: string
   modelsEndpoint?: string
   upstreamProtocol?: string
+  grokUpstreamModel: string
   codexReasoningContinueEnabled?: boolean
   codexReasoningContinueLogEnabled?: boolean
 }
@@ -97,6 +98,7 @@ export function useVendorModal(
     userAgentPreset: 'inherit',
     customUserAgent: '',
     modelsEndpoint: '',
+    grokUpstreamModel: '',
   })
 
   const modalState = reactive({
@@ -156,8 +158,9 @@ export function useVendorModal(
 
   // ---------- 上游协议 ----------
 
-  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'others'])
+  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'grok', 'others'])
   const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
+  const isGrokProviderModal = computed(() => modalState.tabId === 'grok')
   const isCodexChatProtocol = computed(
     () => modalState.tabId === 'codex' && modalState.form.upstreamProtocol === 'openai_chat',
   )
@@ -169,6 +172,9 @@ export function useVendorModal(
     { value: 'openai_responses', label: t('components.main.form.upstreamProtocol.openaiResponses'), desc: t('components.main.form.upstreamProtocol.openaiResponsesDesc') },
   ])
   const effectiveUpstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => {
+    if (modalState.tabId === 'grok') {
+      return upstreamProtocolOptions.value.filter((option) => option.value !== 'auto')
+    }
     if (modalState.tabId !== 'codex') return upstreamProtocolOptions.value
     return [
       {
@@ -195,7 +201,9 @@ export function useVendorModal(
   )
 
   const resolveSubmittedUpstreamProtocol = () =>
-    showUpstreamProtocolField.value ? modalState.form.upstreamProtocol || 'auto' : 'auto'
+    showUpstreamProtocolField.value
+      ? modalState.form.upstreamProtocol || (isGrokProviderModal.value ? 'openai_responses' : 'auto')
+      : 'auto'
 
   // ---------- 模型发现（白名单编辑器拉取上游模型列表用） ----------
 
@@ -223,6 +231,7 @@ export function useVendorModal(
       claude: '/v1/messages',
       codex: '/responses',
       reasonix: '/chat/completions',
+      grok: '/v1/responses',
     }
     return defaults[platform] || '/v1/chat/completions'
   }
@@ -267,10 +276,15 @@ export function useVendorModal(
   // ---------- 打开 / 关闭 ----------
 
   const openCreateModal = () => {
-    modalState.tabId = state.activeTab.value
+    const tabId = state.activeProviderTab.value
+    if (!tabId) return
+    modalState.tabId = tabId
     modalState.editingId = null
     editingCard.value = null
     Object.assign(modalState.form, defaultFormValues())
+    if (state.activeProviderTab.value === 'grok') {
+      modalState.form.upstreamProtocol = 'openai_responses'
+    }
     selectedAuthType.value = getDefaultAuthType(state.activeTab.value)
     customAuthHeader.value = ''
     connectivityTestResult.value = null
@@ -279,7 +293,9 @@ export function useVendorModal(
   }
 
   const openEditModal = (card: AutomationCard) => {
-    modalState.tabId = state.activeTab.value
+    const tabId = state.activeProviderTab.value
+    if (!tabId) return
+    modalState.tabId = tabId
     modalState.editingId = card.id
     editingCard.value = card
     Object.assign(modalState.form, {
@@ -305,6 +321,7 @@ export function useVendorModal(
       userAgentPreset: card.userAgentPreset || 'inherit',
       customUserAgent: card.customUserAgent || '',
       modelsEndpoint: card.modelsEndpoint || '',
+      grokUpstreamModel: card.modelMapping?.['grok-build'] || '',
     })
     // 初始化认证方式状态：存储值可能是预设名、'custom' 标记或自定义 Header 名
     const storedAuth = (card.authScheme || card.connectivityAuthType || '').trim()
@@ -354,6 +371,17 @@ export function useVendorModal(
       return false
     }
     const submittedUpstreamProtocol = resolveSubmittedUpstreamProtocol()
+    const grokUpstreamModel = modalState.form.grokUpstreamModel?.trim() || ''
+    if (isGrokProviderModal.value && !grokUpstreamModel) {
+      showToast(t('grok.toast.required'), 'error')
+      return false
+    }
+    const submittedSupportedModels = isGrokProviderModal.value
+      ? { [grokUpstreamModel]: true }
+      : modalState.form.supportedModels || {}
+    const submittedModelMapping = isGrokProviderModal.value
+      ? { 'grok-build': grokUpstreamModel }
+      : modalState.form.modelMapping || {}
 
     if (editingCard.value) {
       // 若 name 发生变化，先走独立 RenameProvider RPC（后端事务改名日志与黑名单行）。
@@ -390,8 +418,8 @@ export function useVendorModal(
         level: nextLevel,
         enabled: modalState.form.enabled,
         proxyEnabled: !!modalState.form.proxyEnabled,
-        supportedModels: modalState.form.supportedModels || {},
-        modelMapping: modalState.form.modelMapping || {},
+        supportedModels: submittedSupportedModels,
+        modelMapping: submittedModelMapping,
         cliConfig: modalState.form.cliConfig || {},
         apiEndpoint: modalState.form.apiEndpoint || '',
         upstreamProtocol: submittedUpstreamProtocol,
@@ -426,14 +454,14 @@ export function useVendorModal(
         apiUrl,
         apiKey,
         officialSite,
-        icon,
-        accent: '#0a84ff',
-        tint: 'rgba(15, 23, 42, 0.12)',
+        icon: modalState.tabId === 'grok' ? 'grok' : icon,
+        accent: modalState.tabId === 'grok' ? '#059669' : '#0a84ff',
+        tint: modalState.tabId === 'grok' ? 'rgba(16, 185, 129, 0.14)' : 'rgba(15, 23, 42, 0.12)',
         level: normalizeLevel(modalState.form.level),
         enabled: modalState.form.enabled,
         proxyEnabled: !!modalState.form.proxyEnabled,
-        supportedModels: modalState.form.supportedModels || {},
-        modelMapping: modalState.form.modelMapping || {},
+        supportedModels: submittedSupportedModels,
+        modelMapping: submittedModelMapping,
         cliConfig: modalState.form.cliConfig || {},
         apiEndpoint: modalState.form.apiEndpoint || '',
         upstreamProtocol: submittedUpstreamProtocol,
@@ -486,7 +514,7 @@ export function useVendorModal(
   const submitAndApplyModal = async () => {
     const editingId = modalState.editingId
     const tabId = modalState.tabId
-    if (!editingId || tabId === 'others') return
+    if (!editingId || tabId === 'others' || tabId === 'grok') return
 
     const card = state.cards[tabId]?.find((c) => c.id === editingId)
     if (!card) return
@@ -516,6 +544,7 @@ export function useVendorModal(
     authTypeOptions,
     userAgentOptions,
     showUpstreamProtocolField,
+    isGrokProviderModal,
     isCodexChatProtocol,
     effectiveUpstreamProtocolOptions,
     upstreamProtocolHint,

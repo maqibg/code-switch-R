@@ -41,6 +41,7 @@
             <option value="claude">Claude Code</option>
             <option value="codex">Codex</option>
             <option value="gemini">Gemini</option>
+            <option value="grok">Grok Build</option>
             <option value="reasonix">Reasonix</option>
             <option value="pi">Pi</option>
             <option value="custom">{{ t('stats.platforms.custom') }}</option>
@@ -187,7 +188,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { formatBeijingDateTime } from '../../utils/beijingTime'
 import BaseButton from '../common/BaseButton.vue'
@@ -221,12 +222,13 @@ Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, L
 
 const { t, locale } = useI18n()
 const router = useRouter()
+const route = useRoute()
 
 const logs = ref<RequestLog[]>([])
 const stats = ref<LogStats | null>(null)
 const loading = ref(false)
 const filters = reactive<{ platform: LogPlatform | ''; provider: string; range: StatsRange }>({
-  platform: '',
+  platform: route.query.platform === 'grok' ? 'grok' : '',
   provider: '',
   range: 'today',
 })
@@ -665,6 +667,18 @@ watch(
   () => filters.platform,
   async () => {
     await loadProviderOptions()
+  },
+)
+
+watch(
+  () => route.query.platform,
+  async (platform) => {
+    const next = platform === 'grok' ? 'grok' : ''
+    if (filters.platform === next) return
+    filters.platform = next
+    page.value = 1
+    await loadProviderOptions()
+    await loadDashboard()
   },
 )
 

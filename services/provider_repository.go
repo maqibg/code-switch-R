@@ -25,7 +25,7 @@ type providerScope struct {
 
 // scopeForKind 把 provider kind 解析成存储范围。
 //
-// kind 的形态有两类：注册平台（claude/codex/reasonix/pi，含别名）
+// kind 的形态有两类：注册平台（claude/codex/grok/reasonix/pi，含别名）
 // 和自定义 CLI（custom:{toolId}）。
 func scopeForKind(kind string) (providerScope, error) {
 	normalized := strings.ToLower(strings.TrimSpace(kind))

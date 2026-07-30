@@ -89,7 +89,10 @@ export function useProviderStats(
   }
 
   const providerStatDisplay = (providerName: string): ProviderStatDisplay => {
-    const tab = state.activeTab.value
+    const tab = state.activeProviderTab.value
+    if (!tab) {
+      return { state: 'empty', message: t('components.main.providers.noData') }
+    }
     if (!providerStatsLoaded[tab]) {
       return { state: 'loading', message: t('components.main.providers.loading') }
     }
@@ -122,7 +125,8 @@ export function useProviderStats(
     stopProviderStatsTimer()
     providerStatsTimer = window.setInterval(() => {
       if (!state.pollingActive.value || document.hidden) return
-      void loadProviderStats(state.activeTab.value)
+      const activeProviderTab = state.activeProviderTab.value
+      if (activeProviderTab) void loadProviderStats(activeProviderTab)
     }, 60_000)
   }
 

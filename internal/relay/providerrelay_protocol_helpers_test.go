@@ -48,6 +48,40 @@ func newCodexRouteTestRouterWithProvider(t *testing.T, handler http.HandlerFunc,
 	return router
 }
 
+func newGrokRouteTestRouterWithProvider(t *testing.T, handler http.HandlerFunc, overrides services.Provider) *gin.Engine {
+	t.Helper()
+	setupRenameTestEnv(t)
+	gin.SetMode(gin.TestMode)
+	upstreamServer := httptest.NewServer(handler)
+	t.Cleanup(upstreamServer.Close)
+
+	provider := services.Provider{
+		ID: 1, Name: "GrokRouteProvider", APIURL: upstreamServer.URL,
+		APIKey: "test-api-key", Enabled: true, Level: 1,
+		SupportedModels: map[string]bool{"real-grok-model": true},
+		ModelMapping:    map[string]string{"grok-build": "real-grok-model"},
+	}
+	if overrides.UpstreamProtocol != "" {
+		provider.UpstreamProtocol = overrides.UpstreamProtocol
+	}
+	if overrides.APIEndpoint != "" {
+		provider.APIEndpoint = overrides.APIEndpoint
+	}
+	providerService := services.NewProviderService()
+	if err := providerService.SaveProviders("grok", []services.Provider{provider}); err != nil {
+		t.Fatalf("保存 Grok provider 配置失败: %v", err)
+	}
+
+	settingsService := services.NewSettingsService()
+	appSettings := services.NewAppSettingsService(nil)
+	notificationService := services.NewNotificationService(appSettings)
+	blacklistService := services.NewBlacklistService(settingsService, notificationService)
+	relayService := NewProviderRelayService(providerService, blacklistService, notificationService, appSettings, nil, "")
+	router := gin.New()
+	relayService.registerRoutes(router)
+	return router
+}
+
 func newProviderRouteTestRouterWithProvider(t *testing.T, kind string, handler http.HandlerFunc, overrides services.Provider) *gin.Engine {
 	t.Helper()
 	setupRenameTestEnv(t)

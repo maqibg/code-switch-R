@@ -11,22 +11,32 @@ export const defaultTabs = [
   { id: 'codex', label: 'Codex' },
   { id: 'gemini', label: 'Gemini' },
   { id: 'reasonix', label: 'Reasonix' },
+  { id: 'grok', label: 'Grok Build' },
+  { id: 'grok-oauth', label: 'Grok Build OAuth' },
   { id: 'others', label: '其他' },
 ] as const
 
-export type ProviderTab = (typeof defaultTabs)[number]['id']
-export type HomePlatformTab = { id: ProviderTab; label: string }
+export type HomePlatformTabID = (typeof defaultTabs)[number]['id']
+export type ProviderTab = Exclude<HomePlatformTabID, 'grok-oauth'>
+export type HomePlatformTab = { id: HomePlatformTabID; label: string }
 
-export const providerTabIds: ProviderTab[] = defaultTabs.map((tab) => tab.id)
+export const providerTabIds: ProviderTab[] = [
+  'claude',
+  'codex',
+  'gemini',
+  'reasonix',
+  'grok',
+  'others',
+]
 
 // 按用户保存的顺序排列 Tab；未知 ID 忽略，遗漏的按默认顺序补在后面
 export const orderedHomePlatformTabs = (): HomePlatformTab[] => {
-  const tabsByID = new Map<ProviderTab, HomePlatformTab>(
+  const tabsByID = new Map<HomePlatformTabID, HomePlatformTab>(
     defaultTabs.map((tab) => [tab.id, { ...tab }]),
   )
   const ordered: HomePlatformTab[] = []
   for (const id of getStoredHomePlatformOrder()) {
-    const tab = tabsByID.get(id as ProviderTab)
+    const tab = tabsByID.get(id as HomePlatformTabID)
     if (!tab) continue
     ordered.push(tab)
     tabsByID.delete(tab.id)

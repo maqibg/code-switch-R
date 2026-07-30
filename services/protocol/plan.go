@@ -18,7 +18,7 @@ func ClientProtocolForPlatform(platform string, endpoint string) Protocol {
 		return AnthropicMessages
 	}
 	switch normalizePlatform(platform) {
-	case "codex":
+	case "codex", "grok":
 		return OpenAIResponses
 	case "reasonix", "pi":
 		return OpenAIChat
@@ -29,7 +29,7 @@ func ClientProtocolForPlatform(platform string, endpoint string) Protocol {
 
 func UpstreamProtocolFromLegacy(platform string, upstreamProtocol string, endpoint string) Protocol {
 	switch normalizePlatform(platform) {
-	case "codex":
+	case "codex", "grok":
 		return codexUpstreamProtocol(upstreamProtocol)
 	case "gemini":
 		return GeminiNative
@@ -69,6 +69,8 @@ func codexUpstreamProtocol(upstreamProtocol string) Protocol {
 	switch normalizeLegacyProtocol(upstreamProtocol) {
 	case "openai_chat":
 		return OpenAIChat
+	case "anthropic":
+		return AnthropicMessages
 	default:
 		return OpenAIResponses
 	}

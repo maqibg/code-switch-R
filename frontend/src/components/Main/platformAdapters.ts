@@ -239,6 +239,35 @@ const geminiAdapter: PlatformAdapter = {
   },
 }
 
+// ---------- grok：ProviderService 存储；接管状态由 GrokBuildService 单独管理 ----------
+
+const grokAdapter: PlatformAdapter = {
+  async loadCards(state) {
+    const saved = await LoadProviders('grok')
+    replaceCards(state, 'grok', Array.isArray(saved) ? saved as AutomationCard[] : [])
+  },
+  async persistCards(state) {
+    await SaveProviders('grok', serializeProviders(state.cards.grok))
+  },
+  proxy: {
+    async fetchEnabled() {
+      return false
+    },
+    async setEnabled() {
+      throw new Error('Grok Build Relay must be managed through GrokBuildService')
+    },
+  },
+  directApply: undefined,
+  async duplicate(_state, card) {
+    const newProvider = await DuplicateProvider('grok', card.id)
+    if (!newProvider) {
+      console.warn('[Duplicate] DuplicateProvider 返回空结果，已跳过刷新')
+      return false
+    }
+    return true
+  },
+}
+
 // ---------- others：自定义 CLI 工具，provider kind 为 custom:{toolId} ----------
 
 // 加载指定 CLI 工具的 providers 列表
@@ -342,5 +371,6 @@ export const platformAdapters: Record<ProviderTab, PlatformAdapter> = {
   codex: jsonPlatformAdapter('codex'),
   reasonix: jsonPlatformAdapter('reasonix'),
   gemini: geminiAdapter,
+  grok: grokAdapter,
   others: othersAdapter,
 }

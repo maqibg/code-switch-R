@@ -38,10 +38,12 @@ export function useBlacklist(state: MainState, t: Translate) {
 
   // 手动解禁并重置失败计数
   const handleUnblockAndReset = async (providerName: string) => {
+    const tab = state.activeProviderTab.value
+    if (!tab) return
     try {
-      await manualUnblockAndReset(state.activeTab.value, providerName)
+      await manualUnblockAndReset(tab, providerName)
       showToast(t('components.main.blacklist.unblockSuccess', { name: providerName }), 'success')
-      await loadBlacklistStatus(state.activeTab.value)
+      await loadBlacklistStatus(tab)
     } catch (err) {
       console.error('解除拉黑失败:', err)
       showToast(t('components.main.blacklist.unblockFailed'), 'error')
@@ -50,10 +52,12 @@ export function useBlacklist(state: MainState, t: Translate) {
 
   // 手动清零等级（仅重置等级）
   const handleResetLevel = async (providerName: string) => {
+    const tab = state.activeProviderTab.value
+    if (!tab) return
     try {
-      await manualResetLevel(state.activeTab.value, providerName)
+      await manualResetLevel(tab, providerName)
       showToast(t('components.main.blacklist.resetLevelSuccess', { name: providerName }), 'success')
-      await loadBlacklistStatus(state.activeTab.value)
+      await loadBlacklistStatus(tab)
     } catch (err) {
       console.error('清零等级失败:', err)
       showToast(t('components.main.blacklist.resetLevelFailed'), 'error')
@@ -67,7 +71,8 @@ export function useBlacklist(state: MainState, t: Translate) {
   }
 
   const getProviderBlacklistStatus = (providerName: string): BlacklistStatus | null => {
-    return blacklistStatusMap[state.activeTab.value]?.[providerName] || null
+    const tab = state.activeProviderTab.value
+    return tab ? blacklistStatusMap[tab]?.[providerName] || null : null
   }
 
   // ---------- 定时器与监听 ----------
@@ -78,14 +83,16 @@ export function useBlacklist(state: MainState, t: Translate) {
   // 窗口焦点事件：从最小化恢复时立即刷新
   const handleWindowFocus = () => {
     if (!state.pollingActive.value || document.hidden) return
-    void loadBlacklistStatus(state.activeTab.value)
+    const tab = state.activeProviderTab.value
+    if (tab) void loadBlacklistStatus(tab)
   }
 
   onMounted(() => {
     // 每秒更新倒计时，归零时重新拉取
     countdownTimer = window.setInterval(() => {
       if (!state.pollingActive.value || document.hidden) return
-      const tab = state.activeTab.value
+      const tab = state.activeProviderTab.value
+      if (!tab) return
       Object.keys(blacklistStatusMap[tab] ?? {}).forEach((providerName) => {
         const status = blacklistStatusMap[tab][providerName]
         if (status && status.isBlacklisted && status.remainingSeconds > 0) {
@@ -100,7 +107,8 @@ export function useBlacklist(state: MainState, t: Translate) {
     // 每 10 秒轮询当前 Tab 的黑名单状态
     pollingTimer = window.setInterval(() => {
       if (!state.pollingActive.value || document.hidden) return
-      void loadBlacklistStatus(state.activeTab.value)
+      const tab = state.activeProviderTab.value
+      if (tab) void loadBlacklistStatus(tab)
     }, 10_000)
 
     window.addEventListener('focus', handleWindowFocus)

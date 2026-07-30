@@ -20,7 +20,8 @@ export function useProxyState(state: MainState, t: Translate) {
   }
 
   const onProxyToggle = async () => {
-    const tab = state.activeTab.value
+    const tab = state.activeProviderTab.value
+    if (!tab) return
     if (state.proxyBusy[tab]) return
     state.proxyBusy[tab] = true
     const nextState = !state.proxyStates[tab]
@@ -56,8 +57,14 @@ export function useProxyState(state: MainState, t: Translate) {
     }
   })
 
-  const activeProxyState = computed(() => state.proxyStates[state.activeTab.value])
-  const activeProxyBusy = computed(() => state.proxyBusy[state.activeTab.value])
+  const activeProxyState = computed(() => {
+    const tab = state.activeProviderTab.value
+    return tab ? state.proxyStates[tab] : false
+  })
+  const activeProxyBusy = computed(() => {
+    const tab = state.activeProviderTab.value
+    return tab ? state.proxyBusy[tab] : false
+  })
 
   return {
     refreshProxyState,

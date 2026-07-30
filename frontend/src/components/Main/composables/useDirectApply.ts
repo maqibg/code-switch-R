@@ -10,7 +10,9 @@ import type { MainState } from '../state'
 type Translate = (key: string, values?: Record<string, unknown>) => string
 
 export function useDirectApply(state: MainState, t: Translate) {
-  const refreshDirectAppliedStatus = async (tab: ProviderTab = state.activeTab.value) => {
+  const refreshDirectAppliedStatus = async (tab?: ProviderTab) => {
+    tab = tab ?? state.activeProviderTab.value ?? undefined
+    if (!tab) return
     const adapter = platformAdapters[tab].directApply
     if (!adapter) return
     try {
@@ -30,7 +32,8 @@ export function useDirectApply(state: MainState, t: Translate) {
   }
 
   const handleDirectApply = async (card: AutomationCard) => {
-    const tab = state.activeTab.value
+    const tab = state.activeProviderTab.value
+    if (!tab) return
     if (state.proxyStates[tab]) return
     try {
       await applyProviderToCli(tab, card.id)
@@ -43,7 +46,8 @@ export function useDirectApply(state: MainState, t: Translate) {
   }
 
   const isDirectApplied = (card: AutomationCard) => {
-    const tab = state.activeTab.value
+    const tab = state.activeProviderTab.value
+    if (!tab) return false
     const appliedId = state.directAppliedIds[tab]
     if (appliedId === null) return false
     const adapter = platformAdapters[tab].directApply

@@ -129,6 +129,7 @@ func main() {
 	piSettings := services.NewPiSettingsService(relayAddr, providerService)
 	pricingService := services.NewPricingService(appSettings, piSettings)
 	providerRelay := relay.NewProviderRelayService(providerService, blacklistService, notificationService, appSettings, pricingService, relayAddr)
+	grokBuildService := services.NewGrokBuildService(providerRelay.Addr(), appSettings, providerService)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
@@ -236,6 +237,7 @@ func main() {
 			application.NewService(pricingService),
 			application.NewService(providerModelDiscovery),
 			application.NewService(frontendPreferencesService),
+			application.NewService(grokBuildService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -260,6 +262,7 @@ func main() {
 		logService.StopMaintenance()
 
 		// 3. 停止代理服务器
+		_ = grokBuildService.Stop()
 		_ = providerRelay.Stop()
 
 		// 4. 关闭数据库连接

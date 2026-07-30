@@ -320,9 +320,14 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/v1/v1/responses/compact", prs.proxyHandler("codex", "/v1/responses/compact"))
 	router.POST("/codex/v1/responses/compact", prs.proxyHandler("codex", "/v1/responses/compact"))
 
+	// Grok Build 使用独立平台范围，不能复用 Codex 的 Provider、黑名单或日志。
+	router.POST("/grok/v1/responses", prs.proxyHandler("grok", "/v1/responses"))
+	router.POST("/grok/v1/responses/compact", prs.proxyHandler("grok", "/v1/responses/compact"))
+
 	// /v1/models 端点（OpenAI-compatible API）
 	// 支持 Claude 和 Codex 平台
 	router.GET("/v1/models", prs.modelsHandler("claude"))
+	router.GET("/grok/v1/models", prs.grokModelsHandler)
 
 	// Gemini API 端点（使用专门的路径前缀避免与 Claude 冲突）
 	router.POST("/gemini/v1beta/*any", prs.geminiProxyHandler("/v1beta"))
@@ -408,6 +413,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			}
 			// 无认证上游允许空 API Key，其余认证方式必须提供凭据。
 			if !services.ProviderEligibleForRelay(provider, kind) {
+				continue
+			}
+			if kind == "grok" && isResponsesCompactEndpoint(endpoint) &&
+				services.ResolveProviderUpstreamProtocol(kind, provider, endpoint) != services.UpstreamProtocolOpenAIResponses {
+				// compact 没有跨协议转换语义，非原生 Responses Provider 不能参与调度。
+				skippedCount++
 				continue
 			}
 
@@ -1645,6 +1656,22 @@ func (prs *ProviderRelayService) modelsHandler(kind string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		_ = prs.forwardModelsRequest(c, kind, "Models")
 	}
+}
+
+// grokModelsHandler returns the stable model contract consumed by Grok Build.
+// Upstream model names remain provider-owned and are never exposed through the
+// client-facing Grok endpoint.
+func (prs *ProviderRelayService) grokModelsHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data": []gin.H{{
+			"id":         "grok-build",
+			"object":     "model",
+			"owned_by":   "code-switch-r",
+			"created":    time.Now().Unix(),
+			"permission": []string{},
+		}},
+	})
 }
 
 // customModelsHandler 处理自定义 CLI 工具的 /v1/models 请求

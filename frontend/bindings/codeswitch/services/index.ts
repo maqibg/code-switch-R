@@ -13,6 +13,7 @@ import * as DeepLinkService from "./deeplinkservice.js";
 import * as EnvCheckService from "./envcheckservice.js";
 import * as FrontendPreferencesService from "./frontendpreferencesservice.js";
 import * as GeminiService from "./geminiservice.js";
+import * as GrokBuildService from "./grokbuildservice.js";
 import * as ImportService from "./importservice.js";
 import * as LogService from "./logservice.js";
 import * as MCPService from "./mcpservice.js";
@@ -40,6 +41,7 @@ export {
     EnvCheckService,
     FrontendPreferencesService,
     GeminiService,
+    GrokBuildService,
     ImportService,
     LogService,
     MCPService,
@@ -88,6 +90,14 @@ export {
     GeminiProvider,
     GeminiProxyStatus,
     GeminiStatus,
+    GrokDeviceAuthStartResult,
+    GrokDeviceAuthStatus,
+    GrokOAuthAccountDTO,
+    GrokOAuthImportResult,
+    GrokOAuthQuota,
+    GrokOAuthRefreshResult,
+    GrokRuntimeMode,
+    GrokRuntimeStatus,
     HeatmapStat,
     Hotkey,
     ListenMode,
