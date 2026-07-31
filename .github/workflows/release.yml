@@ -54,6 +54,10 @@ jobs:
           wails3 task common:update:build-assets
           wails3 task common:generate:bindings
 
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
       - name: Run Go tests
         shell: pwsh
         run: |
