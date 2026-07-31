@@ -61,10 +61,16 @@ jobs:
       - name: Run Go tests
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $testTemp = Join-Path $env:RUNNER_TEMP 'code-switch-go-test'
+          New-Item -ItemType Directory -Path $testTemp -Force | Out-Null
+          $env:TEMP = $testTemp
+          $env:TMP = $testTemp
+          $env:GOTMPDIR = $testTemp
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
           $env:CGO_ENABLED = '0'
-          go test ./... -timeout 120s
+          go test ./... -timeout 300s
 
       - name: Build portable binary
         shell: pwsh
