@@ -1,10 +1,6 @@
 package main
 
-const AppVersion = "v2.6.56"
-
-// UpdatePolicy 更新策略（可通过 -ldflags "-X main.UpdatePolicy=installer" 覆盖）
-// 可选值：auto（默认）、portable、installer
-var UpdatePolicy = "auto"
+const AppVersion = "v2.6.57"
 
 type VersionService struct {
 	version string
@@ -18,7 +14,7 @@ func (vs *VersionService) CurrentVersion() string {
 	return vs.version
 }
 
-// GetUpdatePolicy 获取更新策略
+// GetUpdatePolicy 保留给现有前端调用，应用只支持便携更新。
 func (vs *VersionService) GetUpdatePolicy() string {
-	return UpdatePolicy
+	return "portable"
 }

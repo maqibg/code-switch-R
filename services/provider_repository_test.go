@@ -20,14 +20,13 @@ func setupProviderRepoEnv(t *testing.T) *sql.DB {
 
 func TestScopeForKindResolvesAllForms(t *testing.T) {
 	cases := map[string]providerScope{
-		"claude":         {platform: "claude"},
-		"claude-code":    {platform: "claude"},
-		"claude_code":    {platform: "claude"},
-		"codex":          {platform: "codex"},
-		"reasonix":       {platform: "reasonix"},
-		"pi":             {platform: "pi"},
-		"gemini":         {platform: "gemini"},
-		"custom:my-tool": {platform: "custom", sourceID: "my-tool"},
+		"claude":      {platform: "claude"},
+		"claude-code": {platform: "claude"},
+		"claude_code": {platform: "claude"},
+		"codex":       {platform: "codex"},
+		"reasonix":    {platform: "reasonix"},
+		"pi":          {platform: "pi"},
+		"gemini":      {platform: "gemini"},
 	}
 	for kind, want := range cases {
 		got, err := scopeForKind(kind)
@@ -40,7 +39,7 @@ func TestScopeForKindResolvesAllForms(t *testing.T) {
 		}
 	}
 
-	for _, bad := range []string{"", "unknown", "custom:"} {
+	for _, bad := range []string{"", "unknown", "custom:", "custom:my-tool"} {
 		if _, err := scopeForKind(bad); err == nil {
 			t.Errorf("scopeForKind(%q) 应报错", bad)
 		}
@@ -149,18 +148,16 @@ func TestProviderRepositoryPreservesOrder(t *testing.T) {
 	}
 }
 
-// 范围隔离：不同平台、不同自定义 CLI 之间互不影响
+// 范围隔离：不同平台之间互不影响
 func TestProviderRepositoryIsolatesScopes(t *testing.T) {
 	setupProviderRepoEnv(t)
 	ctx := context.Background()
 
 	claudeScope := providerScope{platform: "claude"}
 	codexScope := providerScope{platform: "codex"}
-	toolA := providerScope{platform: "custom", sourceID: "tool-a"}
-	toolB := providerScope{platform: "custom", sourceID: "tool-b"}
 
 	// 各范围内用同一个名字，验证不会互相覆盖
-	for _, scope := range []providerScope{claudeScope, codexScope, toolA, toolB} {
+	for _, scope := range []providerScope{claudeScope, codexScope} {
 		if _, err := replaceProvidersInDB(ctx, scope, []Provider{
 			{Name: "SharedName", APIURL: "u", APIKey: "k", Enabled: true},
 		}); err != nil {
@@ -168,7 +165,7 @@ func TestProviderRepositoryIsolatesScopes(t *testing.T) {
 		}
 	}
 
-	for _, scope := range []providerScope{claudeScope, codexScope, toolA, toolB} {
+	for _, scope := range []providerScope{claudeScope, codexScope} {
 		loaded, err := loadProvidersFromDB(ctx, scope)
 		if err != nil {
 			t.Fatalf("读取 %+v 失败: %v", scope, err)
@@ -187,9 +184,6 @@ func TestProviderRepositoryIsolatesScopes(t *testing.T) {
 	}
 	if loaded, _ := loadProvidersFromDB(ctx, codexScope); len(loaded) != 1 {
 		t.Errorf("codex 范围不应受影响，实际 %+v", loaded)
-	}
-	if loaded, _ := loadProvidersFromDB(ctx, toolA); len(loaded) != 1 {
-		t.Errorf("tool-a 范围不应受影响，实际 %+v", loaded)
 	}
 }
 

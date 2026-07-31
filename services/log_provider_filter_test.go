@@ -94,33 +94,6 @@ func TestLogProviderFilterWithoutPlatformUsesName(t *testing.T) {
 	}
 }
 
-// 自定义 CLI 的范围要带上 source_id，避免跨工具误匹配同名供应商
-func TestLogProviderFilterScopesCustomCLI(t *testing.T) {
-	db := setupProviderImportEnv(t)
-	if err := RunMigrationsOn(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
-	}
-	ctx := context.Background()
-
-	if _, err := replaceProvidersInDB(ctx, providerScope{platform: "custom", sourceID: "tool-a"}, []Provider{
-		{ID: 21, Name: "Shared", APIURL: "u", APIKey: "k", Enabled: true},
-	}); err != nil {
-		t.Fatalf("写入 tool-a 失败: %v", err)
-	}
-	if _, err := replaceProvidersInDB(ctx, providerScope{platform: "custom", sourceID: "tool-b"}, []Provider{
-		{ID: 22, Name: "Shared", APIURL: "u", APIKey: "k", Enabled: true},
-	}); err != nil {
-		t.Fatalf("写入 tool-b 失败: %v", err)
-	}
-
-	if got := resolveLogProviderFilter("custom", "tool-a", "Shared").providerID; got != 21 {
-		t.Errorf("tool-a 的 Shared 应解析为 21，实际 %d", got)
-	}
-	if got := resolveLogProviderFilter("custom", "tool-b", "Shared").providerID; got != 22 {
-		t.Errorf("tool-b 的 Shared 应解析为 22，实际 %d", got)
-	}
-}
-
 // 名字匹配忽略大小写与首尾空白（前端下拉框传值可能带空白）
 func TestLogProviderFilterNameMatchIsLenient(t *testing.T) {
 	db := setupProviderImportEnv(t)

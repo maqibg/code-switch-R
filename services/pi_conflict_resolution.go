@@ -262,7 +262,7 @@ func (s *PiSettingsService) ResolvePlatformConflict(providerID, action, expected
 		if currentAuthExists && canonicalJSONHash(currentAuth) == entry.InjectedAuthHash {
 			baselineAuth, baselineAuthExists = entry.OriginalAuth, entry.OriginalAuthExisted
 		}
-		managedAuthRaw, marshalErr := json.Marshal(PiAuthEntry{Type: "api_key", Key: piGatewayToken})
+		managedAuthRaw, marshalErr := json.Marshal(PiAuthEntry{Type: "api_key", Key: relayTokenForConfig()})
 		if marshalErr != nil {
 			return marshalErr
 		}
@@ -318,7 +318,7 @@ func rebaselinePiProvider(current, previousOriginal json.RawMessage, managedBase
 			delete(currentFields, "baseUrl")
 		}
 	}
-	if currentAPIKey == piGatewayToken {
+	if relayManagedTokenMatches(currentAPIKey) {
 		if value, exists := originalFields["apiKey"]; exists {
 			currentFields["apiKey"] = value
 		} else {

@@ -14,7 +14,7 @@ import (
 
 // A3 的行为基线。
 //
-// 三套转发 handler（proxyHandler / geminiProxyHandler / customCliProxyHandler）
+// 各平台转发 handler
 // 各自复制了一份 provider 选择、Level 分组、轮询、重试、拉黑记账、降级判断，
 // 合计约 1080 行。合并前必须先把现有行为固定下来——否则是盲改。
 //

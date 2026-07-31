@@ -95,7 +95,7 @@ func (a *AppService) OpenSecondWindow() {
 func main() {
 	appName := runtimeSetting("CODE_SWITCH_APP_NAME", "code-switch-R")
 	instanceID := runtimeSetting("CODE_SWITCH_INSTANCE_ID", "com.rogers-f.code-switch-r")
-	relayAddr := runtimeSetting("CODE_SWITCH_RELAY_ADDR", "127.0.0.1:18100")
+	relayAddressOverride := strings.TrimSpace(os.Getenv("CODE_SWITCH_RELAY_ADDR"))
 
 	appservice := &AppService{}
 	var mainWindow application.Window
@@ -111,6 +111,13 @@ func main() {
 	log.Println("✅ 数据库已初始化")
 	if err := services.CleanupRemovedDeepSeekCodeProxy(); err != nil {
 		log.Printf("清理已移除的 DeepSeekCode 托管配置失败: %v", err)
+	}
+	if err := services.CleanupRemovedCustomCLIData(); err != nil {
+		log.Fatalf("清理已移除的自定义 CLI 数据失败: %v", err)
+	}
+	relayAddr, err := services.LoadNetworkRuntimeSettings(relayAddressOverride)
+	if err != nil {
+		log.Fatalf("加载 Relay 网络安全设置失败: %v", err)
 	}
 
 	// 第二步：创建服务（现在可以安全使用数据库了）
@@ -138,25 +145,35 @@ func main() {
 	logService := services.NewLogService(providerService, pricingService, appSettings)
 	logService.StartMaintenance()
 	mcpService := services.NewMCPService()
-	skillService := services.NewSkillService(appSettings)
 	promptService := services.NewPromptService()
 	envCheckService := services.NewEnvCheckService()
-	importService := services.NewImportService(providerService, mcpService)
+	importService := services.NewImportService(providerService, mcpService, appSettings)
 	deeplinkService := services.NewDeepLinkService(providerService)
 	connectivityTestService := services.NewConnectivityTestService(appSettings)
 	dockService := dock.New()
 	versionService := NewVersionService()
 	updateService := services.NewUpdateService(AppVersion)
 	consoleService := services.NewConsoleService()
-	customCliService := services.NewCustomCliService(providerRelay.Addr())
-	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService)
+	networkService := services.NewNetworkService(providerRelay, claudeSettings, codexSettings, geminiService)
 	frontendPreferencesService := services.NewFrontendPreferencesService()
 
-	go func() {
-		if err := providerRelay.Start(); err != nil {
-			log.Printf("provider relay start error: %v", err)
-		}
-	}()
+	if err := services.RefreshManagedRelayCredentials(
+		claudeSettings,
+		codexSettings,
+		geminiService,
+		reasonixSettings,
+		piSettings,
+		grokBuildService,
+	); err != nil {
+		log.Fatalf("升级已托管 CLI 的 Relay 凭据失败: %v", err)
+	}
+
+	if err := providerRelay.Start(); err != nil {
+		log.Fatalf("启动 Provider Relay 失败: %v", err)
+	}
+	if err := services.RefreshManagedWSLRelayCredentials(networkService); err != nil {
+		log.Printf("刷新 WSL CLI Relay 凭据失败，请在网络设置中重试: %v", err)
+	}
 
 	// 启动黑名单自动恢复定时器（每分钟检查一次）
 	blacklistStopChan := make(chan struct{})
@@ -219,7 +236,6 @@ func main() {
 			application.NewService(logService),
 			application.NewService(appSettings),
 			application.NewService(mcpService),
-			application.NewService(skillService),
 			application.NewService(promptService),
 			application.NewService(envCheckService),
 			application.NewService(importService),
@@ -230,7 +246,6 @@ func main() {
 			application.NewService(updateService),
 			application.NewService(geminiService),
 			application.NewService(consoleService),
-			application.NewService(customCliService),
 			application.NewService(networkService),
 			application.NewService(reasonixSettings),
 			application.NewService(piSettings),
@@ -443,7 +458,7 @@ func main() {
 	}()
 
 	// Run the application. This blocks until the application has been exited.
-	err := app.Run()
+	err = app.Run()
 
 	// If an error occurred while running the application, log it and exit.
 	if err != nil {

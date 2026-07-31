@@ -50,10 +50,6 @@ func beginRelayTelemetry(c *gin.Context, platform string, clientProtocol relaypr
 	if pricingService != nil {
 		telemetry.pricing = services.NewRequestPricingSnapshot(pricingService, platform, sourceID, requestedModel)
 	}
-	if strings.HasPrefix(platform, "custom:") {
-		telemetry.Platform = "custom"
-		telemetry.SourceID = strings.TrimPrefix(platform, "custom:")
-	}
 	c.Set(relayTelemetryContextKey, telemetry)
 	return telemetry
 }

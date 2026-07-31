@@ -1,4 +1,4 @@
-﻿package services
+package services
 
 import (
 	"bytes"
@@ -266,25 +266,39 @@ func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServe
 	}
 	sort.Strings(deletedBuiltins)
 
+	storePath, err := ms.configPath(normalizedPlatform)
+	if err != nil {
+		return err
+	}
+	storeBefore, storeExisted, err := readOptionalFile(storePath)
+	if err != nil {
+		return err
+	}
 	if err := ms.saveStore(normalizedPlatform, raw, deletedBuiltins); err != nil {
 		return err
+	}
+	rollbackStore := func(syncErr error) error {
+		if rollbackErr := restoreOptionalFile(storePath, storeBefore, storeExisted); rollbackErr != nil {
+			return fmt.Errorf("%w; MCP 存储回滚失败: %v", syncErr, rollbackErr)
+		}
+		return syncErr
 	}
 	switch normalizedPlatform {
 	case platClaudeCode:
 		if err := ms.syncClaudeServers(normalized); err != nil {
-			return err
+			return rollbackStore(err)
 		}
 	case platCodex:
 		if err := ms.syncCodexServers(normalized); err != nil {
-			return err
+			return rollbackStore(err)
 		}
 	case platGemini:
 		if err := ms.syncGeminiServers(normalized); err != nil {
-			return err
+			return rollbackStore(err)
 		}
 	case platReasonix:
 		if err := ms.syncReasonixServers(normalized); err != nil {
-			return err
+			return rollbackStore(err)
 		}
 	}
 	return nil
@@ -729,7 +743,7 @@ func (ms *MCPService) syncReasonixServers(servers []MCPServer) error {
 		}
 		desired[server.Name] = buildClaudeDesktopEntry(server)
 	}
-	return writeJSONMCPServersPreservingLayout(path, "mcpServers", desired, 0o600)
+	return syncManagedJSONMCPServers(path, "mcpServers", platReasonix, desired, 0o600)
 }
 
 func (ms *MCPService) mergeImportedServers(target, imported map[string]rawMCPServer) bool {
@@ -813,7 +827,7 @@ func (ms *MCPService) syncClaudeServers(servers []MCPServer) error {
 		}
 		desired[server.Name] = buildClaudeDesktopEntry(server)
 	}
-	return writeJSONMCPServersPreservingLayout(path, "mcpServers", desired, 0o600)
+	return syncManagedJSONMCPServers(path, "mcpServers", platClaudeCode, desired, 0o600)
 }
 
 func (ms *MCPService) syncCodexServers(servers []MCPServer) error {
@@ -828,14 +842,7 @@ func (ms *MCPService) syncCodexServers(servers []MCPServer) error {
 		}
 		desired[server.Name] = buildCodexEntry(server)
 	}
-	content, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	block := buildCodexMCPServersBlock(desired)
-	updated := replaceCodexMCPServersSection(string(content), block)
-	// 写用户的 ~/.codex/config.toml，必须原子写入：截断的 TOML 会让 Codex CLI 起不来
-	return atomicWriteFile(path, []byte(updated), 0o644)
+	return syncManagedCodexMCPServers(path, desired)
 }
 
 func (ms *MCPService) syncGeminiServers(servers []MCPServer) error {
@@ -850,7 +857,7 @@ func (ms *MCPService) syncGeminiServers(servers []MCPServer) error {
 		}
 		desired[server.Name] = buildGeminiEntry(server)
 	}
-	return writeJSONMCPServersPreservingLayout(path, "mcpServers", desired, 0o644)
+	return syncManagedJSONMCPServers(path, "mcpServers", platGemini, desired, 0o644)
 }
 
 func platformContains(platforms []string, target string) bool {

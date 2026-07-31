@@ -9,73 +9,8 @@ permissions:
   contents: write
 
 jobs:
-#   build-macos:
-#     name: Build macOS
-#     runs-on: macos-latest
-#     strategy:
-#       matrix:
-#         arch: [arm64, amd64]
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - name: Update version from tag
-#         id: version
-#         run: |
-#           VERSION=${GITHUB_REF#refs/tags/v}
-#           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-#           echo "Updating version to: $VERSION"
-#           sed -i '' "s/const AppVersion = \"v[^\"]*\"/const AppVersion = \"v$VERSION\"/" version_service.go
-#           echo "Updated version_service.go:"
-#           grep "AppVersion" version_service.go
-#
-#       - uses: actions/setup-go@v5
-#         with:
-#           go-version: '1.24'
-#
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: '22'
-#
-#       - name: Install Wails
-#         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.88
-#
-#       - name: Install frontend dependencies
-#         run: cd frontend && npm install
-#
-#       - name: Update build assets
-#         run: wails3 task common:update:build-assets
-#
-#       - name: Generate bindings
-#         run: wails3 task common:generate:bindings
-#
-#       - name: Build macOS ${{ matrix.arch }}
-#         run: env ARCH=${{ matrix.arch }} wails3 task package
-#
-#       - name: Find app bundle
-#         id: find-app
-#         run: |
-#           if [ -d "bin/code-switch-R.app" ]; then
-#             echo "app_path=bin/code-switch-R.app" >> $GITHUB_OUTPUT
-#           elif [ -d "bin/CodeSwitch.app" ]; then
-#             echo "app_path=bin/CodeSwitch.app" >> $GITHUB_OUTPUT
-#           else
-#             echo "App bundle not found" >&2
-#             exit 1
-#           fi
-#
-#       - name: Archive macOS app
-#         run: |
-#           cd bin
-#           ditto -c -k --sequesterRsrc --keepParent "$(basename ${{ steps.find-app.outputs.app_path }})" codeSwitchR-macos-${{ matrix.arch }}.zip
-#
-#       - name: Upload artifact
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: macos-${{ matrix.arch }}
-#           path: bin/codeSwitchR-macos-${{ matrix.arch }}.zip
-#
-  build-windows:
-    name: Build Windows
+  build-windows-portable:
+    name: Build Windows amd64 portable
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,24 +19,17 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $VERSION = "${{ github.ref_name }}".TrimStart('v')
-          "VERSION=$VERSION" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Updating version to: $VERSION"
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          # Update version_service.go
-          $content = Get-Content version_service.go -Raw
-          $content = $content -replace 'const AppVersion = "v[^"]*"', "const AppVersion = `"v$VERSION`""
-          Set-Content version_service.go $content
-          Write-Host "Updated version_service.go:"
-          Select-String "AppVersion" version_service.go
+          $source = Get-Content version_service.go -Raw -Encoding utf8
+          $source = $source -replace 'const AppVersion = "v[^"]*"', "const AppVersion = `"v$version`""
+          Set-Content version_service.go $source -Encoding utf8
 
-          # Update build/windows/info.json
-          $json = Get-Content build/windows/info.json -Raw | ConvertFrom-Json
-          $json.fixed.file_version = $VERSION
-          $json.info.'0000'.ProductVersion = $VERSION
-          $json | ConvertTo-Json -Depth 10 | Set-Content build/windows/info.json
-          Write-Host "Updated build/windows/info.json:"
-          Get-Content build/windows/info.json
+          $info = Get-Content build/windows/info.json -Raw -Encoding utf8 | ConvertFrom-Json
+          $info.fixed.file_version = $version
+          $info.info.'0000'.ProductVersion = $version
+          $info | ConvertTo-Json -Depth 10 | Set-Content build/windows/info.json -Encoding utf8
 
       - uses: actions/setup-go@v5
         with:
@@ -110,263 +38,90 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.88
 
       - name: Install frontend dependencies
-        run: cd frontend && npm install
+        working-directory: frontend
+        run: npm ci
 
-      - name: Install NSIS
-        run: choco install nsis -y
-
-      - name: Update build assets
-        run: wails3 task common:update:build-assets
-
-      - name: Generate bindings
-        run: wails3 task common:generate:bindings
-
-      - name: Build Windows Binary
+      - name: Generate build assets and bindings
+        shell: pwsh
         run: |
-          $env:ARCH = "amd64"
-          wails3 task windows:build
+          wails3 task common:update:build-assets
+          wails3 task common:generate:bindings
+
+      - name: Run Go tests
+        shell: pwsh
+        run: |
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          $env:CGO_ENABLED = '0'
+          go test ./... -timeout 120s
+
+      - name: Build portable binary
+        shell: pwsh
         env:
-          PRODUCTION: "true"
-
-      - name: Verify Binary
+          PRODUCTION: 'true'
         run: |
-          if (Test-Path "bin\code-switch-R.exe") {
-            Write-Host "✓ Binary found: bin\code-switch-R.exe"
-            Get-Item "bin\code-switch-R.exe" | Format-List Name,Length,LastWriteTime
-          } else {
-            Write-Host "✗ Binary not found!"
-            Write-Host "Listing bin directory:"
-            Get-ChildItem bin -ErrorAction SilentlyContinue
-            exit 1
+          $env:ARCH = 'amd64'
+          wails3 task windows:build
+          if (-not (Test-Path 'bin/code-switch-R.exe')) {
+            throw 'Portable binary was not generated: bin/code-switch-R.exe'
           }
+          Move-Item 'bin/code-switch-R.exe' 'bin/codeSwitchR.exe'
 
-      - name: Create NSIS Installer
-        run: |
-          $env:PATH += ";C:\Program Files (x86)\NSIS"
-          Push-Location build\windows\nsis
-          wails3 generate webview2bootstrapper
-          $binaryPath = (Resolve-Path "..\..\..\bin\code-switch-R.exe").Path
-          Write-Host "Binary path: $binaryPath"
-          makensis -DARG_WAILS_AMD64_BINARY="$binaryPath" project.nsi
-          Pop-Location
-
-      - name: Rename files with version
+      - name: Generate SHA256 checksum
         shell: pwsh
         run: |
-          $VERSION = "${{ steps.version.outputs.VERSION }}"
           Push-Location bin
-          Rename-Item "code-switch-R.exe" "codeSwitchR.exe"
-          Pop-Location
-          # Rename installer (generated by NSIS)
-          if (Test-Path "build/windows/nsis/code-switch-R-amd64-installer.exe") {
-            Move-Item "build/windows/nsis/code-switch-R-amd64-installer.exe" "bin/codeSwitchR-amd64-installer.exe"
-          } elseif (Test-Path "bin/code-switch-R-amd64-installer.exe") {
-            Rename-Item "bin/code-switch-R-amd64-installer.exe" "codeSwitchR-amd64-installer.exe"
-          }
-          Write-Host "Files renamed:"
-          Get-ChildItem bin
-
-      - name: Generate SHA256 Checksums
-        shell: pwsh
-        run: |
-          $VERSION = "${{ steps.version.outputs.VERSION }}"
-          Push-Location bin
-          Get-FileHash -Algorithm SHA256 "codeSwitchR.exe" | ForEach-Object { "$($_.Hash.ToLower())  codeSwitchR.exe" } | Out-File -Encoding ascii "codeSwitchR.exe.sha256"
-          Write-Host "SHA256 checksums generated:"
-          Get-Content *.sha256
+          Get-FileHash -Algorithm SHA256 'codeSwitchR.exe' |
+            ForEach-Object { "$($_.Hash.ToLower())  codeSwitchR.exe" } |
+            Out-File -Encoding ascii 'codeSwitchR.exe.sha256'
           Pop-Location
 
-      - name: Upload artifacts
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-amd64
+          name: windows-amd64-portable
           path: |
-            bin/codeSwitchR-amd64-installer.exe
             bin/codeSwitchR.exe
             bin/codeSwitchR.exe.sha256
 
-#   build-linux:
-#     name: Build Linux
-#     runs-on: ubuntu-24.04
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - name: Update version from tag
-#         id: version
-#         run: |
-#           VERSION=${GITHUB_REF#refs/tags/v}
-#           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-#           echo "Updating version to: $VERSION"
-#           sed -i "s/const AppVersion = \"v[^\"]*\"/const AppVersion = \"v$VERSION\"/" version_service.go
-#           echo "Updated version_service.go:"
-#           grep "AppVersion" version_service.go
-#
-#       - uses: actions/setup-go@v5
-#         with:
-#           go-version: '1.24'
-#
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: '22'
-#
-#       - name: Install Linux Build Dependencies
-#         run: |
-#           sudo apt-get update
-#           sudo apt-get install -y \
-#             build-essential \
-#             pkg-config \
-#             libgtk-3-dev \
-#             libwebkit2gtk-4.1-dev
-#
-#       - name: Install Wails
-#         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.88
-#
-#       - name: Install frontend dependencies
-#         run: cd frontend && npm install
-#
-#       - name: Update build assets
-#         run: wails3 task common:update:build-assets
-#
-#       - name: Generate bindings
-#         run: wails3 task common:generate:bindings
-#
-#       - name: Build Linux Binary
-#         run: wails3 task linux:build
-#         env:
-#           PRODUCTION: "true"
-#
-#       - name: Generate Desktop File
-#         run: wails3 task linux:generate:dotdesktop
-#
-#       - name: Create AppImage
-#         run: |
-#           mkdir -p bin
-#           # wails3 generate appimage 内部 rename 可能因 outputdir 解析问题失败,
-#           # 但 AppImage 文件已生成在 build 目录中,手动处理即可
-#           wails3 task linux:create:appimage || true
-#           # 从 build 目录手动查找并移动 AppImage 到 bin/
-#           find build/linux -name "*.AppImage" -exec mv {} bin/ \; 2>/dev/null || true
-#           echo "Files in bin/:"
-#           ls -la bin/
-#
-#       - name: Rename AppImage
-#         run: |
-#           VERSION=${{ steps.version.outputs.VERSION }}
-#           cd bin
-#           echo "Files in bin/:"
-#           ls -la
-#           # linuxdeploy creates AppImage with lowercase name and arch suffix
-#           for f in *-x86_64.AppImage *-aarch64.AppImage; do
-#             if [ -f "$f" ]; then
-#               mv "$f" "codeSwitchR.AppImage"
-#               echo "Renamed $f -> codeSwitchR.AppImage"
-#               break
-#             fi
-#           done
-#           ls -la "codeSwitchR.AppImage"
-#
-#       - name: Set nfpm script permissions
-#         run: |
-#           chmod +x build/linux/nfpm/scripts/postinstall.sh
-#           chmod +x build/linux/nfpm/scripts/postremove.sh
-#
-#       - name: Update nfpm version
-#         run: |
-#           VERSION=${GITHUB_REF#refs/tags/v}
-#           sed -i "s/^version:.*/version: \"$VERSION\"/" build/linux/nfpm/nfpm.yaml
-#           echo "Updated nfpm version to: $VERSION"
-#
-#       - name: Create DEB Package
-#         run: wails3 task linux:create:deb
-#
-#       - name: Create RPM Package
-#         run: wails3 task linux:create:rpm
-#
-#       - name: Generate SHA256 Checksums
-#         run: |
-#           VERSION=${{ steps.version.outputs.VERSION }}
-#           cd bin
-#           sha256sum "codeSwitchR.AppImage" > "codeSwitchR.AppImage.sha256"
-#           for f in code-switch-r*.deb; do [ -f "$f" ] && sha256sum "$f" > "${f}.sha256"; done
-#           for f in code-switch-r*.rpm; do [ -f "$f" ] && sha256sum "$f" > "${f}.sha256"; done
-#           echo "SHA256 checksums:"
-#           cat *.sha256
-#
-#       - name: Upload artifacts
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: linux-amd64
-#           path: |
-#             bin/codeSwitchR.AppImage
-#             bin/codeSwitchR.AppImage.sha256
-#             bin/code-switch-r*.deb
-#             bin/code-switch-r*.deb.sha256
-#             bin/code-switch-r*.rpm
-#             bin/code-switch-r*.rpm.sha256
-#
   create-release:
     name: Create Release
-    needs: [build-windows]
+    needs: [build-windows-portable]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download portable artifact
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: windows-amd64-portable
+          path: release-assets
 
-      - name: Display structure
-        run: ls -R artifacts
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Prepare release assets
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          mkdir -p release-assets
-
-          # Windows
-          cp artifacts/windows-amd64/codeSwitchR-amd64-installer.exe release-assets/
-          cp artifacts/windows-amd64/codeSwitchR.exe release-assets/
-          cp artifacts/windows-amd64/codeSwitchR.exe.sha256 release-assets/
-
-          ls -lh release-assets/
-
       - name: Generate latest.json
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          python3 scripts/generate-latest-json.py "v${VERSION}" release-assets release-assets/latest.json
-          echo "Generated latest.json:"
-          cat release-assets/latest.json
+          python3 scripts/generate-latest-json.py "${GITHUB_REF_NAME}" release-assets release-assets/latest.json
+          test -s release-assets/latest.json
 
       - name: Generate release body
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "Generating release body for v$VERSION"
-
-          # 提取当前版本的更新内容（从标题到下一个版本标题之前）
-          # 注意：先用 tr 去除 Windows CRLF 换行符，否则 awk 匹配失败
+          VERSION=${GITHUB_REF_NAME#v}
           tr -d '\r' < RELEASE_NOTES.md | awk "/^# Code Switch v$VERSION/,/^# Code Switch v[0-9]/" | head -n -1 > /tmp/version_notes.md
-
-          # 如果没找到版本说明，使用默认内容
           if [ ! -s /tmp/version_notes.md ]; then
-            echo "## 更新亮点" > /tmp/version_notes.md
-            echo "- 请查看提交历史了解详细更新" >> /tmp/version_notes.md
+            printf '## 更新亮点\n- 请查看提交历史了解详细更新\n' > /tmp/version_notes.md
           fi
-
-          # 组合完整的 release body
-          cat /tmp/version_notes.md > /tmp/release_body.md
-
-          cat >> /tmp/release_body.md << EOF
+          cp /tmp/version_notes.md /tmp/release_body.md
+          cat >> /tmp/release_body.md <<'EOF'
 
           ---
 
@@ -374,21 +129,17 @@ jobs:
 
           | 平台 | 文件 | 说明 |
           |------|------|------|
-          | **Windows (首次)** | \`codeSwitchR-amd64-installer.exe\` | NSIS 安装器 |
-          | **Windows (便携)** | \`codeSwitchR.exe\` | 直接运行 |
+          | **Windows amd64** | `codeSwitchR.exe` | 便携版，直接运行 |
 
           ## 文件校验
-          Windows 资产提供 SHA256 校验文件（\`.sha256\`），下载后可验证完整性：
-          \`\`\`powershell
-          Get-FileHash codeSwitchR.exe | Format-List
-          \`\`\`
+
+          ```powershell
+          Get-FileHash codeSwitchR.exe -Algorithm SHA256
+          ```
           EOF
 
-          echo "Generated release body:"
-          cat /tmp/release_body.md
-
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
           body_path: /tmp/release_body.md

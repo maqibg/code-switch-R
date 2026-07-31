@@ -9,22 +9,30 @@
  * 接受了一个永远不会到达的字段，任何读它的地方都只会拿到 undefined。
  */
 import * as ImportService from '../../bindings/codeswitch/services/importservice'
-import type { ProjectTransferInfo, ProjectTransferResult } from '../../bindings/codeswitch/services/models'
+import type {
+  ConfigMigrationResult,
+  EncryptedBackupResult,
+  ProjectTransferInfo,
+} from '../../bindings/codeswitch/services/models'
 
-export type { ProjectTransferInfo, ProjectTransferResult }
+export type { ConfigMigrationResult, EncryptedBackupResult, ProjectTransferInfo }
 
 export const fetchProjectTransferInfo = async (): Promise<ProjectTransferInfo> => {
   return ImportService.GetProjectTransferInfo()
 }
 
-export const importLegacyProjectDirectory = async (path: string): Promise<ProjectTransferResult> => {
-  return ImportService.ImportLegacyProjectDirectory(path)
+export const exportSanitizedConfig = async (path: string): Promise<ConfigMigrationResult> => {
+  return ImportService.ExportSanitizedConfig(path)
 }
 
-export const importCurrentProjectDirectory = async (path: string): Promise<ProjectTransferResult> => {
-  return ImportService.ImportCurrentProjectDirectory(path)
+export const importSanitizedConfig = async (path: string): Promise<ConfigMigrationResult> => {
+  return ImportService.ImportSanitizedConfig(path)
 }
 
-export const exportCurrentProjectDirectory = async (path: string): Promise<ProjectTransferResult> => {
-  return ImportService.ExportCurrentProjectDirectory(path)
+export const exportEncryptedBackup = async (path: string, password: string): Promise<EncryptedBackupResult> => {
+  return ImportService.ExportEncryptedBackup(path, password)
+}
+
+export const restoreEncryptedBackup = async (path: string, password: string): Promise<EncryptedBackupResult> => {
+  return ImportService.RestoreEncryptedBackup(path, password)
 }

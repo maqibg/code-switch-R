@@ -26,10 +26,6 @@ export function useProxyState(state: MainState, t: Translate) {
     state.proxyBusy[tab] = true
     const nextState = !state.proxyStates[tab]
     try {
-      if (tab === 'others' && !state.selectedToolId.value) {
-        showToast(t('components.main.customCli.selectToolFirst'), 'error')
-        return
-      }
       await platformAdapters[tab].proxy.setEnabled(state, nextState)
       state.proxyStates[tab] = nextState
     } catch (error) {
@@ -50,10 +46,6 @@ export function useProxyState(state: MainState, t: Translate) {
         return t('components.main.relayToggle.hostGemini')
       case 'reasonix':
         return t('components.main.relayToggle.hostReasonix')
-      case 'others': {
-        const tool = state.customCliTools.value.find((item) => item.id === state.selectedToolId.value)
-        return tool?.name || t('components.main.relayToggle.hostOthers')
-      }
     }
   })
 

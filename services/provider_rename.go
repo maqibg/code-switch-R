@@ -27,10 +27,6 @@ func resolveProviderDataScope(kind string) (providerDataScope, error) {
 		return providerDataScope{}, err
 	}
 	scope := providerDataScope{identityPlatform: platform, telemetryPlatform: platform}
-	if strings.HasPrefix(platform, "custom:") {
-		scope.telemetryPlatform = "custom"
-		scope.sourceID = strings.TrimPrefix(platform, "custom:")
-	}
 	return scope, nil
 }
 
@@ -195,9 +191,7 @@ func (ps *ProviderService) SaveProvidersWithRename(kind string, providerID int64
 func (ps *ProviderService) commitProviderRenameLocked(commit providerRenameCommit) error {
 	ctx := context.Background()
 
-	// provider 表用的是 (platform='custom', source_id='toolId') 形式，
-	// 而 providerDataScope.identityPlatform 对自定义 CLI 是 'custom:toolId'。
-	// 两套表示不能混用，这里统一走 scopeForKind。
+	// provider 表与历史数据表的 scope 必须统一走 scopeForKind。
 	repoScope, err := scopeForKind(commit.kind)
 	if err != nil {
 		return err
@@ -352,9 +346,6 @@ func resolvePlatform(kind string) (string, error) {
 	}
 	if normalized == "gemini" {
 		return "gemini", nil
-	}
-	if strings.HasPrefix(normalized, customProviderKindPrefix) && len(normalized) > len(customProviderKindPrefix) {
-		return customProviderKindPrefix + strings.TrimSpace(trimmed[len(customProviderKindPrefix):]), nil
 	}
 	return "", fmt.Errorf("不支持的 provider kind: %s", kind)
 }

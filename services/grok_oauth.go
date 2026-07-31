@@ -608,6 +608,7 @@ func (s *GrokBuildService) refreshOAuthAccount(accountID string, force, withQuot
 		return GrokOAuthAccountDTO{}, fmt.Errorf("Grok OAuth 账号不存在: %s", accountID)
 	}
 	account := store.Accounts[index]
+	expectedRevision := grokOAuthAccountRevision(account)
 	state, err := loadGrokRuntimeState()
 	s.mu.Unlock()
 	if err != nil {
@@ -631,8 +632,14 @@ func (s *GrokBuildService) refreshOAuthAccount(accountID string, force, withQuot
 	if latestIndex < 0 {
 		return GrokOAuthAccountDTO{}, fmt.Errorf("Grok OAuth 账号已被删除: %s", accountID)
 	}
-	latest.Accounts[latestIndex] = account
-	if err := s.persistGrokAccountLocked(latest, account, state.AppliedAccountID == accountID); err != nil {
+	if err := replaceGrokOAuthAccountCAS(&latest, accountID, expectedRevision, account); err != nil {
+		return GrokOAuthAccountDTO{}, err
+	}
+	if err := s.persistGrokAccountLocked(latest, account); err != nil {
+		return GrokOAuthAccountDTO{}, err
+	}
+	state, err = loadGrokRuntimeState()
+	if err != nil {
 		return GrokOAuthAccountDTO{}, err
 	}
 	if refreshErr != nil {
@@ -670,13 +677,13 @@ func (s *GrokBuildService) RefreshAllOAuthQuotas(force bool) []GrokOAuthRefreshR
 	return results
 }
 
-func (s *GrokBuildService) persistGrokAccountLocked(store grokOAuthStore, account grokOAuthAccount, applied bool) error {
-	if !applied {
-		return saveGrokOAuthStore(store)
-	}
+func (s *GrokBuildService) persistGrokAccountLocked(store grokOAuthStore, account grokOAuthAccount) error {
 	state, err := loadGrokRuntimeState()
 	if err != nil {
 		return err
+	}
+	if state.Mode != GrokModeOAuth || state.AppliedAccountID != account.ID {
+		return saveGrokOAuthStore(store)
 	}
 	paths, err := resolveGrokConfigPaths(state)
 	if err != nil {
@@ -697,6 +704,23 @@ func (s *GrokBuildService) persistGrokAccountLocked(store grokOAuthStore, accoun
 		_ = restoreOptionalGrokFile(paths.AuthPath, oldAuth, oldAuthExisted)
 		return fmt.Errorf("保存刷新后的 Grok OAuth 账号失败，auth.json 已回滚: %w", err)
 	}
+	return nil
+}
+
+func grokOAuthAccountRevision(account grokOAuthAccount) string {
+	raw, _ := json.Marshal(account)
+	return canonicalJSONHash(raw)
+}
+
+func replaceGrokOAuthAccountCAS(store *grokOAuthStore, accountID, expectedRevision string, replacement grokOAuthAccount) error {
+	index := grokOAuthAccountIndex(store.Accounts, accountID)
+	if index < 0 {
+		return fmt.Errorf("Grok OAuth 账号已被删除: %s", accountID)
+	}
+	if grokOAuthAccountRevision(store.Accounts[index]) != expectedRevision {
+		return fmt.Errorf("Grok OAuth 账号 %s 已被其他操作更新，请刷新后重试", accountID)
+	}
+	store.Accounts[index] = replacement
 	return nil
 }
 

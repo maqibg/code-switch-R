@@ -210,14 +210,6 @@ func (s *GrokBuildService) ReapplyCurrentMode() (GrokRuntimeStatus, error) {
 	if state.TargetConfigPath == "" || filepath.Clean(state.TargetConfigPath) != filepath.Clean(paths.ConfigPath) {
 		return GrokRuntimeStatus{}, fmt.Errorf("接管目标路径已变化；请先放弃旧路径接管，再选择新目录")
 	}
-	current, _, err := readOptionalGrokFile(paths.ConfigPath)
-	if err != nil {
-		return GrokRuntimeStatus{}, fmt.Errorf("读取 Grok config.toml 失败: %w", err)
-	}
-	state.InjectedFingerprint, err = grokManagedFingerprint(current)
-	if err != nil {
-		return GrokRuntimeStatus{}, err
-	}
 	if state.Mode == GrokModeOAuth {
 		if strings.TrimSpace(state.AppliedAccountID) == "" {
 			return GrokRuntimeStatus{}, fmt.Errorf("OAuth 模式缺少已应用账号")

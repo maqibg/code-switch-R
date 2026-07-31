@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -160,17 +159,9 @@ func providerFilePath(kind string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	filename, customToolID, err := providerFileNameFor(kind)
+	filename, _, err := providerFileNameFor(kind)
 	if err != nil {
 		return "", err
-	}
-	if customToolID != "" {
-		// 自定义 CLI 的供应商存放在 providers/ 子目录
-		providersDir := filepath.Join(dir, "providers")
-		if err := os.MkdirAll(providersDir, 0o755); err != nil {
-			return "", err
-		}
-		return filepath.Join(providersDir, filename), nil
 	}
 	return filepath.Join(dir, filename), nil
 }

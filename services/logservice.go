@@ -509,8 +509,8 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 	}
 
 	// 如果未注入 ProviderService（如测试环境），回退到不过滤
-	// Gemini 使用独立存储，custom 还需要 source_id 才能定位具体工具；这两类直接使用日志中的名称。
-	if ls.providerService == nil || platform == "" || platform == "gemini" || platform == "custom" {
+	// Gemini 使用独立存储，直接使用日志中的供应商名称。
+	if ls.providerService == nil || platform == "" || platform == "gemini" {
 		return logProviders, nil
 	}
 

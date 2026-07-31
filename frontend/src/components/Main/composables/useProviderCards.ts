@@ -13,10 +13,6 @@ type Translate = (key: string, values?: Record<string, unknown>) => string
 
 export function useProviderCards(state: MainState, t: Translate) {
   const persistProviders = async (tabId: ProviderTab): Promise<{ ok: boolean; error?: string }> => {
-    if (tabId === 'others' && !state.selectedToolId.value) {
-      showToast(t('components.main.customCli.selectToolFirst'), 'error')
-      return { ok: false, error: t('components.main.customCli.selectToolFirst') }
-    }
     try {
       await platformAdapters[tabId].persistCards(state)
       return { ok: true }

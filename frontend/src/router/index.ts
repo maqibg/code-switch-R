@@ -7,7 +7,6 @@ const routes = [
   { path: '/stats', component: () => import('../components/Stats/Index.vue') },
   { path: '/prompts', component: () => import('../components/Prompts/Index.vue') },
   { path: '/mcp', component: () => import('../components/Mcp/index.vue') },
-  { path: '/skill', component: () => import('../components/Skill/Index.vue') },
   { path: '/env', component: () => import('../components/EnvCheck/Index.vue') },
   { path: '/logs', component: () => import('../components/Logs/Index.vue') },
   { path: '/console', component: () => import('../components/Console/Index.vue') },

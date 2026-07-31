@@ -16,7 +16,6 @@ import (
 
 const (
 	piGatewayProviderKey = "code-switch-r"
-	piGatewayToken       = "code-switch-r-proxy"
 	piProxyStateVersion  = 1
 )
 
@@ -126,7 +125,7 @@ func (s *PiSettingsService) ProxyStatus() (ClaudeProxyStatus, error) {
 	if json.Unmarshal(raw, &gateway) != nil {
 		return status, nil
 	}
-	status.Enabled = sameURL(gateway.BaseURL, s.baseURL()) && gateway.APIKey == piGatewayToken
+	status.Enabled = sameURL(gateway.BaseURL, s.baseURL()) && relayManagedTokenMatches(gateway.APIKey)
 	return status, nil
 }
 
@@ -160,7 +159,7 @@ func (s *PiSettingsService) EnableProxy() error {
 	if err != nil {
 		return err
 	}
-	authRaw, _ := json.Marshal(PiAuthEntry{Type: "api_key", Key: piGatewayToken})
+	authRaw, _ := json.Marshal(PiAuthEntry{Type: "api_key", Key: relayTokenForConfig()})
 	state := PiProxyState{
 		Version:                piProxyStateVersion,
 		CreatedAt:              time.Now().UTC().Format(time.RFC3339Nano),
@@ -327,13 +326,13 @@ func (s *PiSettingsService) fallbackDisable() error {
 	}
 	if raw, exists := providers[piGatewayProviderKey]; exists {
 		var gateway PiGatewayProvider
-		if json.Unmarshal(raw, &gateway) == nil && sameURL(gateway.BaseURL, s.baseURL()) && gateway.APIKey == piGatewayToken {
+		if json.Unmarshal(raw, &gateway) == nil && sameURL(gateway.BaseURL, s.baseURL()) && relayManagedTokenMatches(gateway.APIKey) {
 			delete(providers, piGatewayProviderKey)
 		}
 	}
 	if raw, exists := authRoot[piGatewayProviderKey]; exists {
 		var auth PiAuthEntry
-		if json.Unmarshal(raw, &auth) == nil && auth.Key == piGatewayToken {
+		if json.Unmarshal(raw, &auth) == nil && relayManagedTokenMatches(auth.Key) {
 			delete(authRoot, piGatewayProviderKey)
 		}
 	}
@@ -427,7 +426,7 @@ func BuildPiGatewayProvider(providers []Provider, baseURL string) (PiGatewayProv
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 	return PiGatewayProvider{
-		BaseURL: baseURL, APIKey: piGatewayToken, API: "openai-completions",
+		BaseURL: baseURL, APIKey: relayTokenForConfig(), API: "openai-completions",
 		AuthHeader: boolPointer(false), Models: models,
 	}, nil
 }

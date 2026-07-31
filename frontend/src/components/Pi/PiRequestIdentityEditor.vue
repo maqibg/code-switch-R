@@ -71,8 +71,7 @@
           <div><code v-for="header in preservedStateHeaders" :key="header">{{ header }}</code></div>
           <small>{{ t('piPage.identity.preservedStateHeadersHint') }}</small>
         </div>
-        <label><span>{{ t('piPage.identity.targetCli') }}</span><select :value="identity.targetCli || 'inherit'" @change="setField('targetCli', selectValue($event))"><option value="inherit">{{ t('piPage.identity.inherit') }}</option><option value="claude-code">Claude Code</option><option value="codex-cli">Codex CLI</option><option value="gemini-cli">Gemini CLI</option><option value="custom">{{ t('piPage.identity.customCli') }}</option></select></label>
-        <label v-if="identity.targetCli === 'custom'"><span>{{ t('piPage.identity.customCliName') }}</span><BaseInput :model-value="identity.customCliName || ''" :placeholder="t('piPage.identity.customCliNamePlaceholder')" @update:model-value="setField('customCliName', String($event))" /><small class="field-note">{{ t('piPage.identity.customCliNameHint') }}</small></label>
+        <label><span>{{ t('piPage.identity.targetCli') }}</span><select :value="identity.targetCli || 'inherit'" @change="setField('targetCli', selectValue($event))"><option value="inherit">{{ t('piPage.identity.inherit') }}</option><option value="claude-code">Claude Code</option><option value="codex-cli">Codex CLI</option><option value="gemini-cli">Gemini CLI</option></select></label>
       </section>
 
       <section class="identity-card">
@@ -203,9 +202,7 @@ const stringHeaders = (headers?: { [key: string]: string | undefined }) => Objec
 )
 const identityHeaders = computed(() => stringHeaders(identity.value.headers))
 const selectedTemplateHeaders = computed(() => Object.entries(stringHeaders(selectedTemplate.value?.headers)).sort(([left], [right]) => left.localeCompare(right)))
-const selectedClientLabel = computed(() => selectedIdentity.value.targetCli === 'custom'
-  ? selectedIdentity.value.customCliName || t('piPage.identity.customCli')
-  : selectedIdentity.value.targetCli || t('piPage.identity.inherit'))
+const selectedClientLabel = computed(() => selectedIdentity.value.targetCli || t('piPage.identity.inherit'))
 const canUpdateSelected = computed(() => Boolean(
   selectedTemplate.value && !selectedTemplate.value.builtIn && editingTemplateId.value === selectedTemplate.value.id,
 ))

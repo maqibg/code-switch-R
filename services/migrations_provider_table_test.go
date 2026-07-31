@@ -107,8 +107,8 @@ func TestProviderImportPreservesExistingIDs(t *testing.T) {
 	}
 }
 
-// 多平台与自定义 CLI 都要被导入，且 platform/source_id 正确
-func TestProviderImportCoversAllPlatformsAndCustomCLI(t *testing.T) {
+// 旧自定义 CLI Provider 即使被早期迁移导入，也必须由最终迁移清除。
+func TestProviderMigrationRemovesCustomCLI(t *testing.T) {
 	db := setupProviderImportEnv(t)
 
 	writeProviderFixture(t, "claude-code.json", []Provider{{ID: 1, Name: "C", APIURL: "u", APIKey: "k", Enabled: true}})
@@ -123,8 +123,8 @@ func TestProviderImportCoversAllPlatformsAndCustomCLI(t *testing.T) {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
-	if got := providerRowCount(t, db); got != 5 {
-		t.Fatalf("应导入 5 行，实际 %d", got)
+	if got := providerRowCount(t, db); got != 4 {
+		t.Fatalf("应只保留 4 个注册平台的 Provider，实际 %d", got)
 	}
 
 	cases := map[int64]struct{ platform, sourceID string }{
@@ -132,7 +132,6 @@ func TestProviderImportCoversAllPlatformsAndCustomCLI(t *testing.T) {
 		2: {"codex", ""},
 		3: {"reasonix", ""},
 		4: {"pi", ""},
-		5: {"custom", "my-tool"},
 	}
 	for id, want := range cases {
 		var platform, sourceID string
@@ -142,6 +141,13 @@ func TestProviderImportCoversAllPlatformsAndCustomCLI(t *testing.T) {
 		if platform != want.platform || sourceID != want.sourceID {
 			t.Errorf("id=%d 应为 platform=%q source_id=%q，实际 %q/%q", id, want.platform, want.sourceID, platform, sourceID)
 		}
+	}
+	var customRows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM provider WHERE platform = 'custom' OR platform LIKE 'custom:%'`).Scan(&customRows); err != nil {
+		t.Fatalf("查询自定义 CLI Provider 失败: %v", err)
+	}
+	if customRows != 0 {
+		t.Fatalf("自定义 CLI Provider 应被清除，实际 %d", customRows)
 	}
 }
 

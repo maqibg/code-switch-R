@@ -694,9 +694,8 @@ func (s *GeminiService) ProxyStatus() (*GeminiProxyStatus, error) {
 
 // geminiBaseURLKey 和 geminiAPIKeyKey 用于代理注入
 const (
-	geminiBaseURLKey    = "GOOGLE_GEMINI_BASE_URL"
-	geminiAPIKeyKey     = "GEMINI_API_KEY"
-	geminiProxyTokenVal = "code-switch-r"
+	geminiBaseURLKey = "GOOGLE_GEMINI_BASE_URL"
+	geminiAPIKeyKey  = "GEMINI_API_KEY"
 )
 
 // EnableProxy 启用代理
@@ -751,7 +750,7 @@ func (s *GeminiService) EnableProxy() error {
 			FileExisted:       fileExisted,
 			EnvExisted:        len(existingEnv) > 0,
 			InjectedBaseURL:   buildProxyURL(s.relayAddr),
-			InjectedAuthToken: geminiProxyTokenVal,
+			InjectedAuthToken: relayTokenForConfig(),
 		}
 
 		// 记录原始 BASE_URL（如果 key 存在，即使是空值也记录）
@@ -771,7 +770,7 @@ func (s *GeminiService) EnableProxy() error {
 
 	// 设置代理 URL 和占位 API Key（与 Claude/Codex 保持一致）
 	existingEnv[geminiBaseURLKey] = buildProxyURL(s.relayAddr)
-	existingEnv[geminiAPIKeyKey] = geminiProxyTokenVal
+	existingEnv[geminiAPIKeyKey] = relayTokenForConfig()
 
 	// 写入 .env
 	if err := writeGeminiEnv(existingEnv); err != nil {
@@ -810,6 +809,13 @@ func (s *GeminiService) DisableProxy() error {
 			}
 		}
 		return DeleteProxyState("gemini")
+	}
+
+	if !urlMatchesProxy(envConfig[geminiBaseURLKey], state.InjectedBaseURL) {
+		return fmt.Errorf("Gemini 代理地址已被外部修改，拒绝覆盖")
+	}
+	if envConfig[geminiAPIKeyKey] != state.InjectedAuthToken {
+		return fmt.Errorf("Gemini 代理凭据已被外部修改，拒绝覆盖")
 	}
 
 	// 有状态文件：按基线做"手术式"恢复
@@ -860,7 +866,7 @@ func (s *GeminiService) fallbackCleanupEnv(envConfig map[string]string) bool {
 	}
 
 	// 检查 GEMINI_API_KEY 是否为代理占位值
-	if v, ok := envConfig[geminiAPIKeyKey]; ok && v == geminiProxyTokenVal {
+	if v, ok := envConfig[geminiAPIKeyKey]; ok && relayManagedTokenMatches(v) {
 		delete(envConfig, geminiAPIKeyKey)
 		changed = true
 	}

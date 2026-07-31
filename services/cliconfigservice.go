@@ -230,7 +230,7 @@ func (s *CliConfigService) GetConfigSnapshots(platform string, apiUrl string, ap
 			env["ANTHROPIC_AUTH_TOKEN"] = apiKey
 		} else {
 			env["ANTHROPIC_BASE_URL"] = s.baseURL()
-			env["ANTHROPIC_AUTH_TOKEN"] = "code-switch-r"
+			env["ANTHROPIC_AUTH_TOKEN"] = relayTokenForConfig()
 		}
 		previewData["env"] = env
 
@@ -356,7 +356,7 @@ func (s *CliConfigService) GetConfigSnapshots(platform string, apiUrl string, ap
 			raw["model_providers"] = modelProviders
 
 			// proxy 模式：保留其他字段，只更新 OPENAI_API_KEY（与 writeAuthFile 一致）
-			authPayload["OPENAI_API_KEY"] = "code-switch-r"
+			authPayload["OPENAI_API_KEY"] = relayTokenForConfig()
 		}
 
 		tomlBytes, err := toml.Marshal(raw)
@@ -431,7 +431,7 @@ func (s *CliConfigService) GetConfigSnapshots(platform string, apiUrl string, ap
 			}
 		} else {
 			envMap["GOOGLE_GEMINI_BASE_URL"] = s.geminiBaseURL()
-			envMap["GEMINI_API_KEY"] = "code-switch-r"
+			envMap["GEMINI_API_KEY"] = relayTokenForConfig()
 		}
 
 		previewFiles := []CLIConfigFile{
@@ -690,7 +690,7 @@ func (s *CliConfigService) getClaudeConfig() (*CLIConfig, error) {
 		},
 		CLIConfigField{
 			Key:    "env.ANTHROPIC_AUTH_TOKEN",
-			Value:  "code-switch-r",
+			Value:  relayTokenForConfig(),
 			Locked: true,
 			Hint:   "代理认证令牌",
 			Type:   "string",
@@ -789,7 +789,7 @@ func (s *CliConfigService) saveClaudeConfig(editable map[string]interface{}) err
 		env = make(map[string]interface{})
 	}
 	env["ANTHROPIC_BASE_URL"] = s.baseURL()
-	env["ANTHROPIC_AUTH_TOKEN"] = "code-switch-r"
+	env["ANTHROPIC_AUTH_TOKEN"] = relayTokenForConfig()
 	data["env"] = env
 
 	// 锁定字段列表（这些字段不允许用户覆盖）
@@ -849,7 +849,7 @@ func (s *CliConfigService) saveClaudeConfigContent(configPath string, content st
 		env = make(map[string]interface{})
 	}
 	env["ANTHROPIC_BASE_URL"] = s.baseURL()
-	env["ANTHROPIC_AUTH_TOKEN"] = "code-switch-r"
+	env["ANTHROPIC_AUTH_TOKEN"] = relayTokenForConfig()
 	data["env"] = env
 
 	// 创建备份（文件不存在时 CreateBackup 会返回空路径并忽略）
@@ -1280,7 +1280,7 @@ func (s *CliConfigService) saveGeminiEnvContent(envPath string, content string) 
 	if existingAPIKey != "" {
 		envMap["GEMINI_API_KEY"] = existingAPIKey
 	} else if envMap["GEMINI_API_KEY"] == "" {
-		envMap["GEMINI_API_KEY"] = "code-switch-r"
+		envMap["GEMINI_API_KEY"] = relayTokenForConfig()
 	}
 
 	if _, err := CreateBackup(envPath); err != nil {

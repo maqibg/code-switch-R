@@ -2,6 +2,7 @@ package infra
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -36,6 +37,14 @@ func atomicWriteLockFor(path string) *sync.Mutex {
 // 策略：写入临时文件 → fsync → 重命名
 // 防止断电或崩溃导致状态文件损坏
 func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	return AtomicWriteStream(path, perm, func(writer io.Writer) error {
+		_, err := writer.Write(data)
+		return err
+	})
+}
+
+// AtomicWriteStream 将流式生成的内容写到同目录临时文件，再原子替换目标。
+func AtomicWriteStream(path string, perm os.FileMode, write func(io.Writer) error) error {
 	mu := atomicWriteLockFor(path)
 	mu.Lock()
 	defer mu.Unlock()
@@ -54,11 +63,10 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	}
 	tmpPath := tmp.Name()
 
-	// 写入数据
-	if _, err := tmp.Write(data); err != nil {
+	if err := write(tmp); err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
-		return fmt.Errorf("写入临时文件失败 %s（目标文件: %s）: %w", tmpPath, path, err)
+		return fmt.Errorf("生成临时文件失败 %s（目标文件: %s）: %w", tmpPath, path, err)
 	}
 
 	// 设置文件权限

@@ -149,7 +149,7 @@ func (s *PiSettingsService) UpdateModelsProvider(input PiModelsProviderTemplate)
 			}
 		}
 		input.BaseURL = s.platformBaseURL(input.ID)
-		input.APIKey = piGatewayToken
+		input.APIKey = relayTokenForConfig()
 	}
 	return writePiModelsProviderDocument(s.modelsPath(), root, providers, input)
 }

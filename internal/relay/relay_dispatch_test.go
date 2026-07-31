@@ -10,7 +10,7 @@ import (
 // 失败分类是三套 handler 合并后的唯一判定入口，逐类锁死。
 //
 // 合并前这段逻辑在三处各写一份且已分叉：判定顺序不同（有的先看客户端中断、
-// 有的先看响应已提交），customCli 还整个缺了 ErrClientRequestRejected 分支。
+// 有的先看响应是否已提交。
 func TestClassifyDispatchFailure(t *testing.T) {
 	cases := []struct {
 		name string

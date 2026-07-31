@@ -78,7 +78,7 @@ func TestRequestIdentityTemplateUpdatePreservesID(t *testing.T) {
 	}
 	updated, err := saveUserRequestTemplate(path, ProviderRequestTemplate{
 		ID: saved.ID, Name: "Updated", Identity: requestIdentityPointer(ProviderRequestIdentity{
-			TargetCLI: "custom", CustomCLIName: "My CLI", Headers: map[string]string{"X-App": "second"},
+			TargetCLI: "claude-code", Headers: map[string]string{"X-App": "second"},
 		}),
 	})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestRequestIdentityTemplateUpdatePreservesID(t *testing.T) {
 	if err != nil || len(loaded) != 1 || updated.ID != saved.ID || loaded[0].Identity == nil {
 		t.Fatalf("模板更新未原位替换: saved=%#v updated=%#v loaded=%#v err=%v", saved, updated, loaded, err)
 	}
-	if loaded[0].Name != "Updated" || loaded[0].Identity.CustomCLIName != "My CLI" || loaded[0].Identity.Headers["X-App"] != "second" {
+	if loaded[0].Name != "Updated" || loaded[0].Identity.TargetCLI != "claude-code" || loaded[0].Identity.Headers["X-App"] != "second" {
 		t.Fatalf("模板更新字段丢失: %#v", loaded[0])
 	}
 }
@@ -203,7 +203,7 @@ func TestValidateCodexCLIIdentityRequiresUserAgent(t *testing.T) {
 
 func TestProviderRequestIdentityHasRuntimeEffectIgnoresDescriptiveFields(t *testing.T) {
 	if providerRequestIdentityHasRuntimeEffect(ProviderRequestIdentity{
-		TemplateID: "template", Name: "Name", TargetCLI: "custom", CustomCLIName: "My CLI", TargetProtocol: "anthropic",
+		TemplateID: "template", Name: "Name", TargetCLI: "claude-code", TargetProtocol: "anthropic",
 		Mode: ProviderRequestModeOverlay, MetadataMode: ProviderMetadataModePreserve,
 	}) {
 		t.Fatal("只有描述字段的请求身份不应视为有效模板")

@@ -78,7 +78,7 @@ func (s *PiSettingsService) RenameModelsProvider(originalID string, input PiMode
 			return fmt.Errorf("Pi 平台 %q 的 auth.json 认证已被外部修改，请先处理冲突", originalID)
 		}
 		input.BaseURL = s.platformBaseURL(input.ID)
-		input.APIKey = piGatewayToken
+		input.APIKey = relayTokenForConfig()
 	}
 
 	renamedRaw, err := buildPiModelsProviderRaw(input, current)

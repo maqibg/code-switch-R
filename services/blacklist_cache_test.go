@@ -102,8 +102,8 @@ func TestBlacklistCacheKeyDistinguishesTargets(t *testing.T) {
 	if byID.cacheKey() == byName.cacheKey() {
 		t.Fatalf("ID 定位与名字定位的缓存键不应相同: %s", byID.cacheKey())
 	}
-	custom := BlacklistTarget{platform: "custom", sourceID: "tool-a", providerID: 7, name: "Same"}
-	if custom.cacheKey() == byID.cacheKey() {
-		t.Fatalf("不同平台/工具的缓存键不应相同: %s", custom.cacheKey())
+	otherPlatform := BlacklistTarget{platform: "codex", providerID: 7, name: "Same"}
+	if otherPlatform.cacheKey() == byID.cacheKey() {
+		t.Fatalf("不同平台的缓存键不应相同: %s", otherPlatform.cacheKey())
 	}
 }

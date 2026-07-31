@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-`code-switch-R` 是一个 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP 代理管理 AI CLI 工具的供应商配置。应用启动后在本机 `127.0.0.1:18100` 代理 Claude Code、Codex、Gemini CLI、Reasonix 和自定义 CLI 请求，按供应商优先级、模型白名单和黑名单状态执行降级转发，并记录请求、Token 和成本数据。
+`code-switch-R` 是一个仅发布 Windows amd64 便携版的 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP Relay 管理 Claude Code、Codex、Gemini CLI、Reasonix、Pi 与 Grok Build 的供应商配置。Relay 使用随机 Token，仅允许 localhost 或当前 WSL 宿主机地址，按供应商优先级、模型白名单和黑名单状态执行降级转发，并记录请求、Token 和成本数据。
 
 当前主要技术栈：
 
@@ -14,7 +14,7 @@
 | 后端 | Go 1.24、Gin、`modernc.org/sqlite`、`xdb`、`xrequest` |
 | 前端 | Vue 3、TypeScript、Vite、Tailwind CSS 4、Vue Router、Vue I18n |
 | 持久化 | 可执行文件同级 `.code-switch-R` 目录中的 JSON 与 SQLite |
-| 打包 | Wails task、Windows NSIS、macOS `.app`/zip、Linux AppImage/DEB/RPM |
+| 打包 | Wails task，仅构建 Windows amd64 便携 exe |
 
 ## 目录与职责
 
@@ -24,8 +24,8 @@
 - `frontend/src/`：Vue 应用。页面按功能放在 `components/`，服务封装在 `services/`，路由在 `router/index.ts`。
 - `frontend/bindings/`：Wails 自动生成的 TypeScript 绑定，禁止手改。Go 导出方法签名变化后运行 `wails3 task common:generate:bindings`。
 - `resources/model-pricing/`：模型价格、上下文窗口、成本计算和对应测试。
-- `build/`：Wails 构建配置、平台 Taskfile、Windows NSIS、Linux nFPM、macOS plist。
-- `.github/workflows/release.yml`：tag 触发的跨平台 Release 构建与资产发布。
+- `build/`：Wails 通用配置与 Windows 便携构建 Taskfile。
+- `.github/workflows/release.yml`：tag 触发的 Windows amd64 便携版 Release 构建与资产发布。
 - `doc/`、根目录历史方案文档：只作参考，不代表当前真实实现；结论必须用代码复核。
 - `scripts/`：调试和发布辅助脚本，很多脚本面向特定历史问题，执行前先读内容和影响范围。
 
@@ -34,13 +34,13 @@
 `main.go` 的启动顺序不能随意调整：
 
 1. `services.InitDatabase()`：创建可执行文件同级 `.code-switch-R`，打开 `app.db?cache=shared&mode=rwc`，设置 `PRAGMA busy_timeout = 30000` 和 WAL。
-2. `services.InitGlobalDBQueue()`：初始化双队列数据库写入。
-3. 构造所有服务：Provider、Settings、AppSettings、Blacklist、Gemini、ProviderRelay、CLI 配置、日志、MCP、Skill、Prompt、Import、DeepLink、Connectivity、Update、Network、FrontendPreferences 等。
-4. 后台启动 `ProviderRelayService.Start()`，监听代理端口。
+2. 清理已经移除的 DeepSeekCode 与自定义 CLI 托管数据，并加载随机 Relay Token 和网络设置。
+3. 构造 Provider、Settings、AppSettings、Blacklist、Gemini、ProviderRelay、CLI 配置、日志、MCP、Prompt、Import、DeepLink、Connectivity、Update、Network、Grok、Pi 与 FrontendPreferences 等服务。
+4. 升级已托管 CLI 的旧 Relay 凭据，同步启动 `ProviderRelayService`；监听失败时应用终止启动。
 5. 后台启动黑名单过期恢复定时器。
 6. 创建 Wails 应用、主窗口、托盘菜单，注册服务并运行。
 
-关闭时必须停止黑名单定时器和代理服务器，并用 10 秒超时关闭全局 DB 写入队列。
+关闭时必须停止黑名单定时器、Grok 服务和 Relay。
 
 ## 持久化位置
 
@@ -58,20 +58,20 @@
 | `.code-switch-R/pi.json` | Pi 应用侧供应商、`piTemplate` 模板标识、完整模型定义、模型覆盖、请求头和 `metadataUserId` 配置 |
 | `.code-switch-R/pi-provider-templates.json` | Pi 网关协议模板；模板只提供协议与模型元数据，不包含供应商 URL；文件不存在时加载内置 Anthropic、OpenAI Chat 与 OpenAI Codex / Responses 模板 |
 | `.code-switch-R/provider-request-templates.json` | 用户保存的 Provider 请求头与 `metadataUserId` 模板；内置模板不写入该文件 |
-| `.code-switch-R/providers/{toolId}.json` | 自定义 CLI 工具 provider 配置 |
 | `.code-switch-R/app.json` | 应用设置、预算周期、自动更新、轮询、通知、全局代理等 |
-| `.code-switch-R/network.json` | 监听模式、WSL/LAN/custom 地址配置 |
+| `.code-switch-R/network.json` | localhost/WSL 监听设置与内部 Relay Token；Token 不向前端暴露 |
 | `.code-switch-R/mcp-{platform}.json` 与旧 `mcp.json` | MCP 配置，按平台拆分后仍兼容旧共享文件 |
+| `.code-switch-R/mcp-managed-{platform}.json` | 应用实际写入外部 CLI 的 MCP 条目指纹 |
 | `.code-switch-R/prompts.json` | 自定义提示词索引和状态 |
 | `.code-switch-R/frontend-preferences.json` | 主题、语言、侧边栏、已忽略更新等前端偏好 |
-| `.code-switch-R/skill.json` | Skill 仓库、安装和启用状态 |
-| `.code-switch-R/custom-cli.json` | 自定义 CLI 工具定义 |
+| `.code-switch-R/skill.json` | 已移除 Skill 功能留下的用户数据，只保留，不再读取或修改 |
+| `.code-switch-R/grok-runtime.json`、`grok-oauth-accounts.json` | Grok 运行模式、字段 ownership 和 OAuth 账号 |
 | `.code-switch-R/proxy-state/{platform}.json` | CLI 代理启用前后的备份状态 |
 | `.code-switch-R/download_state.json`、`pending_apply.json`、`dismissed_version.txt` | 自动更新状态 |
 
 ## 核心后端模块
 
-- `ProviderRelayService`：代理核心，在 `services/providerrelay.go`。负责路由注册、Provider 选择、Level 分组、轮询、失败降级、黑名单集成、请求转发、日志写入、模型列表代理、Gemini 和自定义 CLI 特殊路径。
+- `ProviderRelayService`：代理核心，在 `internal/relay/providerrelay.go`。负责 Token 验证、路由注册、Provider 选择、Level 分组、轮询、失败降级、黑名单集成、请求转发、日志写入和模型列表代理。
 - `ProviderService`：Provider JSON 文件读写、迁移、验证、复制、删除清理和改名，并维护 Pi 协议模板 CRUD。单独改名走 `RenameProvider()`；编辑页需要同时保存字段和改名时走 `SaveProvidersWithRename()`，由后端统一回滚配置文件、数据库和 Pi 网关。Pi 模板 ID 创建后不可修改，仍被供应商引用的模板不得删除；同一协议模板下标准化后的相同 API URL 只能对应一个供应商。
 - `PiSettingsService`：只自动检测当前用户的 `~/.pi/agent`。目录存在但 `models.json` 缺失或没有 Provider 时写入脱敏默认平台；已有 Provider 原样解析为 Pi 平台。每个平台可独立托管：开启时备份该 Provider 及同名 `auth.json` 条目，导入原始 URL 和有效 API Key 为平台首个网关供应商，再把该平台改到 `/pi/providers/{provider}`；关闭时只恢复该平台。`ModelsCatalog()` 返回脱敏目录、托管状态与外部修改冲突，不得暴露 API Key 或请求头。
 - `provider_delete.go`：删除 provider 时清理 `request_log`、`relay_attempt`、`provider_blacklist`、`provider_alias`。清理失败会回滚 provider JSON，避免配置和数据库状态分裂。
@@ -79,11 +79,10 @@
 - `Protocol Adapter`：`services/protocol_matrix_adapter.go` 与 `services/protocol_matrix_stream.go` 负责 Anthropic Messages、OpenAI Chat Completions 和 OpenAI Responses 的双向矩阵转换。无法保持 reasoning、工具选择或流式事件语义时必须显式失败；流式响应一旦提交就不得再切换 Provider 或追加 JSON 错误。
 - `BlacklistService`：管理请求失败拉黑和过期自动恢复。
 - `LogService` 与 `resources/model-pricing`：读取请求日志、聚合统计、热力图、成本估算、模型定价匹配。
-- `MCPService`：管理 Claude、Codex、Gemini、Reasonix 的 MCP 配置，并同步到对应平台文件。
-- `SkillService`：扫描、安装、卸载、启停用户级和项目级 Skills，支持 GitHub 仓库来源。
+- `MCPService`：管理 Claude、Codex、Gemini、Reasonix 的 MCP 配置；只同步应用拥有的条目，外部修改冲突时拒绝覆盖。
 - `PromptService`：管理各平台提示词，写入平台原始提示词文件前会检测外部修改。
-- `NetworkService`：管理本机、WSL、LAN、自定义监听地址，能写入 WSL 内的 Claude/Codex/Gemini 配置。
-- `UpdateService`：优先读取 GitHub Release 的 `latest.json`，再回退 GitHub API；下载 URL 有白名单校验，支持 Windows 静默更新流程。
+- `NetworkService`：只管理 localhost 与 WSL 监听，拒绝 `0.0.0.0` 和任意自定义地址，能写入 WSL 内的 Claude/Codex/Gemini 配置。
+- `UpdateService`：优先读取 GitHub Release 的 `latest.json`，再回退 GitHub API；下载 URL 有白名单校验，只支持 Windows 便携 exe 确认更新。
 
 ## 代理路由与协议
 
@@ -98,8 +97,8 @@ POST /gemini/v1/*any               -> Gemini v1
 POST /reasonix/chat/completions    -> Reasonix OpenAI Chat Completions
 GET  /reasonix/models              -> Reasonix models
 POST /pi/providers/:provider/*any  -> Pi 平台级协议网关
-POST /custom/:toolId/v1/messages   -> 自定义 CLI Messages
-GET  /custom/:toolId/v1/models     -> 自定义 CLI models
+POST /grok/v1/responses            -> Grok Build Responses
+GET  /grok/v1/models               -> Grok Build models
 ```
 
 Provider 选择顺序是：启用状态、URL/API Key、配置校验、模型支持、黑名单状态、Level 分组、同 Level 轮询设置。黑名单固定模式开启时，同一 provider 会按阈值重试直到拉黑再切换；未开启时每个 provider 单次失败后降级到下一个。
@@ -110,7 +109,7 @@ Pi 的一个 `models.json.providers.<id>` 就是页面中的一个平台；应�
 
 Provider 自定义 Header 在兼容预设之后应用，可以覆盖 User-Agent 等默认值，但认证头和危险 transport Header 仍由代理控制。`metadataUserId` 只允许最终上游协议为 Anthropic Messages，并在协议转换完成后写入请求体 `metadata.user_id`；不得把设备、账号或会话标识硬编码进内置模板。
 
-统计成功统一定义为 HTTP 2xx 且 `error_type` 为空；失败数必须是该条件的补集。自定义 CLI 的新日志使用 `platform=custom` 与 `source_id=<toolId>`，查询时必须按当前工具隔离，并兼容旧的 `platform=custom:<toolId>` 记录。
+统计成功统一定义为 HTTP 2xx 且 `error_type` 为空；失败数必须是该条件的补集。所有非 2xx 响应都按失败处理；固定黑名单模式下同一 Provider 重试到拉黑后再切换。
 
 ## 前端结构
 
@@ -118,17 +117,15 @@ Provider 自定义 Header 在兼容预设之后应用，可以覆盖 User-Agent 
 
 | 路由 | 页面 |
 |---|---|
-| `/` | Provider 管理主界面，Claude/Codex/Gemini/Reasonix/自定义 CLI |
+| `/` | Provider 管理主界面，包含 Claude、Codex、Gemini、Reasonix、Grok Build 与 Grok OAuth Tab |
 | `/pi` | 实时解析 `models.json` 平台和模型，管理平台 CRUD、平台级独立托管、平台下网关供应商、模型抓取/映射及完整 JSON 预览 |
 | `/stats` | 用量统计、趋势和请求排行 |
 | `/logs` | 请求日志、筛选、成本展示 |
 | `/mcp` | MCP Server 管理 |
-| `/skill` | Skill 市场和已安装 Skills |
 | `/env` | 环境变量冲突检查 |
 | `/prompts` | 提示词管理 |
 | `/console` | 应用内控制台日志 |
 | `/settings` | 通用设置、黑名单、预算、代理、导入导出 |
-| `/tray` | macOS 托盘窗口 |
 
 前端调用后端有两种方式：优先使用 `frontend/bindings/` 生成的函数；部分动态服务用 `@wailsio/runtime` 的 `Call.ByName`。新增或改名 Go 导出方法后，必须同步更新 bindings 和对应 `frontend/src/services/*.ts` 或组件调用。
 
@@ -198,13 +195,13 @@ go build -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o bin/code-sw
 
 ## 发布流程
 
-GitHub Release 由 `.github/workflows/release.yml` 在推送 `v*` tag 时触发。Workflow 会构建 macOS arm64/amd64、Windows amd64、Linux amd64，生成 `latest.json`，并发布 Windows 安装器、便携 exe、macOS zip、Linux AppImage/DEB/RPM 及校验文件。
+GitHub Release 由 `.github/workflows/release.yml` 在推送 `v*` tag 时触发。Workflow 只构建 Windows amd64 便携版，生成并发布 `codeSwitchR.exe`、`codeSwitchR.exe.sha256` 与 `latest.json`。
 
 发版前至少核对：
 
 - `version_service.go` 的 `AppVersion`。
 - `RELEASE_NOTES.md` 或 Release body 需要展示的版本说明。
-- `build/config.yml`、`build/windows/info.json`、Linux nFPM 版本是否由 workflow 或本地流程正确更新。
+- `build/config.yml`、`build/windows/info.json` 与 `version_service.go` 版本是否一致。
 - `frontend/bindings/` 是否与 Go 导出服务签名一致。
 - 运行必要的 Go 测试和 `frontend` 构建。
 

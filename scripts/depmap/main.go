@@ -39,7 +39,7 @@ func domainOf(file string) string {
 		return "provider"
 	case base == "claudesettings", base == "codexsettings", base == "reasonixsettings",
 		strings.HasPrefix(base, "json_proxy"), base == "cliconfigservice", base == "proxystate",
-		base == "customcliservice", base == "geminiservice", base == "networkservice",
+		base == "geminiservice", base == "networkservice",
 		base == "directapply_helpers":
 		return "clisettings"
 	default:

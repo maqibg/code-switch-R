@@ -63,27 +63,11 @@ def main():
         sys.exit(1)
     base_url = f"https://github.com/{repository}/releases/download/v{version_clean}"
 
-    # 定义平台资产映射
+    # 应用只发布 Windows amd64 便携版。
     platform_configs = {
         "windows-x86_64": {
-            "patterns": ["codeSwitchR.exe", f"code-switch-R-v{version_clean}.exe", "code-switch-R.exe", f"CodeSwitch-v{version_clean}.exe", "CodeSwitch.exe"],
+            "patterns": ["codeSwitchR.exe"],
             "filename": "codeSwitchR.exe",
-        },
-        "windows-x86_64-installer": {
-            "patterns": ["codeSwitchR-amd64-installer.exe", f"code-switch-R-v{version_clean}-amd64-installer.exe", "code-switch-R-amd64-installer.exe", f"CodeSwitch-v{version_clean}-amd64-installer.exe", "CodeSwitch-amd64-installer.exe"],
-            "filename": "codeSwitchR-amd64-installer.exe",
-        },
-        "darwin-aarch64": {
-            "patterns": ["codeSwitchR-macos-arm64.zip", f"code-switch-R-v{version_clean}-macos-arm64.zip", "code-switch-R-macos-arm64.zip", f"CodeSwitch-v{version_clean}-macos-arm64.zip", "codeswitch-macos-arm64.zip"],
-            "filename": "codeSwitchR-macos-arm64.zip",
-        },
-        "darwin-x86_64": {
-            "patterns": ["codeSwitchR-macos-amd64.zip", f"code-switch-R-v{version_clean}-macos-amd64.zip", "code-switch-R-macos-amd64.zip", f"CodeSwitch-v{version_clean}-macos-amd64.zip", "codeswitch-macos-amd64.zip"],
-            "filename": "codeSwitchR-macos-amd64.zip",
-        },
-        "linux-x86_64": {
-            "patterns": ["codeSwitchR.AppImage", f"code-switch-R-v{version_clean}.AppImage", "code-switch-R.AppImage", f"CodeSwitch-v{version_clean}.AppImage", "CodeSwitch.AppImage"],
-            "filename": "codeSwitchR.AppImage",
         },
     }
 
@@ -116,7 +100,8 @@ def main():
             }
             print(f"Found {platform_key}: {asset_file.name} ({size} bytes)")
         else:
-            print(f"Warning: No asset found for {platform_key}")
+            print(f"Error: Required asset not found for {platform_key}")
+            sys.exit(1)
 
     # 读取 release notes（如果存在）
     notes = ""

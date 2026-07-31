@@ -43,3 +43,34 @@ func TestBuildWindowsPortableUpdateScriptEmbedsArguments(t *testing.T) {
 		t.Errorf("脚本未使用 $targetPid 等待旧进程退出:\n%s", script)
 	}
 }
+
+func TestPortableUpdateUsesReleaseRepository(t *testing.T) {
+	if latestJSONURL != "https://github.com/maqibg/code-switch-R/releases/latest/download/latest.json" {
+		t.Fatalf("latest.json 地址与发布仓库不一致: %s", latestJSONURL)
+	}
+	if githubAPIURL != "https://api.github.com/repos/maqibg/code-switch-R/releases/latest" {
+		t.Fatalf("GitHub API 地址与发布仓库不一致: %s", githubAPIURL)
+	}
+
+	allowed := []string{
+		"https://github.com/maqibg/code-switch-R/releases/download/v2.7.0/codeSwitchR.exe",
+		"https://github.com/maqibg/code-switch-R/releases/latest/download/latest.json",
+		"https://objects.githubusercontent.com/github-production-release-asset/example",
+	}
+	for _, url := range allowed {
+		if !isURLAllowed(url) {
+			t.Errorf("应允许发布资产 URL: %s", url)
+		}
+	}
+
+	rejected := []string{
+		"https://github.com/Rogers-F/code-switch-R/releases/download/v2.7.0/codeSwitchR.exe",
+		"https://github.com/maqibg/code-switch-R.evil/releases/download/v2.7.0/codeSwitchR.exe",
+		"http://github.com/maqibg/code-switch-R/releases/download/v2.7.0/codeSwitchR.exe",
+	}
+	for _, url := range rejected {
+		if isURLAllowed(url) {
+			t.Errorf("不应允许非发布仓库 URL: %s", url)
+		}
+	}
+}

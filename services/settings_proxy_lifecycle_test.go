@@ -282,3 +282,66 @@ func TestClaudeEnableProxyOnlyTouchesProxyEnvKeys(t *testing.T) {
 		t.Errorf("停用后用户自有环境变量应保留，实际 %v", env["MY_OWN_VAR"])
 	}
 }
+
+func TestClaudeDisableProxyRejectsExternalManagedFieldEdit(t *testing.T) {
+	home := withTempHome(t)
+	resetProxyState(t, "claude")
+	path := seedConfigFile(t, home, filepath.Join(".claude", "settings.json"), `{"env":{"KEEP":"yes"}}`)
+	service := NewClaudeSettingsService("127.0.0.1:18100")
+	if err := service.EnableProxy(); err != nil {
+		t.Fatal(err)
+	}
+
+	var payload map[string]any
+	data, _ := os.ReadFile(path)
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	env := payload["env"].(map[string]any)
+	env["ANTHROPIC_AUTH_TOKEN"] = "externally-changed"
+	if err := AtomicWriteJSON(path, payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DisableProxy(); err == nil || !strings.Contains(err.Error(), "外部修改") {
+		t.Fatalf("外部修改托管凭据后应拒绝停用，实际: %v", err)
+	}
+	data, _ = os.ReadFile(path)
+	if !strings.Contains(string(data), "externally-changed") || !strings.Contains(string(data), "KEEP") {
+		t.Fatalf("冲突失败不得覆盖配置: %s", data)
+	}
+}
+
+func TestClaudeManagedCredentialRefreshRotatesTokenAndState(t *testing.T) {
+	home := withTempHome(t)
+	resetProxyState(t, "claude")
+	path := seedConfigFile(t, home, filepath.Join(".claude", "settings.json"), `{"env":{"KEEP":"yes"}}`)
+	previous := RelayToken()
+	t.Cleanup(func() { _ = SetRelayToken(previous) })
+	oldToken := strings.Repeat("a", 32)
+	newToken := strings.Repeat("b", 32)
+	if err := SetRelayToken(oldToken); err != nil {
+		t.Fatal(err)
+	}
+	service := NewClaudeSettingsService("127.0.0.1:18100")
+	if err := service.EnableProxy(); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetRelayToken(newToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := claudeProxyPlatform.refreshManagedCredential(service.relayAddr); err != nil {
+		t.Fatal(err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), oldToken) || !strings.Contains(string(data), newToken) {
+		t.Fatalf("配置 Token 未轮换: %s", data)
+	}
+	state, err := LoadProxyState("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.InjectedAuthToken != newToken {
+		t.Fatalf("托管状态 Token 未轮换: %q", state.InjectedAuthToken)
+	}
+}

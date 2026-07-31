@@ -42,7 +42,7 @@ func migrateBlacklistProviderID(tx sqlExecutor) error {
 		SET source_id = substr(platform, %d),
 			platform = 'custom'
 		WHERE platform LIKE 'custom:%%'
-	`, len(customProviderKindPrefix)+1)); err != nil {
+	`, len(legacyCustomProviderKindPrefix)+1)); err != nil {
 		return fmt.Errorf("归一化 provider_blacklist 的 custom platform 失败: %w", err)
 	}
 

@@ -3,7 +3,9 @@ package services
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,14 +24,11 @@ type ListenMode string
 const (
 	ListenModeLocalhost ListenMode = "localhost"
 	ListenModeWSLAuto   ListenMode = "wsl_auto"
-	ListenModeLAN       ListenMode = "lan"
-	ListenModeCustom    ListenMode = "custom"
 )
 
 // NetworkSettings 网络设置
 type NetworkSettings struct {
 	ListenMode     ListenMode `json:"listenMode"`
-	CustomAddress  string     `json:"customAddress,omitempty"`
 	CurrentAddress string     `json:"currentAddress,omitempty"`
 	WSLAutoConfig  bool       `json:"wslAutoConfig"`
 	TargetCli      TargetCli  `json:"targetCli"`
@@ -54,11 +53,21 @@ type ConfigureResult struct {
 	Message string `json:"message,omitempty"`
 }
 
+type networkSettingsPayload struct {
+	NetworkSettings
+	RelayToken string `json:"relayToken"`
+}
+
+type RelayRuntimeController interface {
+	Addr() string
+	Restart(addr string) error
+}
+
 // NetworkService 网络配置服务
 type NetworkService struct {
 	mu            sync.Mutex
 	settingsPath  string
-	relayAddr     string
+	relayRuntime  RelayRuntimeController
 	claudeService *ClaudeSettingsService
 	codexService  *CodexSettingsService
 	geminiService *GeminiService
@@ -66,7 +75,7 @@ type NetworkService struct {
 
 // NewNetworkService 创建网络服务
 func NewNetworkService(
-	relayAddr string,
+	relayRuntime RelayRuntimeController,
 	claudeService *ClaudeSettingsService,
 	codexService *CodexSettingsService,
 	geminiService *GeminiService,
@@ -78,7 +87,7 @@ func NewNetworkService(
 
 	return &NetworkService{
 		settingsPath:  filepath.Join(configDir, networkSettingsFile),
-		relayAddr:     relayAddr,
+		relayRuntime:  relayRuntime,
 		claudeService: claudeService,
 		codexService:  codexService,
 		geminiService: geminiService,
@@ -89,7 +98,6 @@ func NewNetworkService(
 func (ns *NetworkService) defaultSettings() NetworkSettings {
 	return NetworkSettings{
 		ListenMode:     ListenModeLocalhost,
-		CustomAddress:  "",
 		CurrentAddress: "127.0.0.1:18100",
 		WSLAutoConfig:  false, // 默认关闭
 		TargetCli: TargetCli{
@@ -118,9 +126,11 @@ func (ns *NetworkService) GetNetworkSettings() (NetworkSettings, error) {
 		return settings, nil
 	}
 
-	if err := json.Unmarshal(data, &settings); err != nil {
+	var payload networkSettingsPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return ns.defaultSettings(), err
 	}
+	settings = ns.normalizeSettings(payload.NetworkSettings)
 
 	// 计算当前监听地址
 	settings.CurrentAddress = ns.computeListenAddress(settings)
@@ -133,20 +143,35 @@ func (ns *NetworkService) SaveNetworkSettings(settings NetworkSettings) error {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
-	// 计算当前监听地址
+	settings = ns.normalizeSettings(settings)
 	settings.CurrentAddress = ns.computeListenAddress(settings)
-
-	dir := filepath.Dir(ns.settingsPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := ns.validateListenAddress(settings.CurrentAddress); err != nil {
 		return err
 	}
-
-	data, err := json.MarshalIndent(settings, "", "  ")
+	payload, oldData, err := ns.loadPayloadLocked()
 	if err != nil {
 		return err
 	}
-
-	return AtomicWriteBytes(ns.settingsPath, data)
+	payload.NetworkSettings = settings
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := AtomicWriteBytes(ns.settingsPath, data); err != nil {
+		return err
+	}
+	if ns.relayRuntime == nil || sameListenAddress(ns.relayRuntime.Addr(), settings.CurrentAddress) {
+		return nil
+	}
+	if err := ns.relayRuntime.Restart(settings.CurrentAddress); err != nil {
+		if oldData == nil {
+			_ = os.Remove(ns.settingsPath)
+		} else {
+			_ = AtomicWriteBytes(ns.settingsPath, oldData)
+		}
+		return fmt.Errorf("重启 Relay 失败，网络设置已回滚: %w", err)
+	}
+	return nil
 }
 
 // computeListenAddress 计算监听地址
@@ -160,16 +185,107 @@ func (ns *NetworkService) computeListenAddress(settings NetworkSettings) string 
 			return addr + ":18100"
 		}
 		return "127.0.0.1:18100"
-	case ListenModeLAN:
-		return "0.0.0.0:18100"
-	case ListenModeCustom:
-		if settings.CustomAddress != "" {
-			return settings.CustomAddress
-		}
-		return "0.0.0.0:18100"
 	default:
 		return "127.0.0.1:18100"
 	}
+}
+
+func (ns *NetworkService) normalizeSettings(settings NetworkSettings) NetworkSettings {
+	if settings.ListenMode != ListenModeWSLAuto {
+		settings.ListenMode = ListenModeLocalhost
+	}
+	return settings
+}
+
+func (ns *NetworkService) loadPayloadLocked() (networkSettingsPayload, []byte, error) {
+	payload := networkSettingsPayload{NetworkSettings: ns.defaultSettings(), RelayToken: RelayToken()}
+	data, err := os.ReadFile(ns.settingsPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return payload, nil, nil
+	}
+	if err != nil {
+		return payload, nil, err
+	}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return payload, data, err
+		}
+	}
+	payload.NetworkSettings = ns.normalizeSettings(payload.NetworkSettings)
+	if payload.RelayToken == "" {
+		payload.RelayToken = RelayToken()
+	}
+	return payload, data, nil
+}
+
+func (ns *NetworkService) validateListenAddress(address string) error {
+	host, port, err := net.SplitHostPort(strings.TrimSpace(address))
+	if err != nil || port == "" {
+		return fmt.Errorf("Relay 监听地址无效: %s", address)
+	}
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil || ip.IsUnspecified() || ip.IsMulticast() {
+		return fmt.Errorf("Relay 只允许 localhost 或 WSL 宿主机地址")
+	}
+	if ip.IsLoopback() {
+		return nil
+	}
+	wslHost := net.ParseIP(ns.getWSLHostAddressInternal())
+	if wslHost != nil && ip.Equal(wslHost) {
+		return nil
+	}
+	return fmt.Errorf("Relay 只允许 localhost 或当前 WSL 宿主机地址")
+}
+
+func sameListenAddress(left, right string) bool {
+	return strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
+}
+
+func LoadNetworkRuntimeSettings(overrideAddress string) (string, error) {
+	configDir, err := getAppConfigDir()
+	if err != nil {
+		return "", err
+	}
+	ns := &NetworkService{settingsPath: filepath.Join(configDir, networkSettingsFile)}
+	ns.mu.Lock()
+	payload, _, err := ns.loadPayloadLocked()
+	if err != nil {
+		ns.mu.Unlock()
+		return "", err
+	}
+	if len(strings.TrimSpace(payload.RelayToken)) < 32 {
+		payload.RelayToken, err = GenerateRelayToken()
+		if err != nil {
+			ns.mu.Unlock()
+			return "", err
+		}
+	}
+	if err := SetRelayToken(payload.RelayToken); err != nil {
+		ns.mu.Unlock()
+		return "", err
+	}
+	payload.NetworkSettings = ns.normalizeSettings(payload.NetworkSettings)
+	payload.CurrentAddress = ns.computeListenAddress(payload.NetworkSettings)
+	address := payload.CurrentAddress
+	if strings.TrimSpace(overrideAddress) != "" {
+		address = strings.TrimSpace(overrideAddress)
+	}
+	if err := ns.validateListenAddress(address); err != nil {
+		ns.mu.Unlock()
+		return "", err
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err == nil {
+		err = AtomicWriteBytes(ns.settingsPath, data)
+	}
+	ns.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	return address, nil
 }
 
 // decodeUTF16LE 将 UTF-16 LE 编码的字节转换为 UTF-8 字符串
@@ -349,7 +465,7 @@ func (ns *NetworkService) ConfigureWSLClients(targets TargetCli) ConfigureResult
 
 	if len(errors) > 0 {
 		return ConfigureResult{
-			Success: len(successes) > 0,
+			Success: false,
 			Message: fmt.Sprintf("Configured: %d, Errors: %d. %s",
 				len(successes), len(errors), strings.Join(errors, "; ")),
 		}
@@ -359,6 +475,28 @@ func (ns *NetworkService) ConfigureWSLClients(targets TargetCli) ConfigureResult
 		Success: true,
 		Message: fmt.Sprintf("Successfully configured %d CLI tool(s)", len(successes)),
 	}
+}
+
+func RefreshManagedWSLRelayCredentials(ns *NetworkService) error {
+	if ns == nil {
+		return nil
+	}
+	settings, err := ns.GetNetworkSettings()
+	if err != nil {
+		return err
+	}
+	if !settings.WSLAutoConfig {
+		return nil
+	}
+	detection := ns.DetectWSL()
+	if !detection.Detected {
+		return nil
+	}
+	result := ns.ConfigureWSLClients(settings.TargetCli)
+	if !result.Success {
+		return fmt.Errorf("%s", result.Message)
+	}
+	return nil
 }
 
 // bashSingleQuote safely converts a string to a bash single-quoted literal.
@@ -390,7 +528,7 @@ if [ -L "$config_path" ]; then
 fi
 
 base_url=%s
-auth_token='code-switch-r'
+auth_token=%s
 
 ts="$(date +%%s)"
 if [ -f "$config_path" ]; then
@@ -501,7 +639,7 @@ fi
 
 mv -f "$tmp_path" "$config_path"
 trap - EXIT
-`, bashSingleQuote(proxyURL))
+`, bashSingleQuote(proxyURL), bashSingleQuote(relayTokenForConfig()))
 
 	return ns.runWSLCommand(distro, script)
 }
@@ -535,7 +673,7 @@ fi
 
 base_url=%s
 provider_key='code-switch-r'
-api_key='code-switch-r'
+api_key=%s
 
 ts="$(date +%%s)"
 [ -f "$config_path" ] && cp -a "$config_path" "$config_path.bak.$ts"
@@ -769,7 +907,7 @@ fi
 
 echo "Failed to write $config_path" >&2
 exit 1
-`, bashSingleQuote(proxyURL))
+`, bashSingleQuote(proxyURL), bashSingleQuote(relayTokenForConfig()))
 
 	return ns.runWSLCommand(distro, script)
 }
@@ -798,7 +936,7 @@ if [ -L "$env_path" ]; then
 fi
 
 gemini_base_url=%s
-api_key='code-switch-r'
+api_key=%s
 
 ts="$(date +%%s)"
 [ -f "$env_path" ] && cp -a "$env_path" "$env_path.bak.$ts"
@@ -933,7 +1071,7 @@ fi
 
 mv -f "$tmp_path" "$env_path"
 trap - EXIT
-`, bashSingleQuote(geminiURL))
+`, bashSingleQuote(geminiURL), bashSingleQuote(relayTokenForConfig()))
 
 	return ns.runWSLCommand(distro, script)
 }

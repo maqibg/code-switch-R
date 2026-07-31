@@ -1,7 +1,6 @@
 package services
 
 import (
-	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -40,9 +38,7 @@ const (
 type UpdatePolicy string
 
 const (
-	PolicyAuto      UpdatePolicy = "auto"      // 自动检测（默认）
-	PolicyPortable  UpdatePolicy = "portable"  // 便携版：自替换
-	PolicyInstaller UpdatePolicy = "installer" // 安装版：下载安装器
+	PolicyPortable UpdatePolicy = "portable"
 )
 
 // ==================== 数据结构 ====================
@@ -86,7 +82,7 @@ type DownloadState struct {
 // PendingApply 待应用更新标记
 type PendingApply struct {
 	TargetVersion string    `json:"target_version"`
-	Method        string    `json:"method"` // "swap" | "installer"
+	Method        string    `json:"method"` // 固定为 "swap"
 	FilePath      string    `json:"file_path"`
 	FileSHA256    string    `json:"file_sha256"`
 	StartedAt     time.Time `json:"started_at"`
@@ -146,8 +142,8 @@ type UpdateService struct {
 
 // 常量
 const (
-	latestJSONURL     = "https://github.com/Rogers-F/code-switch-R/releases/latest/download/latest.json"
-	githubAPIURL      = "https://api.github.com/repos/Rogers-F/code-switch-R/releases/latest"
+	latestJSONURL     = "https://github.com/maqibg/code-switch-R/releases/latest/download/latest.json"
+	githubAPIURL      = "https://api.github.com/repos/maqibg/code-switch-R/releases/latest"
 	checkCooldown     = 60 * time.Second // 检查更新冷却时间
 	progressThrottle  = 100 * time.Millisecond
 	progressMinChange = 1 // 最小进度变化（百分比）
@@ -155,8 +151,8 @@ const (
 
 // URL 白名单
 var allowedURLPrefixes = []string{
-	"https://github.com/Rogers-F/code-switch-R/releases/download/",
-	"https://github.com/Rogers-F/code-switch-R/releases/latest/download/",
+	"https://github.com/maqibg/code-switch-R/releases/download/",
+	"https://github.com/maqibg/code-switch-R/releases/latest/download/",
 	"https://objects.githubusercontent.com/", // GitHub 重定向目标
 }
 
@@ -179,8 +175,7 @@ func NewUpdateService(currentVersion string) *UpdateService {
 		us.dismissedVersion = strings.TrimSpace(string(data))
 	}
 
-	// 初始化时检测并缓存更新策略（只做一次 I/O）
-	us.cachedPolicy = string(us.detectPolicy())
+	us.cachedPolicy = string(PolicyPortable)
 
 	// 启动时检查是否有待应用的更新
 	us.checkPendingApply()
@@ -358,16 +353,9 @@ func (us *UpdateService) RequestRestart() error {
 	targetInfo := us.targetInfo
 	us.mu.Unlock()
 
-	// 写入 pending_apply.json
-	policy := us.detectPolicy()
-	method := "swap"
-	if policy == PolicyInstaller {
-		method = "installer"
-	}
-
 	pending := &PendingApply{
 		TargetVersion: targetInfo.Version,
-		Method:        method,
+		Method:        "swap",
 		FilePath:      downloadState.TempFilePath,
 		FileSHA256:    downloadState.ExpectedSHA256,
 		StartedAt:     time.Now(),
@@ -425,7 +413,7 @@ func (us *UpdateService) GetState() *UpdateStateSnapshot {
 
 	policy := us.cachedPolicy
 	if policy == "" {
-		policy = "auto"
+		policy = string(PolicyPortable)
 	}
 
 	snapshot := &UpdateStateSnapshot{
@@ -857,23 +845,6 @@ func (us *UpdateService) verifyAndFinalize(tempPath, finalPath string, info *Upd
 		os.Remove(tempPath)
 	}
 
-	// 如果是 macOS 的 zip 文件，解压
-	if runtime.GOOS == "darwin" && strings.HasSuffix(finalPath, ".zip") {
-		extractDir := filepath.Join(us.dataDir, "downloads", "extracted")
-		if err := unzip(finalPath, extractDir); err != nil {
-			us.setDownloadError(fmt.Sprintf("failed to extract zip: %v", err))
-			return
-		}
-		// 查找 .app 目录
-		entries, _ := os.ReadDir(extractDir)
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".app") {
-				finalPath = filepath.Join(extractDir, entry.Name())
-				break
-			}
-		}
-	}
-
 	// 更新状态
 	us.mu.Lock()
 	us.downloadState.TempFilePath = finalPath
@@ -906,24 +877,13 @@ func (us *UpdateService) saveDownloadState(path string, state *DownloadState) {
 
 // launchUpdater 启动更新程序
 func (us *UpdateService) launchUpdater(pending *PendingApply) error {
-	switch runtime.GOOS {
-	case "windows":
-		return us.launchWindowsUpdater(pending)
-	case "darwin":
-		return us.launchMacOSUpdater(pending)
-	case "linux":
-		return us.launchLinuxUpdater(pending)
-	default:
-		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
-	}
+	return us.launchWindowsUpdater(pending)
 }
 
 // launchWindowsUpdater Windows 更新器
 func (us *UpdateService) launchWindowsUpdater(pending *PendingApply) error {
-	if pending.Method == "installer" {
-		// 安装版：直接运行 installer
-		cmd := exec.Command(pending.FilePath, "/S") // NSIS 静默安装
-		return cmd.Start()
+	if pending.Method != "swap" {
+		return fmt.Errorf("unsupported update method: %s", pending.Method)
 	}
 
 	// 便携版：使用 PowerShell 脚本
@@ -945,140 +905,6 @@ func (us *UpdateService) launchWindowsUpdater(pending *PendingApply) error {
 		"-ExecutionPolicy", "Bypass",
 		"-File", scriptPath,
 	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Start()
-}
-
-// launchMacOSUpdater macOS 更新器
-func (us *UpdateService) launchMacOSUpdater(pending *PendingApply) error {
-	// 获取当前 .app 路径
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	// 从 exe 路径推断 .app 路径
-	// 例如: /Applications/code-switch-R.app/Contents/MacOS/code-switch-R
-	appPath := exePath
-	if idx := strings.Index(exePath, ".app/"); idx != -1 {
-		appPath = exePath[:idx+4]
-	}
-
-	pid := os.Getpid()
-	script := fmt.Sprintf(`#!/bin/bash
-set -e
-
-OLD_APP="%s"
-NEW_APP="%s"
-PID=%d
-MAX_WAIT=60
-
-# 等待旧进程退出
-waited=0
-while [ $waited -lt $MAX_WAIT ]; do
-    if ! kill -0 $PID 2>/dev/null; then
-        break
-    fi
-    sleep 0.5
-    waited=$((waited + 1))
-done
-
-if [ $waited -ge $MAX_WAIT ]; then
-    echo "Timeout waiting for process to exit" >&2
-    exit 1
-fi
-
-# 同目录 staging（确保同卷）
-STAGING_PATH="${OLD_APP}.new"
-ditto "$NEW_APP" "$STAGING_PATH"
-
-# 移除 quarantine
-xattr -dr com.apple.quarantine "$STAGING_PATH" 2>/dev/null || true
-
-# 重命名交换
-BACKUP_PATH="${OLD_APP}.old"
-if [ -d "$BACKUP_PATH" ]; then
-    rm -rf "$BACKUP_PATH"
-fi
-mv "$OLD_APP" "$BACKUP_PATH"
-mv "$STAGING_PATH" "$OLD_APP"
-
-# 启动新版本
-open "$OLD_APP"
-
-# 清理
-sleep 2
-rm -rf "$BACKUP_PATH"
-rm -rf "$NEW_APP"
-`, appPath, pending.FilePath, pid)
-
-	scriptPath := filepath.Join(us.dataDir, "update.sh")
-	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
-		return err
-	}
-
-	cmd := exec.Command("/bin/bash", scriptPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Start()
-}
-
-// launchLinuxUpdater Linux 更新器
-func (us *UpdateService) launchLinuxUpdater(pending *PendingApply) error {
-	// AppImage 更新
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	pid := os.Getpid()
-	script := fmt.Sprintf(`#!/bin/bash
-set -e
-
-OLD_APP="%s"
-NEW_APP="%s"
-PID=%d
-MAX_WAIT=60
-
-# 等待旧进程退出
-waited=0
-while [ $waited -lt $MAX_WAIT ]; do
-    if ! kill -0 $PID 2>/dev/null; then
-        break
-    fi
-    sleep 0.5
-    waited=$((waited + 1))
-done
-
-if [ $waited -ge $MAX_WAIT ]; then
-    echo "Timeout waiting for process to exit" >&2
-    exit 1
-fi
-
-# 备份并替换
-BACKUP_PATH="${OLD_APP}.old"
-cp "$OLD_APP" "$BACKUP_PATH"
-cp "$NEW_APP" "$OLD_APP"
-chmod +x "$OLD_APP"
-
-# 启动新版本
-"$OLD_APP" &
-
-# 清理
-sleep 2
-rm -f "$BACKUP_PATH"
-rm -f "$NEW_APP"
-`, exePath, pending.FilePath, pid)
-
-	scriptPath := filepath.Join(us.dataDir, "update.sh")
-	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
-		return err
-	}
-
-	cmd := exec.Command("/bin/bash", scriptPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -1139,68 +965,6 @@ func (us *UpdateService) checkPendingApply() {
 
 // ==================== 辅助方法 ====================
 
-// detectPolicy 检测更新策略
-func (us *UpdateService) detectPolicy() UpdatePolicy {
-	us.mu.Lock()
-	defer us.mu.Unlock()
-	return us.detectPolicyLocked()
-}
-
-// detectPolicyLocked 检测更新策略（需持有锁）
-func (us *UpdateService) detectPolicyLocked() UpdatePolicy {
-	// 可以通过构建时注入 UpdatePolicy 变量来覆盖
-	// 这里实现运行时检测
-
-	exePath, err := os.Executable()
-	if err != nil {
-		return PolicyPortable // 默认便携版
-	}
-
-	// Windows: 检查是否在 Program Files
-	if runtime.GOOS == "windows" {
-		programFiles := os.Getenv("ProgramFiles")
-		programFilesX86 := os.Getenv("ProgramFiles(x86)")
-		exePathLower := strings.ToLower(exePath)
-
-		if (programFiles != "" && strings.HasPrefix(exePathLower, strings.ToLower(programFiles))) ||
-			(programFilesX86 != "" && strings.HasPrefix(exePathLower, strings.ToLower(programFilesX86))) {
-			// 在 Program Files，但还需验证是否可写
-			if !us.canWriteToDir(filepath.Dir(exePath)) {
-				return PolicyInstaller
-			}
-		}
-	}
-
-	// 其他情况：检查目录是否可写
-	if us.canWriteToDir(filepath.Dir(exePath)) {
-		return PolicyPortable
-	}
-
-	return PolicyInstaller
-}
-
-// canWriteToDir 检查目录是否可写
-func (us *UpdateService) canWriteToDir(dir string) bool {
-	testFile := filepath.Join(dir, ".write-test-"+fmt.Sprintf("%d", time.Now().UnixNano()))
-
-	// 尝试创建文件
-	f, err := os.Create(testFile)
-	if err != nil {
-		return false
-	}
-	f.Close()
-
-	// 尝试重命名（模拟替换操作）
-	testFile2 := testFile + ".renamed"
-	if err := os.Rename(testFile, testFile2); err != nil {
-		os.Remove(testFile)
-		return false
-	}
-
-	os.Remove(testFile2)
-	return true
-}
-
 // isNewerVersion 检查是否是更新版本
 func (us *UpdateService) isNewerVersion(version string) bool {
 	return compareVersions(version, us.currentVersion) > 0
@@ -1254,47 +1018,13 @@ func parseVersionPart(s string) int {
 
 // getPlatformKey 获取平台标识符
 func (us *UpdateService) getPlatformKey() string {
-	os := runtime.GOOS
-	arch := runtime.GOARCH
-
-	// 映射到 latest.json 的 key
-	switch {
-	case os == "windows" && arch == "amd64":
-		// P2: 使用 cachedPolicy 避免无锁调用 detectPolicyLocked()
-		if us.cachedPolicy == string(PolicyInstaller) {
-			return "windows-x86_64-installer"
-		}
-		return "windows-x86_64"
-	case os == "darwin" && arch == "arm64":
-		return "darwin-aarch64"
-	case os == "darwin" && arch == "amd64":
-		return "darwin-x86_64"
-	case os == "linux" && arch == "amd64":
-		return "linux-x86_64"
-	default:
-		return fmt.Sprintf("%s-%s", os, arch)
-	}
+	return "windows-x86_64"
 }
 
 // getAssetName 获取资产文件名（用于 GitHub API fallback）
 // version 参数应为 GitHub Release 的 tag_name，如 "v2.6.23"
-func (us *UpdateService) getAssetName(version string) string {
-	switch {
-	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
-		// P2: 使用 cachedPolicy 避免无锁调用 detectPolicyLocked()
-		if us.cachedPolicy == string(PolicyInstaller) {
-			return "codeSwitchR-amd64-installer.exe"
-		}
-		return "codeSwitchR.exe"
-	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
-		return "codeSwitchR-macos-arm64.zip"
-	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
-		return "codeSwitchR-macos-amd64.zip"
-	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
-		return "codeSwitchR.AppImage"
-	default:
-		return ""
-	}
+func (us *UpdateService) getAssetName(_ string) string {
+	return "codeSwitchR.exe"
 }
 
 // emitState 发送状态事件（调用前必须持有锁）
@@ -1319,8 +1049,7 @@ func (us *UpdateService) emitStateUnlocked() {
 
 // getStateLocked 获取状态快照（调用前必须持有锁）
 func (us *UpdateService) getStateLocked() *UpdateStateSnapshot {
-	// 缓存 policy，避免在 detectPolicyLocked 中进行 I/O
-	policy := "auto"
+	policy := string(PolicyPortable)
 	if us.cachedPolicy != "" {
 		policy = us.cachedPolicy
 	}
@@ -1443,54 +1172,4 @@ func copyFileForUpdate(src, dst string) error {
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
-}
-
-// unzip 解压 zip 文件
-func unzip(src, dest string) error {
-	r, err := zip.OpenReader(src)
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	os.MkdirAll(dest, 0755)
-
-	for _, f := range r.File {
-		fpath := filepath.Join(dest, f.Name)
-
-		// 防止 zip slip 攻击
-		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
-			return fmt.Errorf("illegal file path: %s", fpath)
-		}
-
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, f.Mode())
-			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(fpath), 0755); err != nil {
-			return err
-		}
-
-		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			outFile.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

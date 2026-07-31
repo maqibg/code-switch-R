@@ -112,7 +112,7 @@ func TestPiPlatformProxyEnableDisableIsIndependentAndRestorable(t *testing.T) {
 	var anthropic, google piModelsProviderFile
 	_ = json.Unmarshal(platforms["anthropic"], &anthropic)
 	_ = json.Unmarshal(platforms["google"], &google)
-	if anthropic.BaseURL != "http://127.0.0.1:18100/pi/providers/anthropic" || anthropic.APIKey != piGatewayToken {
+	if anthropic.BaseURL != "http://127.0.0.1:18100/pi/providers/anthropic" || anthropic.APIKey != relayTokenForConfig() {
 		t.Fatalf("Anthropic 平台未正确托管: %#v", anthropic)
 	}
 	if google.BaseURL != "https://generativelanguage.googleapis.com/v1beta" || google.APIKey != "google-key" {
@@ -269,7 +269,7 @@ func TestPiPlatformProxyUsesAndRestoresAuthJSONCredential(t *testing.T) {
 	if err := json.Unmarshal(authRoot["anthropic"], &managedAuth); err != nil {
 		t.Fatal(err)
 	}
-	if managedAuth.Key != piGatewayToken {
+	if managedAuth.Key != relayTokenForConfig() {
 		t.Fatalf("托管期间 auth.json 未切换为本地认证: %#v", managedAuth)
 	}
 	if err := service.DisablePlatformProxy("anthropic"); err != nil {
@@ -342,7 +342,7 @@ func TestPiPlatformProxyAuthStateIsIndependentAcrossPlatforms(t *testing.T) {
 		t.Fatal("关闭 Anthropic 后不应残留其本地认证")
 	}
 	var googleAuth PiAuthEntry
-	if err := json.Unmarshal(authRoot["google"], &googleAuth); err != nil || googleAuth.Key != piGatewayToken {
+	if err := json.Unmarshal(authRoot["google"], &googleAuth); err != nil || googleAuth.Key != relayTokenForConfig() {
 		t.Fatalf("Google 本地认证不应被移除: auth=%#v err=%v", googleAuth, err)
 	}
 	if err := service.DisablePlatformProxy("google"); err != nil {

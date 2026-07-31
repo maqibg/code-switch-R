@@ -2,21 +2,19 @@ package services
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 // 核心回归：providerFilePath 与 providerFilePathNoCreate 必须解析出同一个文件名。
 //
 // 早先两者各维护一份 kind → 文件名的 switch，并且已经分叉：
-// providerFilePathNoCreate 不认识 pi 和 custom，遇到它们返回空路径，
-// 调用方把空路径当成"没有配置"静默跳过，于是直连应用对这两类平台失效且不报错。
+// providerFilePathNoCreate 不认识 pi，遇到它返回空路径，调用方把空路径
+// 当成"没有配置"静默跳过，于是直连应用失效且不报错。
 // 现在两者共用 providerFileNameFor，这个测试防止再次分叉。
 func TestProviderFilePathVariantsAgreeOnFilename(t *testing.T) {
 	kinds := []string{
 		"claude", "claude-code", "claude_code",
 		"codex", "reasonix", "pi",
-		"custom:my-tool",
 	}
 
 	for _, kind := range kinds {
@@ -35,12 +33,6 @@ func TestProviderFilePathVariantsAgreeOnFilename(t *testing.T) {
 			if filepath.Base(withCreate) != filepath.Base(noCreate) {
 				t.Errorf("两个变体的文件名不一致: %q vs %q", withCreate, noCreate)
 			}
-			// custom 平台必须落在 providers/ 子目录
-			if strings.HasPrefix(kind, customProviderKindPrefix) {
-				if filepath.Base(filepath.Dir(noCreate)) != "providers" {
-					t.Errorf("自定义 CLI 配置应位于 providers/ 子目录，实际 %q", noCreate)
-				}
-			}
 		})
 	}
 }
@@ -56,7 +48,7 @@ func TestResolvePlatformIDNormalizesAliases(t *testing.T) {
 		"reasonix":     "reasonix",
 		"pi":           "pi",
 		"unknown-plat": "",
-		"custom:x":     "", // custom 不是注册平台，由 providerFileNameFor 单独处理
+		"custom:x":     "",
 	}
 	for input, want := range cases {
 		if got := resolvePlatformID(input); got != want {
@@ -69,15 +61,8 @@ func TestProviderFileNameForRejectsInvalidKinds(t *testing.T) {
 	if _, _, err := providerFileNameFor("nope"); err == nil {
 		t.Error("未知平台应返回错误")
 	}
-	if _, _, err := providerFileNameFor("custom:"); err == nil {
-		t.Error("custom: 后缺少 toolId 应返回错误")
-	}
-	filename, toolID, err := providerFileNameFor("custom:tool-a")
-	if err != nil {
-		t.Fatalf("合法 custom kind 不应报错: %v", err)
-	}
-	if toolID != "tool-a" || filename != "tool-a.json" {
-		t.Errorf("custom kind 解析错误: filename=%q toolID=%q", filename, toolID)
+	if _, _, err := providerFileNameFor("custom:tool-a"); err == nil {
+		t.Error("已移除的 custom kind 应返回错误")
 	}
 }
 

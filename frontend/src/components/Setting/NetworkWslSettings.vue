@@ -13,37 +13,8 @@
           >
             <option value="localhost">{{ t('settings.network.modes.localhost') }}</option>
             <option value="wsl_auto">{{ t('settings.network.modes.wslAuto') }}</option>
-            <option value="lan">{{ t('settings.network.modes.lan') }}</option>
-            <option value="custom">{{ t('settings.network.modes.custom') }}</option>
           </select>
         </ListItem>
-
-        <!-- Custom Address Input (only shown when custom mode) -->
-        <ListItem
-          v-if="listenMode === 'custom'"
-          :label="t('settings.network.customAddress')"
-        >
-          <input
-            v-model="customAddress"
-            type="text"
-            class="mac-input"
-            placeholder="0.0.0.0:18100"
-            @blur="handleCustomAddressChange"
-          />
-        </ListItem>
-
-        <!-- LAN Security Warning -->
-        <div v-if="listenMode === 'lan'" class="security-warning">
-          <div class="warning-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="warning-content">
-            <p class="warning-title">{{ t('settings.network.lanWarningTitle') }}</p>
-            <p class="warning-text">{{ t('settings.network.lanWarningText') }}</p>
-          </div>
-        </div>
 
         <!-- Current Listen Address Display -->
         <ListItem :label="t('settings.network.currentAddress')">
@@ -151,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 // 走 bindings 生成的类型化函数，不用 Call.ByName：
 // 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
@@ -162,9 +133,8 @@ import { showToast } from '../../utils/toast'
 const { t } = useI18n()
 
 // Listen mode state
-type ListenMode = 'localhost' | 'wsl_auto' | 'lan' | 'custom'
+type ListenMode = 'localhost' | 'wsl_auto'
 const listenMode = ref<ListenMode>('localhost')
-const customAddress = ref('')
 const currentListenAddress = ref('127.0.0.1:18100')
 
 // WSL state
@@ -181,30 +151,12 @@ const targetCli = reactive({
   gemini: true,
 })
 
-// Computed current address based on mode
-const computeListenAddress = (): string => {
-  switch (listenMode.value) {
-    case 'localhost':
-      return '127.0.0.1:18100'
-    case 'wsl_auto':
-      // Will be determined by backend
-      return currentListenAddress.value
-    case 'lan':
-      return '0.0.0.0:18100'
-    case 'custom':
-      return customAddress.value || '0.0.0.0:18100'
-    default:
-      return '127.0.0.1:18100'
-  }
-}
-
 // Load settings from backend
 const loadSettings = async () => {
   try {
     const settings = await NetworkService.GetNetworkSettings()
     if (settings) {
       listenMode.value = settings.listenMode || 'localhost'
-      customAddress.value = settings.customAddress || ''
       currentListenAddress.value = settings.currentAddress || '127.0.0.1:18100'
       wslAutoConfig.value = settings.wslAutoConfig || false
       if (settings.targetCli) {
@@ -234,43 +186,26 @@ const detectWsl = async () => {
 }
 
 // Save settings to backend
-const saveSettings = async () => {
+const saveSettings = async (): Promise<boolean> => {
   try {
     await NetworkService.SaveNetworkSettings({
       listenMode: listenMode.value,
-      customAddress: customAddress.value,
       wslAutoConfig: wslAutoConfig.value,
       targetCli: { ...targetCli },
     } as never)
+    await loadSettings()
+    return true
   } catch (error) {
     console.error('Failed to save network settings:', error)
     showToast(t('settings.network.saveFailed'), 'error')
+    await loadSettings()
+    return false
   }
 }
 
 // Event handlers
 const handleListenModeChange = async () => {
-  currentListenAddress.value = computeListenAddress()
   await saveSettings()
-
-  // If switching to wsl_auto, trigger address detection
-  if (listenMode.value === 'wsl_auto') {
-    try {
-      const addr = await NetworkService.GetWSLHostAddress()
-      if (addr) {
-        currentListenAddress.value = `${addr}:18100`
-      }
-    } catch (error) {
-      console.error('Failed to get WSL host address:', error)
-    }
-  }
-}
-
-const handleCustomAddressChange = async () => {
-  if (listenMode.value === 'custom') {
-    currentListenAddress.value = customAddress.value || '0.0.0.0:18100'
-    await saveSettings()
-  }
 }
 
 const handleWslAutoConfigChange = async () => {
@@ -348,23 +283,6 @@ onMounted(async () => {
   border-color: var(--mac-accent);
 }
 
-.mac-input {
-  padding: 6px 12px;
-  border: 1px solid var(--mac-border);
-  border-radius: 6px;
-  background: var(--mac-surface);
-  color: var(--mac-text);
-  font-size: 13px;
-  font-family: monospace;
-  min-width: 160px;
-  transition: border-color 0.2s;
-}
-
-.mac-input:focus {
-  outline: none;
-  border-color: var(--mac-accent);
-}
-
 /* Toggle with hint - 与 General/Index.vue 保持一致 */
 .toggle-with-hint {
   display: flex;
@@ -389,56 +307,6 @@ onMounted(async () => {
   background: var(--mac-surface-strong);
   padding: 4px 8px;
   border-radius: 4px;
-}
-
-/* Security Warning */
-.security-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  margin: 8px 0;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 8px;
-}
-
-.warning-icon {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  color: #f59e0b;
-}
-
-.warning-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.warning-content {
-  flex: 1;
-}
-
-.warning-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #b45309;
-  margin: 0 0 4px 0;
-}
-
-.warning-text {
-  font-size: 12px;
-  color: #92400e;
-  margin: 0;
-  line-height: 1.4;
-}
-
-:global(.dark) .warning-title {
-  color: #fbbf24;
-}
-
-:global(.dark) .warning-text {
-  color: #fcd34d;
 }
 
 /* WSL Status */
@@ -587,14 +455,8 @@ onMounted(async () => {
 }
 
 /* Dark mode */
-:global(.dark) .mac-select,
-:global(.dark) .mac-input {
+:global(.dark) .mac-select {
   background: var(--mac-surface-strong);
-}
-
-:global(.dark) .security-warning {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.4);
 }
 
 :global(.dark) .status-dot.status-active {

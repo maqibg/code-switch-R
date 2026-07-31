@@ -222,7 +222,6 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 		"gemini":   {RangeKey: window.key, Series: []LogStatsSeries{}},
 		"reasonix": {RangeKey: window.key, Series: []LogStatsSeries{}},
 		"pi":       {RangeKey: window.key, Series: []LogStatsSeries{}},
-		"custom":   {RangeKey: window.key, Series: []LogStatsSeries{}},
 	}
 	query := `
 		SELECT

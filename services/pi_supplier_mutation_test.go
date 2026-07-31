@@ -61,7 +61,7 @@ func TestPiSupplierMutationAddsModelsToManagedPlatformWithoutBreakingGateway(t *
 	if err := json.Unmarshal(platforms["custom"], &managed); err != nil {
 		t.Fatal(err)
 	}
-	if managed.BaseURL != service.platformBaseURL("custom") || managed.APIKey != piGatewayToken || len(managed.Models) != 2 {
+	if managed.BaseURL != service.platformBaseURL("custom") || managed.APIKey != relayTokenForConfig() || len(managed.Models) != 2 {
 		t.Fatalf("托管连接或平台模型写入错误: %#v", managed)
 	}
 	providers, loadErr := providerService.LoadProviders("pi")

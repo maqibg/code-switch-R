@@ -36,7 +36,6 @@ type ProviderRequestIdentity struct {
 	TemplateID      string            `json:"templateId,omitempty"`
 	Name            string            `json:"name,omitempty"`
 	TargetCLI       string            `json:"targetCli,omitempty"`
-	CustomCLIName   string            `json:"customCliName,omitempty"`
 	TargetProtocol  string            `json:"targetProtocol,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
 	Headers         map[string]string `json:"headers,omitempty"`
@@ -74,10 +73,6 @@ func normalizeProviderRequestIdentity(identity ProviderRequestIdentity) Provider
 	identity.TemplateID = strings.TrimSpace(identity.TemplateID)
 	identity.Name = strings.TrimSpace(identity.Name)
 	identity.TargetCLI = strings.ToLower(strings.TrimSpace(identity.TargetCLI))
-	identity.CustomCLIName = strings.TrimSpace(identity.CustomCLIName)
-	if identity.TargetCLI != "custom" {
-		identity.CustomCLIName = ""
-	}
 	identity.TargetProtocol = strings.ToLower(strings.TrimSpace(identity.TargetProtocol))
 	identity.Mode = strings.ToLower(strings.TrimSpace(identity.Mode))
 	if identity.Mode == "" {
@@ -153,13 +148,10 @@ func validateProviderRequestIdentity(identity ProviderRequestIdentity, actualPro
 	}
 	if identity.TargetCLI != "" {
 		switch identity.TargetCLI {
-		case "inherit", "claude-code", "codex-cli", "gemini-cli", "custom":
+		case "inherit", "claude-code", "codex-cli", "gemini-cli":
 		default:
 			errors = append(errors, fmt.Sprintf("目标 CLI 不受支持: %s", identity.TargetCLI))
 		}
-	}
-	if len([]rune(identity.CustomCLIName)) > 100 {
-		errors = append(errors, "自定义客户端名称不能超过 100 个字符")
 	}
 	if identity.TargetProtocol != "" {
 		switch identity.TargetProtocol {

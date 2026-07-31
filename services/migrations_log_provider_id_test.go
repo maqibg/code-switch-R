@@ -65,8 +65,8 @@ func TestLogProviderIDLeavesDeletedProvidersNull(t *testing.T) {
 	}
 }
 
-// platform='custom:<toolId>' 的历史行应被归一为 platform='custom' + source_id
-func TestLogProviderIDNormalizesLegacyCustomPlatform(t *testing.T) {
+// 自定义 CLI 已移除，完整迁移后不得保留旧格式或归一化后的日志。
+func TestLogProviderIDRemovesLegacyCustomPlatform(t *testing.T) {
 	db := setupProviderImportEnv(t)
 	writeProviderFixture(t, "providers/my-tool.json", []Provider{
 		{ID: 400, Name: "CustomProv", APIURL: "u", APIKey: "k", Enabled: true},
@@ -85,30 +85,12 @@ func TestLogProviderIDNormalizesLegacyCustomPlatform(t *testing.T) {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
-	var platform, sourceID string
-	var providerID sql.NullInt64
-	if err := db.QueryRow(
-		`SELECT platform, source_id, provider_id FROM request_log WHERE provider = 'CustomProv'`,
-	).Scan(&platform, &sourceID, &providerID); err != nil {
-		t.Fatalf("查询失败: %v", err)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM request_log WHERE platform = 'custom' OR platform LIKE 'custom:%'`).Scan(&count); err != nil {
+		t.Fatalf("统计自定义 CLI 日志失败: %v", err)
 	}
-	if platform != "custom" {
-		t.Errorf("platform 应归一为 custom，实际 %q", platform)
-	}
-	if sourceID != "my-tool" {
-		t.Errorf("source_id 应为 my-tool，实际 %q", sourceID)
-	}
-	// 归一化之后回填才能匹配上
-	if !providerID.Valid || providerID.Int64 != 400 {
-		t.Errorf("归一化后应能回填 provider_id=400，实际 %+v", providerID)
-	}
-	// 不应再有旧格式残留
-	var legacy int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM request_log WHERE platform LIKE 'custom:%'`).Scan(&legacy); err != nil {
-		t.Fatalf("统计旧格式失败: %v", err)
-	}
-	if legacy != 0 {
-		t.Errorf("不应残留旧格式行，实际 %d 条", legacy)
+	if count != 0 {
+		t.Errorf("不应残留自定义 CLI 日志，实际 %d 条", count)
 	}
 }
 

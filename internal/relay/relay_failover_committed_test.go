@@ -94,9 +94,7 @@ func TestFailoverResponseCommittedStopsSwitchingButRecordsFailure(t *testing.T) 
 
 // failureCountFor 读某个 provider 当前的失败计数。
 //
-// scope 用转发时的平台标识（如 "claude"、"custom:mytool"）。
-// 表里自定义 CLI 存的是 platform='custom' + source_id='mytool'，
-// 所以这里要按同一套规则拆开，不能直接拿 scope 当 platform 查。
+// scope 使用转发时的平台标识，由 BlacklistTargetFor 统一规范化。
 func failureCountFor(t *testing.T, scope, providerName string) int {
 	t.Helper()
 	db, err := dbcore.Handle()

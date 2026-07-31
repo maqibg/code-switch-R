@@ -67,17 +67,7 @@ func TestBlacklistTargetLocatesSameRowAfterRename(t *testing.T) {
 	}
 }
 
-// BlacklistTargetFor 要正确拆分自定义 CLI 的 scope
-func TestBlacklistTargetForSplitsCustomScope(t *testing.T) {
-	target := BlacklistTargetFor("custom:tool-a", Provider{ID: 5, Name: "P"})
-	if target.platform != "custom" || target.sourceID != "tool-a" {
-		t.Errorf("应拆成 custom + tool-a，实际 platform=%q sourceID=%q", target.platform, target.sourceID)
-	}
-	if target.providerID != 5 {
-		t.Errorf("应带上 provider ID，实际 %d", target.providerID)
-	}
-
-	// 注册平台的别名要归一化
+func TestBlacklistTargetForNormalizesRegisteredAliases(t *testing.T) {
 	for _, kind := range []string{"claude", "claude-code", "claude_code"} {
 		if got := BlacklistTargetFor(kind, Provider{ID: 1, Name: "P"}).platform; got != "claude" {
 			t.Errorf("%q 应归一为 claude，实际 %q", kind, got)

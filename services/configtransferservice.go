@@ -21,9 +21,9 @@ const (
 )
 
 type ProjectTransferInfo struct {
-	LegacyConfigDir  string `json:"legacy_config_dir"`
-	CurrentConfigDir string `json:"current_config_dir"`
-	HotkeyDBPath     string `json:"hotkey_db_path"`
+	CurrentConfigDir    string `json:"current_config_dir"`
+	ConfigMigrationPath string `json:"config_migration_path"`
+	EncryptedBackupPath string `json:"encrypted_backup_path"`
 }
 
 type ProjectTransferResult struct {
@@ -45,60 +45,23 @@ type projectExportManifest struct {
 }
 
 func (is *ImportService) GetProjectTransferInfo() (ProjectTransferInfo, error) {
-	home, err := getUserHomeDir()
-	if err != nil {
-		return ProjectTransferInfo{}, err
-	}
 	currentConfigDir, err := getAppConfigDir()
 	if err != nil {
 		return ProjectTransferInfo{}, err
 	}
-	hotkeyDBPath, err := getSafeDBPath()
+	exePath, err := os.Executable()
 	if err != nil {
 		return ProjectTransferInfo{}, err
 	}
+	baseDir := filepath.Dir(exePath)
 	return ProjectTransferInfo{
-		LegacyConfigDir:  filepath.Join(home, legacyProjectConfigDirName),
-		CurrentConfigDir: currentConfigDir,
-		HotkeyDBPath:     hotkeyDBPath,
+		CurrentConfigDir:    currentConfigDir,
+		ConfigMigrationPath: filepath.Join(baseDir, "code-switch-R-config"+configMigrationExt),
+		EncryptedBackupPath: filepath.Join(baseDir, "code-switch-R-backup"+encryptedBackupExt),
 	}, nil
 }
 
-func (is *ImportService) ImportLegacyProjectDirectory(path string) (ProjectTransferResult, error) {
-	info, err := is.GetProjectTransferInfo()
-	if err != nil {
-		return ProjectTransferResult{}, err
-	}
-	sourceDir, err := resolveConfigDirectory(path, legacyProjectConfigDirName)
-	if err != nil {
-		return ProjectTransferResult{}, err
-	}
-	result, err := is.importProjectDirectory(sourceDir)
-	if err != nil {
-		return result, err
-	}
-	result.TargetPath = info.CurrentConfigDir
-	if result.ImportedHotkeys == 0 {
-		if legacyHotkeyPath, pathErr := getLegacyHotkeyDBPath(); pathErr == nil && FileExists(legacyHotkeyPath) {
-			if importedHotkeys, importErr := replaceHotkeyDatabase(legacyHotkeyPath); importErr != nil {
-				result.Warning = appendWarning(result.Warning, fmt.Sprintf("导入旧快捷键数据库失败: %v", importErr))
-			} else {
-				result.ImportedHotkeys = importedHotkeys
-			}
-		}
-	}
-	return result, nil
-}
-
-func (is *ImportService) ImportCurrentProjectDirectory(path string) (ProjectTransferResult, error) {
-	sourceDir, err := resolveConfigDirectory(path, projectAppConfigDirName)
-	if err != nil {
-		return ProjectTransferResult{}, err
-	}
-	return is.importProjectDirectory(sourceDir)
-}
-
-func (is *ImportService) ExportCurrentProjectDirectory(path string) (ProjectTransferResult, error) {
+func (is *ImportService) exportFullSnapshotDirectory(path string) (ProjectTransferResult, error) {
 	info, err := is.GetProjectTransferInfo()
 	if err != nil {
 		return ProjectTransferResult{}, err
@@ -170,7 +133,7 @@ func (is *ImportService) ExportCurrentProjectDirectory(path string) (ProjectTran
 	return result, nil
 }
 
-func (is *ImportService) importProjectDirectory(sourceDir string) (ProjectTransferResult, error) {
+func (is *ImportService) applyFullSnapshotDirectory(sourceDir string) (ProjectTransferResult, error) {
 	currentConfigDir, err := ensureAppConfigDir()
 	if err != nil {
 		return ProjectTransferResult{}, err
@@ -278,10 +241,15 @@ func expandTransferPath(raw string) string {
 }
 
 func shouldSkipLiveDBFile(relPath string, entry fs.DirEntry) bool {
+	cleanRel := filepath.Clean(relPath)
+	if cleanRel == "update" || strings.HasPrefix(cleanRel, "update"+string(os.PathSeparator)) {
+		return true
+	}
 	base := strings.ToLower(filepath.Base(relPath))
 	return base == strings.ToLower(appDatabaseFilename) ||
 		base == strings.ToLower(appDatabaseFilename)+"-wal" ||
-		base == strings.ToLower(appDatabaseFilename)+"-shm"
+		base == strings.ToLower(appDatabaseFilename)+"-shm" ||
+		base == strings.ToLower(projectExportManifestFile)
 }
 
 func shouldSkipImportDBFile(relPath string, entry fs.DirEntry) bool {
@@ -289,7 +257,8 @@ func shouldSkipImportDBFile(relPath string, entry fs.DirEntry) bool {
 	if base == strings.ToLower(appDatabaseFilename) ||
 		base == strings.ToLower(appDatabaseFilename)+"-wal" ||
 		base == strings.ToLower(appDatabaseFilename)+"-shm" ||
-		base == strings.ToLower(hotkeyDBFileName) {
+		base == strings.ToLower(hotkeyDBFileName) ||
+		base == strings.ToLower(projectExportManifestFile) {
 		return true
 	}
 	if strings.HasSuffix(base, ".tmp") || strings.Contains(base, ".tmp.") || strings.Contains(base, ".bak.") {
@@ -394,7 +363,7 @@ func replaceMainDatabaseTables(sourcePath string) (map[string]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	tables := []string{"app_settings", "provider_blacklist", "request_log", "relay_attempt"}
+	tables := []string{"app_settings", "provider", "provider_blacklist", "request_log", "relay_attempt"}
 	return replaceSQLiteTables(db, sourcePath, tables)
 }
 

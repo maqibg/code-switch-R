@@ -8,7 +8,6 @@ import * as CliConfigService from "./cliconfigservice.js";
 import * as CodexSettingsService from "./codexsettingsservice.js";
 import * as ConnectivityTestService from "./connectivitytestservice.js";
 import * as ConsoleService from "./consoleservice.js";
-import * as CustomCliService from "./customcliservice.js";
 import * as DeepLinkService from "./deeplinkservice.js";
 import * as EnvCheckService from "./envcheckservice.js";
 import * as FrontendPreferencesService from "./frontendpreferencesservice.js";
@@ -25,7 +24,6 @@ import * as ProviderModelDiscoveryService from "./providermodeldiscoveryservice.
 import * as ProviderService from "./providerservice.js";
 import * as ReasonixSettingsService from "./reasonixsettingsservice.js";
 import * as SettingsService from "./settingsservice.js";
-import * as SkillService from "./skillservice.js";
 import * as SuiStore from "./suistore.js";
 import * as UpdateService from "./updateservice.js";
 export {
@@ -36,7 +34,6 @@ export {
     CodexSettingsService,
     ConnectivityTestService,
     ConsoleService,
-    CustomCliService,
     DeepLinkService,
     EnvCheckService,
     FrontendPreferencesService,
@@ -53,7 +50,6 @@ export {
     ProviderService,
     ReasonixSettingsService,
     SettingsService,
-    SkillService,
     SuiStore,
     UpdateService
 };
@@ -71,18 +67,17 @@ export {
     CLIPlatform,
     CLITemplate,
     ClaudeProxyStatus,
-    ConfigFile,
     ConfigImportResult,
     ConfigImportStatus,
+    ConfigMigrationResult,
     ConfigureResult,
     ConsoleLog,
     ConsoleLogBatch,
-    CustomCliProxyStatus,
-    CustomCliTool,
     DashboardBundle,
     DashboardOverview,
     DeepLinkImportRequest,
     DiscoveredModel,
+    EncryptedBackupResult,
     EnvConflict,
     FrontendPreferences,
     GeminiAuthType,
@@ -144,7 +139,6 @@ export {
     PricingTier,
     PricingUpdateResult,
     ProjectTransferInfo,
-    ProjectTransferResult,
     Prompt,
     Provider,
     ProviderDailyStat,
@@ -153,7 +147,6 @@ export {
     ProviderRequestIdentity,
     ProviderRequestTemplate,
     ProxyConfig,
-    ProxyInjection,
     ProxyTestResult,
     ReasonixProxyStatus,
     RecordCleanupResult,
@@ -161,7 +154,6 @@ export {
     RequestLog,
     RequestLogPage,
     RetryConfig,
-    Skill,
     TargetCli,
     UpdateInfo,
     UpdateState,

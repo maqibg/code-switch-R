@@ -13,7 +13,6 @@ func TestDefaultConnectivityAuthType(t *testing.T) {
 		{platform: "claude-code", want: "bearer"},
 		{platform: "codex", want: "bearer"},
 		{platform: "reasonix", want: "bearer"},
-		{platform: "custom", want: "bearer"},
 	}
 
 	for _, tc := range cases {
@@ -22,5 +21,3 @@ func TestDefaultConnectivityAuthType(t *testing.T) {
 		}
 	}
 }
-
-// TestCustomModelsHandler 测试自定义 CLI 工具的 /v1/models 端点

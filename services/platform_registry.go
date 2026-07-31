@@ -42,9 +42,6 @@ var providerPlatformDefinitions = []PlatformDefinition{
 	},
 }
 
-// customProviderKindPrefix 自定义 CLI 的 provider kind 前缀：custom:{toolId}
-const customProviderKindPrefix = "custom:"
-
 // resolvePlatformID 把任意可接受的平台写法归一化为规范 ID。
 // 未知平台返回空字符串。
 func resolvePlatformID(kind string) string {
@@ -66,23 +63,12 @@ func resolvePlatformID(kind string) string {
 //
 // 这是唯一的 kind → 文件名映射。之前存在两份 switch（providerservice.go 的
 // providerFilePath 与 directapply_helpers.go 的 providerFilePathNoCreate），
-// 且已经漂移：后者不支持 pi 和 custom，遇到这两类直接返回空路径，
-// 调用方拿到空路径后当作"无配置"静默跳过，导致直连应用对这些平台失效且无报错。
-//
-// customToolID 非空表示这是自定义 CLI 平台，文件位于 providers/ 子目录。
-func providerFileNameFor(kind string) (filename string, customToolID string, err error) {
+// 且已经漂移：后者不支持 pi，遇到该平台直接返回空路径，调用方拿到
+// 空路径后当作"无配置"静默跳过，导致直连应用失效且无报错。
+func providerFileNameFor(kind string) (filename string, legacySubdir string, err error) {
 	if id := resolvePlatformID(kind); id != "" {
 		definition, _ := platformDefinition(id)
 		return definition.ProviderFile, "", nil
-	}
-
-	normalized := strings.ToLower(strings.TrimSpace(kind))
-	if strings.HasPrefix(normalized, customProviderKindPrefix) {
-		toolID := strings.TrimPrefix(normalized, customProviderKindPrefix)
-		if toolID == "" {
-			return "", "", fmt.Errorf("invalid custom provider kind: %s", kind)
-		}
-		return toolID + ".json", toolID, nil
 	}
 	return "", "", fmt.Errorf("unknown provider type: %s", kind)
 }

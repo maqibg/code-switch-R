@@ -57,9 +57,6 @@ export const serializeProviders = (providers: AutomationCard[]) =>
       provider.codexReasoningContinueLogEnabled ?? true,
   }))
 
-// custom CLI 工具的 provider kind（后端需要 "custom:{toolId}" 格式）
-export const getCustomProviderKind = (toolId: string): string => `custom:${toolId}`
-
 export const normalizeUrlWithScheme = (value: string) => {
   if (!value) return ''
   try {

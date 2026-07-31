@@ -227,10 +227,6 @@ func (s *PiSettingsService) RuntimeSnapshot() (PiRuntimeSnapshot, error) {
 			if identityName == "" && identity.TargetCLI != "" && identity.TargetCLI != "inherit" {
 				identityName = identity.TargetCLI
 			}
-			targetCLI := identity.TargetCLI
-			if targetCLI == "custom" && identity.CustomCLIName != "" {
-				targetCLI = identity.CustomCLIName
-			}
 			identityHeaders := make(map[string]string, len(identity.Headers)+2)
 			_ = applyUserAgentIdentity(identityHeaders, identity)
 			for key, value := range identity.Headers {
@@ -250,7 +246,7 @@ func (s *PiSettingsService) RuntimeSnapshot() (PiRuntimeSnapshot, error) {
 				KeyConfigured: strings.TrimSpace(provider.APIKey) != "",
 				URLHost:       piSupplierURLHost(provider.APIURL), Protocol: provider.UpstreamProtocol,
 				IdentityTemplateID: identity.TemplateID, IdentityName: identityName, IdentityMode: identity.Mode,
-				TargetCLI: targetCLI, UserAgent: headerValue(identityHeaders, "User-Agent"),
+				TargetCLI: identity.TargetCLI, UserAgent: headerValue(identityHeaders, "User-Agent"),
 				IdentityHeaderNames: identityHeaderNames, MetadataMode: identity.MetadataMode, AuthScheme: authScheme,
 				ModelIdentityCount: len(provider.ModelRequestIdentities),
 			})

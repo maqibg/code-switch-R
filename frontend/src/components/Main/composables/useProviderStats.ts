@@ -37,17 +37,7 @@ export function useProviderStats(
 
   const loadProviderStats = async (tab: ProviderTab) => {
     try {
-      if (tab === 'others' && !state.selectedToolId.value) {
-        providerStatsMap[tab] = {}
-        providerStatsLoaded[tab] = true
-        return
-      }
-      const stats = await fetchProviderDailyStats(
-        tab === 'others' ? 'custom' : tab,
-        'today',
-        '',
-        tab === 'others' ? state.selectedToolId.value || '' : '',
-      )
+      const stats = await fetchProviderDailyStats(tab, 'today', '', '')
       const mapped: Record<string, ProviderDailyStat> = {}
       ;(stats ?? []).forEach((stat) => {
         mapped[normalizeProviderKey(stat.provider)] = stat

@@ -10,7 +10,7 @@ export function CurrentVersion(): $CancellablePromise<string> {
 }
 
 /**
- * GetUpdatePolicy 获取更新策略
+ * GetUpdatePolicy 保留给现有前端调用，应用只支持便携更新。
  */
 export function GetUpdatePolicy(): $CancellablePromise<string> {
     return $Call.ByID(728611828);

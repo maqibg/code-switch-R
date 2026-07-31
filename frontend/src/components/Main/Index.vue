@@ -241,82 +241,6 @@
       />
 
       <template v-else>
-      <!-- 'others' Tab: CLI 工具选择器 -->
-      <div v-if="activeTab === 'others'" class="cli-tool-selector">
-        <div class="tool-selector-row">
-          <select
-            v-model="selectedToolId"
-            class="tool-select"
-            @change="onToolSelect"
-          >
-            <option v-if="customCliTools.length === 0" value="" disabled>
-              {{ t('components.main.customCli.noTools') }}
-            </option>
-            <option
-              v-for="tool in customCliTools"
-              :key="tool.id"
-              :value="tool.id"
-            >
-              {{ tool.name }}
-            </option>
-          </select>
-          <button
-            class="ghost-icon add-tool-btn"
-            :data-tooltip="t('components.main.customCli.addTool')"
-            @click="openCliToolModal"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M12 5v14M5 12h14"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                fill="none"
-              />
-            </svg>
-          </button>
-          <button
-            v-if="selectedToolId"
-            class="ghost-icon"
-            :data-tooltip="t('components.main.form.editTitle')"
-            @click="editCurrentCliTool"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M11.983 2.25a1.125 1.125 0 011.077.81l.563 2.101a7.482 7.482 0 012.326 1.343l2.08-.621a1.125 1.125 0 011.356.651l1.313 3.207a1.125 1.125 0 01-.442 1.339l-1.86 1.205a7.418 7.418 0 010 2.686l1.86 1.205a1.125 1.125 0 01.442 1.339l-1.313 3.207a1.125 1.125 0 01-1.356.651l-2.08-.621a7.482 7.482 0 01-2.326 1.343l-.563 2.101a1.125 1.125 0 01-1.077.81h-2.634a1.125 1.125 0 01-1.077-.81l-.563-2.101a7.482 7.482 0 01-2.326-1.343l-2.08.621a1.125 1.125 0 01-1.356-.651l-1.313-3.207a1.125 1.125 0 01.442-1.339l1.86-1.205a7.418 7.418 0 010-2.686l-1.86-1.205a1.125 1.125 0 01-.442-1.339l1.313-3.207a1.125 1.125 0 011.356-.651l2.08.621a7.482 7.482 0 012.326-1.343l.563-2.101a1.125 1.125 0 011.077-.81h2.634z"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-          <button
-            v-if="selectedToolId"
-            class="ghost-icon"
-            :data-tooltip="t('components.main.form.actions.delete')"
-            @click="deleteCurrentCliTool"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M9 3h6m-7 4h8m-6 0v11m4-11v11M5 7h14l-.867 12.138A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.862L5 7z"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
-        <p v-if="customCliTools.length === 0" class="no-tools-hint">
-          {{ t('components.main.customCli.noTools') }} - {{ t('components.main.customCli.addTool') }}
-        </p>
-      </div>
-
       <div class="automation-list" @dragover.prevent>
         <article
           v-for="card in activeCards"
@@ -479,7 +403,7 @@
             </label>
             <!-- 直连应用按钮 -->
             <button
-              v-if="activeTab !== 'others' && activeTab !== 'grok'"
+              v-if="activeTab !== 'grok'"
               class="ghost-icon direct-apply-btn"
               :class="{ 'is-active': isDirectApplied(card) && !activeProxyState }"
               :disabled="activeProxyState"
@@ -532,13 +456,6 @@
         </article>
       </div>
 
-      <!-- 自定义 CLI 工具配置文件编辑器 -->
-      <CustomCliConfigEditor
-        v-if="activeTab === 'others' && selectedToolId && selectedCustomCliTool"
-        :tool-id="selectedToolId"
-        :tool-name="selectedCustomCliTool.name"
-        :config-files="selectedCustomCliTool.configFiles"
-      />
       </template>
       </section>
 
@@ -876,7 +793,7 @@
                 <div v-if="!isGrokProviderModal" class="form-field">
                   <ModelWhitelistEditor
                     v-model="modalState.form.supportedModels"
-                    :platform="modalState.tabId === 'others' && selectedToolId ? getCustomProviderKind(selectedToolId) : modalState.tabId"
+                    :platform="modalState.tabId"
                     :provider="modelDiscoveryProvider"
                   />
                 </div>
@@ -923,7 +840,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.providerProxy') }}</span>
                 </div>
 
-                <div v-if="modalState.tabId !== 'others'" class="form-field">
+                <div class="form-field">
                   <button
                     type="button"
                     class="test-connectivity-btn"
@@ -949,9 +866,9 @@
                   <BaseButton type="submit">
                     {{ t('components.main.form.actions.save') }}
                   </BaseButton>
-                  <!-- 保存并应用：仅在编辑模式、非代理模式、非 others 平台时显示 -->
+                  <!-- 保存并应用：仅在编辑模式、非代理模式时显示 -->
                   <BaseButton
-                    v-if="modalState.editingId && modalState.tabId !== 'others' && modalState.tabId !== 'grok' && !activeProxyState"
+                    v-if="modalState.editingId && modalState.tabId !== 'grok' && !activeProxyState"
                     type="button"
                     variant="primary"
                     @click="submitAndApplyModal"
@@ -994,159 +911,6 @@
         </footer>
       </BaseModal>
 
-      <!-- CLI 工具配置模态框 -->
-      <BaseModal
-        :open="cliToolModalState.open"
-        :title="cliToolModalState.editingId ? t('components.main.customCli.editTitle') : t('components.main.customCli.createTitle')"
-        @close="closeCliToolModal"
-      >
-        <form class="vendor-form cli-tool-form" @submit.prevent="submitCliToolModal">
-          <label class="form-field">
-            <span>{{ t('components.main.customCli.toolName') }}</span>
-            <BaseInput
-              v-model="cliToolModalState.form.name"
-              type="text"
-              :placeholder="t('components.main.customCli.toolNamePlaceholder')"
-              required
-            />
-          </label>
-
-          <!-- 配置文件列表 -->
-          <div class="form-field">
-            <div class="field-header">
-              <span>{{ t('components.main.customCli.configFiles') }}</span>
-              <button type="button" class="add-btn" @click="addConfigFile">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
-                </svg>
-              </button>
-            </div>
-            <div class="config-files-list">
-              <div
-                v-for="(cf, idx) in cliToolModalState.form.configFiles"
-                :key="cf.id"
-                class="config-file-item"
-              >
-                <div class="config-file-row">
-                  <BaseInput
-                    v-model="cf.label"
-                    class="config-label-input"
-                    :placeholder="t('components.main.customCli.labelPlaceholder')"
-                  />
-                  <select v-model="cf.format" class="config-format-select">
-                    <option value="json">JSON</option>
-                    <option value="toml">TOML</option>
-                    <option value="env">ENV</option>
-                  </select>
-                  <label class="primary-checkbox">
-                    <input type="checkbox" v-model="cf.isPrimary" />
-                    <span>{{ t('components.main.customCli.primary') }}</span>
-                  </label>
-                  <button
-                    type="button"
-                    class="remove-btn"
-                    :disabled="cliToolModalState.form.configFiles.length <= 1"
-                    @click="removeConfigFile(idx)"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
-                    </svg>
-                  </button>
-                </div>
-                <BaseInput
-                  v-model="cf.path"
-                  class="config-path-input"
-                  :placeholder="t('components.main.customCli.pathPlaceholder')"
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- 代理注入配置 -->
-          <div class="form-field">
-            <div class="field-header">
-              <span>{{ t('components.main.customCli.proxySettings') }}</span>
-              <button type="button" class="add-btn" @click="addProxyInjection">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
-                </svg>
-              </button>
-            </div>
-            <div class="proxy-injection-list">
-              <div
-                v-for="(pi, idx) in cliToolModalState.form.proxyInjection"
-                :key="idx"
-                class="proxy-injection-item"
-              >
-                <div class="proxy-injection-row">
-                  <select v-model="pi.targetFileId" class="target-file-select">
-                    <option value="">{{ t('components.main.customCli.selectConfigFile') }}</option>
-                    <option
-                      v-for="cf in cliToolModalState.form.configFiles"
-                      :key="cf.id"
-                      :value="cf.id"
-                    >
-                      {{ cf.label || cf.path || t('components.main.customCli.unnamed') }}
-                    </option>
-                  </select>
-                  <button
-                    type="button"
-                    class="remove-btn"
-                    :disabled="cliToolModalState.form.proxyInjection.length <= 1"
-                    @click="removeProxyInjection(idx)"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
-                    </svg>
-                  </button>
-                </div>
-                <div class="proxy-fields-row">
-                  <BaseInput
-                    v-model="pi.baseUrlField"
-                    class="proxy-field-input"
-                    :placeholder="t('components.main.customCli.baseUrlFieldPlaceholder')"
-                  />
-                  <BaseInput
-                    v-model="pi.authTokenField"
-                    class="proxy-field-input"
-                    :placeholder="t('components.main.customCli.authTokenFieldPlaceholder')"
-                  />
-                </div>
-              </div>
-            </div>
-            <p class="field-hint">{{ t('components.main.customCli.proxyHint') }}</p>
-          </div>
-
-          <footer class="form-actions">
-            <BaseButton variant="outline" type="button" @click="closeCliToolModal">
-              {{ t('components.main.form.actions.cancel') }}
-            </BaseButton>
-            <BaseButton type="submit">
-              {{ t('components.main.form.actions.save') }}
-            </BaseButton>
-          </footer>
-        </form>
-      </BaseModal>
-
-      <!-- CLI 工具删除确认框 -->
-      <BaseModal
-        :open="cliToolConfirmState.open"
-        :title="t('components.main.customCli.deleteTitle')"
-        variant="confirm"
-        @close="closeCliToolConfirm"
-      >
-        <div class="confirm-body">
-          <p>{{ t('components.main.customCli.deleteMessage', { name: cliToolConfirmState.tool?.name ?? '' }) }}</p>
-        </div>
-        <footer class="form-actions confirm-actions">
-          <BaseButton variant="outline" type="button" @click="closeCliToolConfirm">
-            {{ t('components.main.form.actions.cancel') }}
-          </BaseButton>
-          <BaseButton variant="danger" type="button" @click="confirmDeleteCliTool">
-            {{ t('components.main.form.actions.delete') }}
-          </BaseButton>
-        </footer>
-      </BaseModal>
     </div>
   </div>
 </template>
@@ -1169,7 +933,6 @@ import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import HeaderEditor from '../common/HeaderEditor.vue'
 import CLIConfigEditor from '../common/CLIConfigEditor.vue'
-import CustomCliConfigEditor from '../common/CustomCliConfigEditor.vue'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
 import type { CLIPlatform } from '../../services/cliConfig'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
@@ -1178,7 +941,6 @@ import { createMainState } from './state'
 import { providerTabIds } from './platformTabs'
 import {
   formatOfficialSite,
-  getCustomProviderKind,
   iconSvg,
   openOfficialSite,
   vendorInitials,
@@ -1192,7 +954,6 @@ import { useLastUsed } from './composables/useLastUsed'
 import { useUsageTooltip } from './composables/useUsageTooltip'
 import { usePlatformOrderMenu } from './composables/usePlatformOrderMenu'
 import { useVendorModal } from './composables/useVendorModal'
-import { useCustomCliTools } from './composables/useCustomCliTools'
 import {
   abandonGrokManagement,
   applyGrokOAuthAccount,
@@ -1260,7 +1021,7 @@ const {
 // ---------- 状态层与各域 composable ----------
 
 const state = createMainState()
-const { tabs, selectedIndex, activeTab, activeProviderTab, activeCards, selectedToolId, customCliTools } = state
+const { tabs, selectedIndex, activeTab, activeProviderTab, activeCards } = state
 
 const isGrokBuildTab = computed(() => activeTab.value === 'grok')
 const isGrokOAuthTab = computed(() => activeTab.value === 'grok-oauth')
@@ -1444,24 +1205,6 @@ const {
   submitModal,
   submitAndApplyModal,
 } = useVendorModal(state, { t, persistProviders, refreshDirectAppliedStatus, applyProviderToCli })
-
-const {
-  selectedCustomCliTool,
-  onToolSelect,
-  cliToolModalState,
-  cliToolConfirmState,
-  openCliToolModal,
-  editCurrentCliTool,
-  deleteCurrentCliTool,
-  closeCliToolModal,
-  closeCliToolConfirm,
-  addConfigFile,
-  removeConfigFile,
-  addProxyInjection,
-  removeProxyInjection,
-  submitCliToolModal,
-  confirmDeleteCliTool,
-} = useCustomCliTools(state, { t, loadProviderStats })
 
 // ---------- 应用设置（热力图与标题开关） ----------
 
@@ -2340,256 +2083,6 @@ onUnmounted(() => {
 :global(.dark) .test-result.error {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
-}
-
-/* ========== CLI 工具选择器样式 ========== */
-.cli-tool-selector {
-  padding: 12px 16px;
-  background: var(--mac-surface);
-  border-radius: 8px;
-  margin-bottom: 16px;
-  border: 1px solid var(--mac-border);
-}
-
-.tool-selector-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tool-select {
-  flex: 1;
-  padding: 8px 12px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 14px;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tool-select:hover {
-  border-color: var(--color-border-hover);
-}
-
-.tool-select:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.add-tool-btn {
-  flex-shrink: 0;
-}
-
-.no-tools-hint {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--mac-text-secondary);
-  text-align: center;
-}
-
-/* ========== CLI 工具表单样式 ========== */
-.cli-tool-form .field-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.cli-tool-form .field-header span {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--mac-text);
-}
-
-.cli-tool-form .add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: var(--mac-accent);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.cli-tool-form .add-btn:hover {
-  filter: brightness(1.1);
-}
-
-.cli-tool-form .add-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-.cli-tool-form .remove-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: transparent;
-  color: var(--mac-text-secondary);
-  border: 1px solid var(--mac-border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.cli-tool-form .remove-btn:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: #ef4444;
-  color: #ef4444;
-}
-
-.cli-tool-form .remove-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.cli-tool-form .remove-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* ========== 配置文件列表样式 ========== */
-.config-files-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.config-file-item {
-  padding: 12px;
-  background: var(--mac-surface-strong);
-  border: 1px solid var(--mac-border);
-  border-radius: 8px;
-}
-
-.config-file-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.config-label-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.config-format-select {
-  width: 80px;
-  padding: 6px 8px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--color-text-primary);
-  cursor: pointer;
-}
-
-.config-format-select:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.primary-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--mac-text-secondary);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.primary-checkbox input {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--mac-accent);
-  cursor: pointer;
-}
-
-.config-path-input {
-  width: 100%;
-}
-
-/* ========== 代理注入配置样式 ========== */
-.proxy-injection-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.proxy-injection-item {
-  padding: 12px;
-  background: var(--mac-surface-strong);
-  border: 1px solid var(--mac-border);
-  border-radius: 8px;
-}
-
-.proxy-injection-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.target-file-select {
-  flex: 1;
-  padding: 8px 12px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--color-text-primary);
-  cursor: pointer;
-}
-
-.target-file-select:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.proxy-fields-row {
-  display: flex;
-  gap: 8px;
-}
-
-.proxy-field-input {
-  flex: 1;
-  min-width: 0;
-}
-
-/* 暗色模式适配 */
-:global(.dark) .cli-tool-selector {
-  background: var(--mac-surface);
-  border-color: var(--mac-border);
-}
-
-:global(.dark) .config-file-item,
-:global(.dark) .proxy-injection-item {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-:global(.dark) .tool-select,
-:global(.dark) .config-format-select,
-:global(.dark) .target-file-select {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--mac-text);
-}
-
-:global(.dark) .tool-select:hover,
-:global(.dark) .config-format-select:hover,
-:global(.dark) .target-file-select:hover {
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* 直连应用按钮 */

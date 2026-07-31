@@ -121,6 +121,34 @@ func TestCodexEnableProxyWritesTimestampedBackup(t *testing.T) {
 	}
 }
 
+func TestCodexDisableProxyRejectsExternalManagedFieldEdit(t *testing.T) {
+	home := withTempHome(t)
+	resetProxyState(t, "codex")
+	configPath := seedConfigFile(t, home, filepath.Join(".codex", "config.toml"), "model = \"gpt-5\"\n")
+	service := NewCodexSettingsService("127.0.0.1:18100")
+	if err := service.EnableProxy(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(data), `wire_api = 'responses'`, `wire_api = 'chat'`, 1)
+	if changed == string(data) {
+		t.Fatalf("未找到 wire_api 字段: %s", data)
+	}
+	if err := os.WriteFile(configPath, []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DisableProxy(); err == nil || !strings.Contains(err.Error(), "外部修改") {
+		t.Fatalf("外部修改托管 Provider 后应拒绝停用，实际: %v", err)
+	}
+	after, _ := os.ReadFile(configPath)
+	if !strings.Contains(string(after), `wire_api = 'chat'`) {
+		t.Fatalf("冲突失败不得覆盖配置: %s", after)
+	}
+}
+
 func dirNames(entries []os.DirEntry) []string {
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {

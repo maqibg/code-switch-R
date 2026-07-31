@@ -9,7 +9,7 @@ var claudeProxyPlatform = jsonProxyPlatform{
 	configDir:       claudeSettingsDir,
 	configFile:      claudeSettingsFileName,
 	backupFile:      claudeBackupFileName,
-	authPlaceholder: claudeAuthTokenValue,
+	authToken:       relayTokenForConfig,
 	urlSuffix:       "", // Claude 直接用代理根地址
 	logPrefix:       "[ClaudeSettingsService]",
 	access: jsonProxyFieldAccess{
@@ -38,7 +38,7 @@ var reasonixProxyPlatform = jsonProxyPlatform{
 	configDir:       reasonixSettingsDir,
 	configFile:      reasonixSettingsFileName,
 	backupFile:      reasonixBackupFileName,
-	authPlaceholder: reasonixAuthPlaceholder,
+	authToken:       relayTokenForConfig,
 	urlSuffix:       "/reasonix",
 	logPrefix:       "[ReasonixSettingsService]",
 	access: jsonProxyFieldAccess{

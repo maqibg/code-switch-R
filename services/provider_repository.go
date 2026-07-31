@@ -17,7 +17,7 @@ import (
 // 而且补偿本身可能失败（代码只能打 CRITICAL 日志）。入库之后不存在这个窗口。
 
 // providerScope 标识一组 provider 所属的范围。
-// platform 是规范化平台 ID；sourceID 只对自定义 CLI 非空。
+// sourceID 保留为数据库结构字段，当前注册平台均使用空值。
 type providerScope struct {
 	platform string
 	sourceID string
@@ -25,19 +25,11 @@ type providerScope struct {
 
 // scopeForKind 把 provider kind 解析成存储范围。
 //
-// kind 的形态有两类：注册平台（claude/codex/grok/reasonix/pi，含别名）
-// 和自定义 CLI（custom:{toolId}）。
+// kind 必须是注册平台（claude/codex/grok/reasonix/pi，含别名）或 gemini。
 func scopeForKind(kind string) (providerScope, error) {
 	normalized := strings.ToLower(strings.TrimSpace(kind))
 	if id := resolvePlatformID(normalized); id != "" {
 		return providerScope{platform: id}, nil
-	}
-	if strings.HasPrefix(normalized, customProviderKindPrefix) {
-		toolID := strings.TrimPrefix(normalized, customProviderKindPrefix)
-		if toolID == "" {
-			return providerScope{}, fmt.Errorf("自定义 CLI kind 缺少 toolId: %s", kind)
-		}
-		return providerScope{platform: "custom", sourceID: toolID}, nil
 	}
 	// gemini 由独立的 GeminiService 管理，尚未并入 provider 表（A1 第 5 步）
 	if normalized == "gemini" {

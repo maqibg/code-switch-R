@@ -36,15 +36,9 @@ import {
   applyGeminiSingleProvider,
   duplicateGeminiProvider,
 } from '../../services/geminiSettings'
-import {
-  listCustomCliTools,
-  getCustomCliProxyStatus,
-  enableCustomCliProxy,
-  disableCustomCliProxy,
-} from '../../services/customCliService'
 import type { ProviderTab } from './platformTabs'
 import type { GeminiProvider, MainState } from './state'
-import { getCustomProviderKind, serializeProviders, sortProvidersByLevel } from './utils'
+import { serializeProviders, sortProvidersByLevel } from './utils'
 
 export type PlatformAdapter = {
   // 从后端加载该平台的卡片列表并写入 state.cards
@@ -268,109 +262,10 @@ const grokAdapter: PlatformAdapter = {
   },
 }
 
-// ---------- others：自定义 CLI 工具，provider kind 为 custom:{toolId} ----------
-
-// 加载指定 CLI 工具的 providers 列表
-export const loadCustomCliProviders = async (state: MainState, toolId: string) => {
-  if (!toolId) return
-  try {
-    const saved = await LoadProviders(getCustomProviderKind(toolId))
-    if (Array.isArray(saved)) {
-      replaceCards(state, 'others', saved as AutomationCard[])
-    } else {
-      state.cards.others.splice(0, state.cards.others.length)
-    }
-  } catch (error) {
-    console.error(`Failed to load providers for tool ${toolId}`, error)
-    state.cards.others.splice(0, state.cards.others.length)
-  }
-}
-
-// 加载自定义 CLI 工具列表 + 各工具代理状态 + 当前选中工具的 providers
-export const loadCustomCliTools = async (state: MainState) => {
-  try {
-    const tools = await listCustomCliTools()
-    state.customCliTools.value = tools
-
-    if (tools.length > 0 && !state.selectedToolId.value) {
-      state.selectedToolId.value = tools[0].id
-    }
-
-    for (const tool of tools) {
-      try {
-        const status = await getCustomCliProxyStatus(tool.id)
-        state.customCliProxyStates[tool.id] = Boolean(status?.enabled)
-      } catch {
-        state.customCliProxyStates[tool.id] = false
-      }
-    }
-
-    if (state.selectedToolId.value) {
-      state.proxyStates.others = state.customCliProxyStates[state.selectedToolId.value] ?? false
-      await loadCustomCliProviders(state, state.selectedToolId.value)
-    }
-  } catch (error) {
-    console.error('Failed to load custom CLI tools', error)
-    state.customCliTools.value = []
-  }
-}
-
-const requireSelectedToolId = (state: MainState): string => {
-  const toolId = state.selectedToolId.value
-  if (!toolId) {
-    throw new Error('custom CLI tool not selected')
-  }
-  return toolId
-}
-
-const othersAdapter: PlatformAdapter = {
-  loadCards: (state) => loadCustomCliTools(state),
-  async persistCards(state) {
-    const toolId = requireSelectedToolId(state)
-    await SaveProviders(getCustomProviderKind(toolId), serializeProviders(state.cards.others))
-  },
-  proxy: {
-    async fetchEnabled(state) {
-      const toolId = state.selectedToolId.value
-      if (!toolId) return false
-      const status = await getCustomCliProxyStatus(toolId)
-      const enabled = Boolean(status?.enabled)
-      state.customCliProxyStates[toolId] = enabled
-      return enabled
-    },
-    async setEnabled(state, next) {
-      const toolId = requireSelectedToolId(state)
-      if (next) {
-        await enableCustomCliProxy(toolId)
-      } else {
-        await disableCustomCliProxy(toolId)
-      }
-      state.customCliProxyStates[toolId] = next
-    },
-  },
-  // 直连应用不支持自定义 CLI 工具
-  directApply: undefined,
-  async duplicate(state, card) {
-    // 原实现把 'others' 当 kind 传给后端，必然解析失败；改为 custom:{toolId}
-    const toolId = state.selectedToolId.value
-    if (!toolId) {
-      console.error('[Duplicate] 未选择自定义 CLI 工具')
-      return false
-    }
-    const newProvider = await DuplicateProvider(getCustomProviderKind(toolId), card.id)
-    if (!newProvider) {
-      console.warn('[Duplicate] DuplicateProvider 返回空结果，已跳过刷新')
-      return false
-    }
-    return true
-  },
-}
-
 export const platformAdapters: Record<ProviderTab, PlatformAdapter> = {
   claude: jsonPlatformAdapter('claude'),
   codex: jsonPlatformAdapter('codex'),
   reasonix: jsonPlatformAdapter('reasonix'),
   gemini: geminiAdapter,
   grok: grokAdapter,
-  others: othersAdapter,
 }

@@ -1,3 +1,16 @@
+# Code Switch v2.6.57
+
+## 主要变更
+- 发行目标收敛为 Windows amd64 便携版，只生成 `codeSwitchR.exe`、SHA256 校验文件和 `latest.json`；移除安装器、macOS 与 Linux 构建路径。
+- 完整移除 Skill 与自定义 CLI 功能；保留用户已有 Skill 文件，升级时先恢复仍受管的外部 CLI 配置，再删除自定义 CLI 配置和历史数据，外部修改不会被旧备份覆盖。
+- Relay 仅允许 localhost/WSL，使用持久化随机 Token；旧托管配置在启动时升级，认证信息不会转发到上游。
+- MCP 改为条目级托管，保留外部条目并对受管条目的外部修改显式报冲突。
+- 新增脱敏 `.csrconfig` 配置迁移和 `Argon2id + AES-256-GCM` 加密 `.csrbackup` 完整备份，数据块与文件结束均进行完整性认证。
+- 便携自更新与当前 `maqibg/code-switch-R` 发布仓库保持一致，Release 清单只接受 Windows amd64 便携资产。
+- Grok Build Relay 与 OAuth 模式增加确认、外部冲突检测、Token CAS 和失败回滚。
+
+---
+
 # Code Switch v2.6.56
 
 ## 更新亮点

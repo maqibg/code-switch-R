@@ -11,12 +11,14 @@ import NetworkWslSettings from '../Setting/NetworkWslSettings.vue'
 import { fetchAppSettings, saveAppSettings, testGlobalProxy, type AppSettings } from '../../services/appSettings'
 import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled } from '../../services/settings'
 import {
-  exportCurrentProjectDirectory,
+  exportEncryptedBackup,
+  exportSanitizedConfig,
   fetchProjectTransferInfo,
-  importCurrentProjectDirectory,
-  importLegacyProjectDirectory,
+  importSanitizedConfig,
+  restoreEncryptedBackup,
   type ProjectTransferInfo,
-  type ProjectTransferResult,
+  type ConfigMigrationResult,
+  type EncryptedBackupResult,
 } from '../../services/configImport'
 import { clearStoredRecords, fetchRecordStorageInfo, type RecordStorageInfo } from '../../services/logs'
 import { useI18n } from 'vue-i18n'
@@ -88,12 +90,14 @@ const blacklistLoading = ref(false)
 const blacklistSaving = ref(false)
 
 const projectTransferInfo = ref<ProjectTransferInfo | null>(null)
-const legacyImportPath = ref('')
-const projectImportPath = ref('')
-const projectExportPath = ref('')
-const legacyImporting = ref(false)
-const projectImporting = ref(false)
-const projectExporting = ref(false)
+const configMigrationPath = ref('')
+const encryptedBackupPath = ref('')
+const backupPassword = ref('')
+const backupPasswordConfirm = ref('')
+const configImporting = ref(false)
+const configExporting = ref(false)
+const backupExporting = ref(false)
+const backupRestoring = ref(false)
 const projectTransferLoading = ref(true)
 const recordStorageInfo = ref<RecordStorageInfo | null>(null)
 const recordStorageLoading = ref(true)
@@ -436,9 +440,8 @@ const loadProjectTransferInfo = async () => {
   projectTransferLoading.value = true
   try {
     projectTransferInfo.value = await fetchProjectTransferInfo()
-    legacyImportPath.value = projectTransferInfo.value.legacy_config_dir
-    projectImportPath.value = projectTransferInfo.value.current_config_dir + '-backup'
-    projectExportPath.value = projectTransferInfo.value.current_config_dir + '-backup'
+    configMigrationPath.value ||= projectTransferInfo.value.config_migration_path
+    encryptedBackupPath.value ||= projectTransferInfo.value.encrypted_backup_path
   } catch (error) {
     console.error('failed to load project transfer info', error)
     projectTransferInfo.value = null
@@ -447,16 +450,21 @@ const loadProjectTransferInfo = async () => {
   }
 }
 
-const formatTransferResult = (result: ProjectTransferResult) => {
-  const summary = t('components.general.transfer.resultSummary', {
-    files: result.copied_file_count,
-    bytes: formatBytes(result.copied_bytes),
-    logs: result.imported_request_logs,
-    blacklist: result.imported_blacklist_rows,
-    hotkeys: result.imported_hotkeys,
+const formatConfigMigrationResult = (result: ConfigMigrationResult) => {
+  const summary = t('components.general.transfer.configResult', {
+    providers: result.provider_count,
+    files: result.file_count,
+    bytes: formatBytes(result.bytes),
   })
-  if (!result.warning) return summary
-  return `${summary}\n${t('components.general.transfer.warning')}: ${result.warning}`
+  return result.warning ? `${summary}\n${result.warning}` : summary
+}
+
+const formatEncryptedBackupResult = (result: EncryptedBackupResult) => {
+  const summary = t('components.general.transfer.backupResult', {
+    files: result.file_count,
+    bytes: formatBytes(result.bytes),
+  })
+  return result.warning ? `${summary}\n${result.warning}` : summary
 }
 
 const reloadAfterTransfer = async () => {
@@ -473,48 +481,66 @@ const reloadAfterTransfer = async () => {
   window.dispatchEvent(new CustomEvent('providers-updated'))
 }
 
-const handleLegacyImport = async () => {
-  if (legacyImporting.value || !legacyImportPath.value.trim()) return
-  legacyImporting.value = true
+const handleConfigImport = async () => {
+  if (configImporting.value || !configMigrationPath.value.trim()) return
+  configImporting.value = true
   try {
-    const result = await importLegacyProjectDirectory(legacyImportPath.value.trim())
-    alert(t('components.general.transfer.legacyImportSuccess') + '\n' + formatTransferResult(result))
+    const result = await importSanitizedConfig(configMigrationPath.value.trim())
+    alert(t('components.general.transfer.configImportSuccess') + '\n' + formatConfigMigrationResult(result))
     await reloadAfterTransfer()
   } catch (error) {
-    console.error('legacy import failed', error)
+    console.error('sanitized config import failed', error)
     alert(t('components.general.transfer.importFailed', { error: extractErrorMessage(error) }))
   } finally {
-    legacyImporting.value = false
+    configImporting.value = false
   }
 }
 
-const handleProjectImport = async () => {
-  if (projectImporting.value || !projectImportPath.value.trim()) return
-  projectImporting.value = true
+const handleConfigExport = async () => {
+  if (configExporting.value || !configMigrationPath.value.trim()) return
+  configExporting.value = true
   try {
-    const result = await importCurrentProjectDirectory(projectImportPath.value.trim())
-    alert(t('components.general.transfer.projectImportSuccess') + '\n' + formatTransferResult(result))
-    await reloadAfterTransfer()
+    const result = await exportSanitizedConfig(configMigrationPath.value.trim())
+    alert(t('components.general.transfer.configExportSuccess', { path: result.path }) + '\n' + formatConfigMigrationResult(result))
   } catch (error) {
-    console.error('project import failed', error)
-    alert(t('components.general.transfer.importFailed', { error: extractErrorMessage(error) }))
-  } finally {
-    projectImporting.value = false
-  }
-}
-
-const handleProjectExport = async () => {
-  if (projectExporting.value || !projectExportPath.value.trim()) return
-  projectExporting.value = true
-  try {
-    const result = await exportCurrentProjectDirectory(projectExportPath.value.trim())
-    alert(t('components.general.transfer.exportSuccess', { path: result.target_path }) + '\n' + formatTransferResult(result))
-    await loadProjectTransferInfo()
-  } catch (error) {
-    console.error('project export failed', error)
+    console.error('sanitized config export failed', error)
     alert(t('components.general.transfer.exportFailed', { error: extractErrorMessage(error) }))
   } finally {
-    projectExporting.value = false
+    configExporting.value = false
+  }
+}
+
+const handleBackupExport = async () => {
+  if (backupExporting.value || !encryptedBackupPath.value.trim() || !backupPassword.value) return
+  if (backupPassword.value !== backupPasswordConfirm.value) {
+    alert(t('components.general.transfer.passwordMismatch'))
+    return
+  }
+  backupExporting.value = true
+  try {
+    const result = await exportEncryptedBackup(encryptedBackupPath.value.trim(), backupPassword.value)
+    alert(t('components.general.transfer.backupExportSuccess', { path: result.path }) + '\n' + formatEncryptedBackupResult(result))
+  } catch (error) {
+    console.error('encrypted backup export failed', error)
+    alert(t('components.general.transfer.exportFailed', { error: extractErrorMessage(error) }))
+  } finally {
+    backupExporting.value = false
+  }
+}
+
+const handleBackupRestore = async () => {
+  if (backupRestoring.value || !encryptedBackupPath.value.trim() || !backupPassword.value) return
+  if (!confirm(t('components.general.transfer.restoreConfirm'))) return
+  backupRestoring.value = true
+  try {
+    const result = await restoreEncryptedBackup(encryptedBackupPath.value.trim(), backupPassword.value)
+    alert(t('components.general.transfer.backupRestoreSuccess') + '\n' + formatEncryptedBackupResult(result))
+    await reloadAfterTransfer()
+  } catch (error) {
+    console.error('encrypted backup restore failed', error)
+    alert(t('components.general.transfer.importFailed', { error: extractErrorMessage(error) }))
+  } finally {
+    backupRestoring.value = false
   }
 }
 
@@ -1161,87 +1187,97 @@ onMounted(async () => {
             </strong>
             <span class="transfer-overview-note">{{ $t('components.general.transfer.currentConfigHint') }}</span>
           </article>
-          <article class="transfer-overview-card">
-            <span class="transfer-overview-label">{{ $t('components.general.transfer.hotkeyDbPath') }}</span>
-            <strong class="transfer-overview-value">
-              {{ projectTransferLoading ? $t('components.general.transfer.loading') : (projectTransferInfo?.hotkey_db_path || '-') }}
-            </strong>
-            <span class="transfer-overview-note">{{ $t('components.general.transfer.hotkeyDbHint') }}</span>
-          </article>
         </div>
         <div class="transfer-grid">
           <article class="transfer-card">
             <div class="transfer-card-head">
-              <span class="transfer-card-kicker">{{ $t('components.general.transfer.legacyImportButton') }}</span>
-              <h3>{{ $t('components.general.transfer.legacyImportAction') }}</h3>
-              <p>{{ $t('components.general.transfer.legacyImportHint') }}</p>
+              <span class="transfer-card-kicker">{{ $t('components.general.transfer.configKicker') }}</span>
+              <h3>{{ $t('components.general.transfer.configTitle') }}</h3>
+              <p>{{ $t('components.general.transfer.configHint') }}</p>
             </div>
-            <label class="transfer-card-label">{{ $t('components.general.transfer.legacyImportPath') }}</label>
+            <label for="config-migration-path" class="transfer-card-label">{{ $t('components.general.transfer.configPath') }}</label>
             <input
+              id="config-migration-path"
               type="text"
-              v-model="legacyImportPath"
-              :placeholder="$t('components.general.transfer.legacyImportPlaceholder')"
+              v-model="configMigrationPath"
+              :placeholder="$t('components.general.transfer.configPathPlaceholder')"
               class="mac-input transfer-path-input"
             />
             <div class="transfer-card-footer">
-              <span class="transfer-card-note">{{ $t('components.general.transfer.legacyImportFootnote') }}</span>
-              <button
-                @click="handleLegacyImport"
-                :disabled="legacyImporting || !legacyImportPath.trim()"
-                class="action-btn transfer-btn"
-              >
-                {{ legacyImporting ? $t('components.general.transfer.importing') : $t('components.general.transfer.legacyImportButton') }}
-              </button>
+              <span class="transfer-card-note">{{ $t('components.general.transfer.configFootnote') }}</span>
+              <div class="transfer-actions">
+                <button
+                  type="button"
+                  @click="handleConfigImport"
+                  :disabled="configImporting || configExporting || !configMigrationPath.trim()"
+                  class="action-btn transfer-btn"
+                >
+                  {{ configImporting ? $t('components.general.transfer.importing') : $t('components.general.transfer.configImportButton') }}
+                </button>
+                <button
+                  type="button"
+                  @click="handleConfigExport"
+                  :disabled="configExporting || configImporting || !configMigrationPath.trim()"
+                  class="action-btn transfer-btn"
+                >
+                  {{ configExporting ? $t('components.general.transfer.exporting') : $t('components.general.transfer.configExportButton') }}
+                </button>
+              </div>
             </div>
           </article>
 
           <article class="transfer-card">
             <div class="transfer-card-head">
-              <span class="transfer-card-kicker">{{ $t('components.general.transfer.projectImportButton') }}</span>
-              <h3>{{ $t('components.general.transfer.projectImportAction') }}</h3>
-              <p>{{ $t('components.general.transfer.projectImportHint') }}</p>
+              <span class="transfer-card-kicker">{{ $t('components.general.transfer.backupKicker') }}</span>
+              <h3>{{ $t('components.general.transfer.backupTitle') }}</h3>
+              <p>{{ $t('components.general.transfer.backupHint') }}</p>
             </div>
-            <label class="transfer-card-label">{{ $t('components.general.transfer.projectImportPath') }}</label>
+            <label for="encrypted-backup-path" class="transfer-card-label">{{ $t('components.general.transfer.backupPath') }}</label>
             <input
+              id="encrypted-backup-path"
               type="text"
-              v-model="projectImportPath"
-              :placeholder="$t('components.general.transfer.projectImportPlaceholder')"
+              v-model="encryptedBackupPath"
+              :placeholder="$t('components.general.transfer.backupPathPlaceholder')"
+              class="mac-input transfer-path-input"
+            />
+            <label for="encrypted-backup-password" class="transfer-card-label">{{ $t('components.general.transfer.password') }}</label>
+            <input
+              id="encrypted-backup-password"
+              type="password"
+              v-model="backupPassword"
+              autocomplete="new-password"
+              :placeholder="$t('components.general.transfer.passwordPlaceholder')"
+              class="mac-input transfer-path-input"
+            />
+            <label for="encrypted-backup-password-confirm" class="transfer-card-label">{{ $t('components.general.transfer.passwordConfirm') }}</label>
+            <input
+              id="encrypted-backup-password-confirm"
+              type="password"
+              v-model="backupPasswordConfirm"
+              autocomplete="new-password"
+              :placeholder="$t('components.general.transfer.passwordConfirmPlaceholder')"
               class="mac-input transfer-path-input"
             />
             <div class="transfer-card-footer">
-              <span class="transfer-card-note">{{ $t('components.general.transfer.projectImportFootnote') }}</span>
-              <button
-                @click="handleProjectImport"
-                :disabled="projectImporting || !projectImportPath.trim()"
-                class="action-btn transfer-btn"
-              >
-                {{ projectImporting ? $t('components.general.transfer.importing') : $t('components.general.transfer.projectImportButton') }}
-              </button>
-            </div>
-          </article>
-
-          <article class="transfer-card">
-            <div class="transfer-card-head">
-              <span class="transfer-card-kicker">{{ $t('components.general.transfer.projectExportButton') }}</span>
-              <h3>{{ $t('components.general.transfer.projectExportAction') }}</h3>
-              <p>{{ $t('components.general.transfer.projectExportHint') }}</p>
-            </div>
-            <label class="transfer-card-label">{{ $t('components.general.transfer.projectExportPath') }}</label>
-            <input
-              type="text"
-              v-model="projectExportPath"
-              :placeholder="$t('components.general.transfer.projectExportPlaceholder')"
-              class="mac-input transfer-path-input"
-            />
-            <div class="transfer-card-footer">
-              <span class="transfer-card-note">{{ $t('components.general.transfer.projectExportFootnote') }}</span>
-              <button
-                @click="handleProjectExport"
-                :disabled="projectExporting || !projectExportPath.trim()"
-                class="action-btn transfer-btn"
-              >
-                {{ projectExporting ? $t('components.general.transfer.exporting') : $t('components.general.transfer.projectExportButton') }}
-              </button>
+              <span class="transfer-card-note">{{ $t('components.general.transfer.backupFootnote') }}</span>
+              <div class="transfer-actions">
+                <button
+                  type="button"
+                  @click="handleBackupRestore"
+                  :disabled="backupRestoring || backupExporting || !encryptedBackupPath.trim() || !backupPassword"
+                  class="action-btn transfer-btn"
+                >
+                  {{ backupRestoring ? $t('components.general.transfer.restoring') : $t('components.general.transfer.backupRestoreButton') }}
+                </button>
+                <button
+                  type="button"
+                  @click="handleBackupExport"
+                  :disabled="backupExporting || backupRestoring || !encryptedBackupPath.trim() || !backupPassword || !backupPasswordConfirm"
+                  class="action-btn transfer-btn"
+                >
+                  {{ backupExporting ? $t('components.general.transfer.exporting') : $t('components.general.transfer.backupExportButton') }}
+                </button>
+              </div>
             </div>
           </article>
         </div>
@@ -1420,7 +1456,7 @@ onMounted(async () => {
 .transfer-card-label {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--mac-text-secondary);
 }
@@ -1483,17 +1519,21 @@ onMounted(async () => {
   gap: 10px;
 }
 
+.transfer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .transfer-btn {
   width: 100%;
   min-width: 0;
 }
 
-.transfer-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  max-width: 420px;
+@media (max-width: 560px) {
+  .transfer-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .record-status-block,

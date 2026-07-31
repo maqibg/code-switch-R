@@ -5,7 +5,6 @@ const (
 	reasonixSettingsFileName = "config.json"
 	reasonixBackupFileName   = "cc-studio.back.config.json"
 	reasonixPlatform         = "reasonix"
-	reasonixAuthPlaceholder  = "code-switch-r"
 )
 
 type ReasonixProxyStatus struct {

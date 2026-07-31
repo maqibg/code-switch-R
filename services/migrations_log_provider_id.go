@@ -2,6 +2,8 @@ package services
 
 import "fmt"
 
+const legacyCustomProviderKindPrefix = "custom:"
+
 // A1 第二步：把日志表改成按 provider_id 关联，并归一化历史 platform 格式。
 //
 // 现状是 request_log.provider / relay_attempt.provider 存名字字符串，
@@ -76,7 +78,7 @@ func normalizeCustomPlatformRows(tx sqlExecutor) error {
 			SET source_id = substr(platform, %d),
 				platform = 'custom'
 			WHERE platform LIKE 'custom:%%'
-		`, table, len(customProviderKindPrefix)+1)); err != nil {
+		`, table, len(legacyCustomProviderKindPrefix)+1)); err != nil {
 			return fmt.Errorf("归一化 %s 的 custom platform 失败: %w", table, err)
 		}
 	}

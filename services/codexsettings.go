@@ -18,11 +18,9 @@ const (
 	codexAuthFileName     = "auth.json"
 	codexBackupAuthName   = "cc-studio.back.auth.json"
 	codexPreferredAuth    = "apikey"
-	codexDefaultModel     = "gpt-5-codex"
 	codexProviderKey      = "code-switch-r"
 	codexEnvKey           = "OPENAI_API_KEY"
 	codexWireAPI          = "responses"
-	codexTokenValue       = "code-switch-r"
 )
 
 type CodexSettingsService struct {
@@ -135,11 +133,20 @@ func (css *CodexSettingsService) EnableProxy() error {
 			}
 		}
 
-		// 检查 model_providers.code-switch-r 是否已存在
+		// 记录应用拥有字段的基线，停用时只恢复这些字段。
 		modelProvidersKeyExisted := false
+		var originalProviderConfig map[string]any
 		if mpRaw, ok := raw["model_providers"]; ok {
 			if mp, ok := mpRaw.(map[string]any); ok {
-				_, modelProvidersKeyExisted = mp[codexProviderKey]
+				if providerRaw, exists := mp[codexProviderKey]; exists {
+					modelProvidersKeyExisted = true
+					if provider, ok := providerRaw.(map[string]any); ok {
+						originalProviderConfig = make(map[string]any, len(provider))
+						for key, value := range provider {
+							originalProviderConfig[key] = value
+						}
+					}
+				}
 			}
 		}
 
@@ -147,11 +154,12 @@ func (css *CodexSettingsService) EnableProxy() error {
 			TargetPath:               settingsPath,
 			FileExisted:              fileExisted,
 			InjectedBaseURL:          css.baseURL(),
-			InjectedAuthToken:        codexTokenValue,
+			InjectedAuthToken:        relayTokenForConfig(),
 			AuthFilePath:             authPath,
 			AuthFileExisted:          authFileExisted,
 			InjectedProviderKey:      codexProviderKey,
 			ModelProvidersKeyExisted: modelProvidersKeyExisted,
+			OriginalProviderConfig:   originalProviderConfig,
 		}
 
 		// 记录原始 model_provider
@@ -177,11 +185,6 @@ func (css *CodexSettingsService) EnableProxy() error {
 	// 最小侵入模式：只设置必需的代理相关字段
 	raw["preferred_auth_method"] = codexPreferredAuth
 	raw["model_provider"] = codexProviderKey
-
-	// 保留用户的 model 设置，只在不存在时才使用默认值
-	if _, exists := raw["model"]; !exists {
-		raw["model"] = codexDefaultModel
-	}
 
 	modelProviders := ensureTomlTable(raw, "model_providers")
 	provider := ensureProviderTable(modelProviders, codexProviderKey)
@@ -247,6 +250,10 @@ func (css *CodexSettingsService) DisableProxy() error {
 		return DeleteProxyState("codex")
 	}
 
+	if err := css.validateManagedFields(raw, state); err != nil {
+		return err
+	}
+
 	// 有状态文件：按基线做"手术式"恢复
 
 	// 1. 恢复或删除 model_provider
@@ -263,23 +270,8 @@ func (css *CodexSettingsService) DisableProxy() error {
 		delete(raw, "preferred_auth_method")
 	}
 
-	// 3. 删除注入的 model_providers.{key} 段（如果启用前不存在）
-	if !state.ModelProvidersKeyExisted && state.InjectedProviderKey != "" {
-		if mpRaw, ok := raw["model_providers"]; ok {
-			if mp, ok := mpRaw.(map[string]any); ok {
-				delete(mp, state.InjectedProviderKey)
-				// 如果 model_providers 变空，删除整个段
-				if len(mp) == 0 {
-					delete(raw, "model_providers")
-				}
-			} else if mpTyped, ok := mpRaw.(map[string]map[string]any); ok {
-				delete(mpTyped, state.InjectedProviderKey)
-				if len(mpTyped) == 0 {
-					delete(raw, "model_providers")
-				}
-			}
-		}
-	}
+	// 3. 只恢复托管 Provider 的应用拥有字段，保留用户后来新增的字段。
+	css.restoreManagedProviderFields(raw, state)
 
 	// 写入配置
 	if err := css.writeConfigToml(settingsPath, raw); err != nil {
@@ -292,6 +284,72 @@ func (css *CodexSettingsService) DisableProxy() error {
 	}
 
 	return DeleteProxyState("codex")
+}
+
+var codexManagedProviderFields = []string{"name", "base_url", "wire_api", "requires_openai_auth"}
+
+func (css *CodexSettingsService) validateManagedFields(raw map[string]any, state *ProxyState) error {
+	if anyToString(raw["model_provider"]) != codexProviderKey {
+		return fmt.Errorf("Codex model_provider 已被外部修改，拒绝覆盖")
+	}
+	if anyToString(raw["preferred_auth_method"]) != codexPreferredAuth {
+		return fmt.Errorf("Codex preferred_auth_method 已被外部修改，拒绝覆盖")
+	}
+	modelProviders, ok := raw["model_providers"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("Codex 托管 Provider 已被外部修改，拒绝覆盖")
+	}
+	provider, ok := modelProviders[codexProviderKey].(map[string]any)
+	if !ok || anyToString(provider["name"]) != codexProviderKey ||
+		!urlMatchesProxy(anyToString(provider["base_url"]), state.InjectedBaseURL) ||
+		anyToString(provider["wire_api"]) != codexWireAPI || provider["requires_openai_auth"] != false {
+		return fmt.Errorf("Codex 托管 Provider 已被外部修改，拒绝覆盖")
+	}
+
+	authPath := state.AuthFilePath
+	if strings.TrimSpace(authPath) == "" {
+		var err error
+		authPath, _, err = css.authPaths()
+		if err != nil {
+			return err
+		}
+	}
+	content, err := os.ReadFile(authPath)
+	if err != nil {
+		return fmt.Errorf("读取 Codex auth.json 失败: %w", err)
+	}
+	var auth map[string]any
+	if err := json.Unmarshal(content, &auth); err != nil {
+		return fmt.Errorf("Codex auth.json 解析失败: %w", err)
+	}
+	if anyToString(auth[codexEnvKey]) != state.InjectedAuthToken {
+		return fmt.Errorf("Codex OPENAI_API_KEY 已被外部修改，拒绝覆盖")
+	}
+	return nil
+}
+
+func (css *CodexSettingsService) restoreManagedProviderFields(raw map[string]any, state *ProxyState) {
+	modelProviders, ok := raw["model_providers"].(map[string]any)
+	if !ok {
+		return
+	}
+	provider, ok := modelProviders[codexProviderKey].(map[string]any)
+	if !ok {
+		return
+	}
+	for _, key := range codexManagedProviderFields {
+		if value, existed := state.OriginalProviderConfig[key]; existed {
+			provider[key] = value
+		} else {
+			delete(provider, key)
+		}
+	}
+	if len(provider) == 0 {
+		delete(modelProviders, codexProviderKey)
+	}
+	if len(modelProviders) == 0 {
+		delete(raw, "model_providers")
+	}
 }
 
 // fallbackCleanupConfig 兜底清理：仅删除仍等于代理值的字段
@@ -395,8 +453,7 @@ func (css *CodexSettingsService) surgicalRestoreAuthFile(state *ProxyState) erro
 	// 使用 map[string]any 以支持非字符串值（与 writeAuthFile 保持一致）
 	var payload map[string]any
 	if err := json.Unmarshal(authContent, &payload); err != nil {
-		// 格式无效，直接返回
-		return nil
+		return fmt.Errorf("Codex auth.json 解析失败: %w", err)
 	}
 	if payload == nil {
 		return nil
@@ -412,7 +469,7 @@ func (css *CodexSettingsService) surgicalRestoreAuthFile(state *ProxyState) erro
 
 	if state == nil {
 		// 兜底模式：仅删除代理 token
-		if currentKey == codexTokenValue {
+		if relayManagedTokenMatches(currentKey) {
 			delete(payload, codexEnvKey)
 			if len(payload) == 0 {
 				// 文件变空，删除文件
@@ -581,7 +638,7 @@ func (css *CodexSettingsService) writeAuthFile() error {
 	}
 
 	// 仅更新代理专用的 API Key
-	payload[codexEnvKey] = codexTokenValue
+	payload[codexEnvKey] = relayTokenForConfig()
 
 	return AtomicWriteJSON(authPath, payload)
 }

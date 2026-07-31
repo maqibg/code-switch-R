@@ -131,19 +131,6 @@ describe('PiRequestIdentityEditor', () => {
     expect(wrapper.find('.template-preview').text()).toContain('X-App')
   })
 
-  it('persists a custom client name as identity metadata', async () => {
-    const wrapper = mount(PiRequestIdentityEditor, {
-      props: {
-        modelValue: new ProviderRequestIdentity({ targetCli: 'custom', mode: 'overlay', metadataMode: 'preserve' }),
-        actualProtocol: 'anthropic',
-      },
-      global: { plugins: [testI18n()] },
-    })
-    await wrapper.find('.identity-grid section:first-child input').setValue('My CLI')
-    const emitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as ProviderRequestIdentity
-    expect(emitted.customCliName).toBe('My CLI')
-  })
-
   it('loads a user template for editing and updates the same template ID', async () => {
     const template = claudeTemplate()
     template.id = 'user-claude'
@@ -246,7 +233,7 @@ describe('PiRequestIdentityEditor', () => {
   it('shows a generic user_id editor for non-Claude clients on Anthropic upstreams', () => {
     const wrapper = mount(PiRequestIdentityEditor, {
       props: {
-        modelValue: new ProviderRequestIdentity({ targetCli: 'custom', metadataMode: 'fixed', metadataUserId: 'opaque-user' }),
+        modelValue: new ProviderRequestIdentity({ targetCli: 'inherit', metadataMode: 'fixed', metadataUserId: 'opaque-user' }),
         actualProtocol: 'anthropic',
       },
       global: { plugins: [testI18n()] },

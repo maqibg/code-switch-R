@@ -45,7 +45,8 @@ type ProxyState struct {
 	// InjectedProviderKey: 注入的 model_providers 键名（如 "code-switch-r"）
 	InjectedProviderKey string `json:"injected_provider_key,omitempty"`
 	// ModelProvidersKeyExisted: model_providers.{key} 是否在启用前存在
-	ModelProvidersKeyExisted bool `json:"model_providers_key_existed,omitempty"`
+	ModelProvidersKeyExisted bool           `json:"model_providers_key_existed,omitempty"`
+	OriginalProviderConfig   map[string]any `json:"original_provider_config,omitempty"`
 }
 
 // normalizeProxyPlatform 对 platform 做最小安全校验，避免路径穿越等问题。

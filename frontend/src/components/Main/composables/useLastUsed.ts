@@ -26,7 +26,6 @@ export function useLastUsed(
     gemini: null,
     reasonix: null,
     pi: null,
-    others: null,
   })
   const highlightedProvider = ref<string | null>(null)
   let highlightTimer: number | undefined

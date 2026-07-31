@@ -71,10 +71,11 @@ type ConfigImportResult struct {
 type ImportService struct {
 	providerService *ProviderService
 	mcpService      *MCPService
+	appSettings     *AppSettingsService
 }
 
-func NewImportService(ps *ProviderService, ms *MCPService) *ImportService {
-	return &ImportService{providerService: ps, mcpService: ms}
+func NewImportService(ps *ProviderService, ms *MCPService, appSettings *AppSettingsService) *ImportService {
+	return &ImportService{providerService: ps, mcpService: ms, appSettings: appSettings}
 }
 
 func (is *ImportService) Start() error { return nil }

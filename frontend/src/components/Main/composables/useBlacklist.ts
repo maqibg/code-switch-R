@@ -20,10 +20,6 @@ export function useBlacklist(state: MainState, t: Translate) {
   )
 
   const loadBlacklistStatus = async (tab: string) => {
-    // 'others' Tab 暂不加载黑名单状态
-    if (tab === 'others') {
-      return
-    }
     try {
       const statuses = await getBlacklistStatus(tab)
       const map: Record<string, BlacklistStatus> = {}

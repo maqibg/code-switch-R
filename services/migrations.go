@@ -89,6 +89,13 @@ var schemaMigrations = []schemaMigration{
 		// 原先 JSON 文件与数据库各存一份，读取时靠打补丁维持一致。
 		up: migrateBlacklistLevelConfig,
 	},
+	{
+		version: 8,
+		name:    "remove-custom-cli",
+		// 自定义 CLI 功能已完整移除，用户明确要求同时删除历史配置、
+		// Provider、黑名单、请求日志与 attempt 数据。
+		up: migrateRemoveCustomCLI,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表

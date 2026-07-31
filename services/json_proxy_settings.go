@@ -45,8 +45,8 @@ type jsonProxyPlatform struct {
 	configFile string
 	// backupFile 基线备份文件名
 	backupFile string
-	// authPlaceholder 启用代理时写入的凭据占位值
-	authPlaceholder string
+	// authToken 启用代理时写入当前随机 Relay Token。
+	authToken func() string
 	// urlSuffix 代理地址的路径后缀，如 "/reasonix"；Claude 为空
 	urlSuffix string
 	// logPrefix 日志前缀，如 "[ClaudeSettingsService]"
@@ -81,6 +81,13 @@ func (p jsonProxyPlatform) baseURL(relayAddr string) string {
 		host = "http://" + host
 	}
 	return strings.TrimSuffix(host, "/") + p.urlSuffix
+}
+
+func (p jsonProxyPlatform) relayAuthToken() string {
+	if p.authToken == nil {
+		return RelayToken()
+	}
+	return p.authToken()
 }
 
 // urlMatchesProxy 比较配置里的地址是否就是本机代理地址（忽略尾部斜杠与大小写）
@@ -184,7 +191,7 @@ func (p jsonProxyPlatform) enableProxy(relayAddr string) error {
 			FileExisted:       fileExisted,
 			EnvExisted:        p.access.containerExisted(payload),
 			InjectedBaseURL:   proxyURL,
-			InjectedAuthToken: p.authPlaceholder,
+			InjectedAuthToken: p.relayAuthToken(),
 		}
 		if container := p.access.container(payload, false); container != nil {
 			if v, ok := container[p.access.baseURLKey]; ok {
@@ -203,7 +210,7 @@ func (p jsonProxyPlatform) enableProxy(relayAddr string) error {
 
 	container := p.access.container(payload, true)
 	container[p.access.baseURLKey] = proxyURL
-	container[p.access.authTokenKey] = p.authPlaceholder
+	container[p.access.authTokenKey] = p.relayAuthToken()
 	if p.access.afterWrite != nil {
 		p.access.afterWrite(payload, container, nil)
 	}
@@ -239,7 +246,7 @@ func (p jsonProxyPlatform) disableProxy(relayAddr string) error {
 			delete(container, p.access.baseURLKey)
 			changed = true
 		}
-		if anyToString(container[p.access.authTokenKey]) == p.authPlaceholder {
+		if relayManagedTokenMatches(anyToString(container[p.access.authTokenKey])) {
 			delete(container, p.access.authTokenKey)
 			changed = true
 		}
@@ -254,7 +261,13 @@ func (p jsonProxyPlatform) disableProxy(relayAddr string) error {
 		return DeleteProxyState(p.platform)
 	}
 
-	container := p.access.container(payload, true)
+	container := p.access.container(payload, false)
+	if container == nil || !urlMatchesProxy(anyToString(container[p.access.baseURLKey]), state.InjectedBaseURL) {
+		return fmt.Errorf("%s 的代理地址已被外部修改，拒绝覆盖", p.configFile)
+	}
+	if anyToString(container[p.access.authTokenKey]) != state.InjectedAuthToken {
+		return fmt.Errorf("%s 的代理凭据已被外部修改，拒绝覆盖", p.configFile)
+	}
 	if state.OriginalBaseURL != nil {
 		container[p.access.baseURLKey] = *state.OriginalBaseURL
 	} else {

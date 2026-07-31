@@ -14,7 +14,7 @@ import { showToast } from '../../../utils/toast'
 import { extractErrorMessage } from '../../../utils/error'
 import type { ProviderTab } from '../platformTabs'
 import type { MainState } from '../state'
-import { getCustomProviderKind, normalizeLevel, sortProvidersByLevel } from '../utils'
+import { normalizeLevel, sortProvidersByLevel } from '../utils'
 
 type Translate = (key: string, values?: Record<string, unknown>) => string
 
@@ -158,7 +158,7 @@ export function useVendorModal(
 
   // ---------- 上游协议 ----------
 
-  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'grok', 'others'])
+  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'grok'])
   const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
   const isGrokProviderModal = computed(() => modalState.tabId === 'grok')
   const isCodexChatProtocol = computed(
@@ -387,16 +387,7 @@ export function useVendorModal(
       // 若 name 发生变化，先走独立 RenameProvider RPC（后端事务改名日志与黑名单行）。
       // Gemini 不走此路径（它的 persistCards 通过 delete+add 处理改名）。
       if (name && name !== editingCard.value.name && modalState.tabId !== 'gemini') {
-        let renameKind: string
-        if (modalState.tabId === 'others') {
-          if (!state.selectedToolId.value) {
-            showToast(t('components.main.customCli.selectToolFirst'), 'error')
-            return false
-          }
-          renameKind = getCustomProviderKind(state.selectedToolId.value)
-        } else {
-          renameKind = modalState.tabId
-        }
+        const renameKind = modalState.tabId
         try {
           await RenameProvider(renameKind, editingCard.value.id, name)
         } catch (err) {
@@ -514,7 +505,7 @@ export function useVendorModal(
   const submitAndApplyModal = async () => {
     const editingId = modalState.editingId
     const tabId = modalState.tabId
-    if (!editingId || tabId === 'others' || tabId === 'grok') return
+    if (!editingId || tabId === 'grok') return
 
     const card = state.cards[tabId]?.find((c) => c.id === editingId)
     if (!card) return

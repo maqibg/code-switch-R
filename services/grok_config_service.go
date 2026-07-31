@@ -1,7 +1,6 @@
 package services
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -426,14 +425,6 @@ func captureGrokTakeoverBaseline(data []byte, state *grokRuntimeState) error {
 	return nil
 }
 
-func newGrokLocalRelayKey() (string, error) {
-	buffer := make([]byte, 24)
-	if _, err := rand.Read(buffer); err != nil {
-		return "", fmt.Errorf("生成 Grok 本地 Relay Key 失败: %w", err)
-	}
-	return "gsk-local-" + hex.EncodeToString(buffer), nil
-}
-
 func grokConfigConflict(data []byte, state grokRuntimeState) error {
 	if state.Mode == GrokModeUnmanaged || state.InjectedFingerprint == "" {
 		return nil
@@ -460,7 +451,7 @@ func applyGrokConfigMode(state grokRuntimeState, target GrokRuntimeMode, relayBa
 		filepath.Clean(state.TargetConfigPath) != filepath.Clean(paths.ConfigPath) {
 		return state, fmt.Errorf("Grok 配置路径已从 %s 变为 %s，请先处理旧路径接管状态", state.TargetConfigPath, paths.ConfigPath)
 	}
-	current, _, err := readOptionalGrokFile(paths.ConfigPath)
+	current, currentExisted, err := readOptionalGrokFile(paths.ConfigPath)
 	if err != nil {
 		return state, fmt.Errorf("读取 Grok config.toml 失败: %w", err)
 	}
@@ -477,11 +468,8 @@ func applyGrokConfigMode(state grokRuntimeState, target GrokRuntimeMode, relayBa
 		nextState.TargetAuthPath = paths.AuthPath
 		nextState.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	if target == GrokModeRelay && nextState.LocalRelayKey == "" {
-		nextState.LocalRelayKey, err = newGrokLocalRelayKey()
-		if err != nil {
-			return state, err
-		}
+	if target == GrokModeRelay {
+		nextState.LocalRelayKey = relayTokenForConfig()
 	}
 
 	var next []byte
@@ -523,12 +511,12 @@ func applyGrokConfigMode(state grokRuntimeState, target GrokRuntimeMode, relayBa
 	} else {
 		nextState.InjectedFingerprint, err = grokManagedFingerprint(next)
 		if err != nil {
-			_ = AtomicWriteBytes(paths.ConfigPath, current)
+			_ = restoreOptionalGrokFile(paths.ConfigPath, current, currentExisted)
 			return state, err
 		}
 	}
 	if err := saveGrokRuntimeState(nextState); err != nil {
-		_ = AtomicWriteBytes(paths.ConfigPath, current)
+		_ = restoreOptionalGrokFile(paths.ConfigPath, current, currentExisted)
 		return state, fmt.Errorf("保存 Grok 运行状态失败，配置已回滚: %w", err)
 	}
 	return nextState, nil

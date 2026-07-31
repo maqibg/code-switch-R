@@ -44,7 +44,6 @@
             <option value="grok">Grok Build</option>
             <option value="reasonix">Reasonix</option>
             <option value="pi">Pi</option>
-            <option value="custom">{{ t('stats.platforms.custom') }}</option>
           </select>
         </label>
         <label class="filter-field">

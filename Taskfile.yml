@@ -3,8 +3,6 @@ version: '3'
 includes:
   common: ./build/Taskfile.yml
   windows: ./build/windows/Taskfile.yml
-  darwin: ./build/darwin/Taskfile.yml
-  linux: ./build/linux/Taskfile.yml
 
 vars:
   APP_NAME: "code-switch-R"
@@ -13,19 +11,23 @@ vars:
 
 tasks:
   build:
-    summary: Builds the application
+    summary: Builds the Windows amd64 portable application
     cmds:
-      - task: "{{OS}}:build"
+      - task: windows:build
+        vars:
+          ARCH: amd64
 
   package:
-    summary: Packages a production build of the application
+    summary: Builds the Windows amd64 portable release binary
     cmds:
-      - task: "{{OS}}:package"
+      - task: windows:package
+        vars:
+          ARCH: amd64
 
   run:
     summary: Runs the application
     cmds:
-      - task: "{{OS}}:run"
+      - task: windows:run
 
   dev:
     summary: Runs the application in development mode

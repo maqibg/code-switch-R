@@ -11,10 +11,8 @@ import (
 
 // A3 阶段 2：统一的 provider 降级调度。
 //
-// 三套 handler（proxyHandler / geminiProxyHandler / customCliProxyHandler）
-// 原先各自复制了一份 Level 分组、轮询、重试、拉黑记账、降级判断，
-// 合计约 1080 行。同一个 bug 因此要修三遍——B7 的"响应已提交仍要记失败"
-// 就漏了自定义 CLI 那一份，直到 A3 的基线测试才发现。
+// 各平台 handler 原先各自复制了一份 Level 分组、轮询、重试、
+// 拉黑记账和降级判断。统一调度后，失败分类只需维护一处。
 //
 // 留在各 handler 的是真实差异：provider 过滤条件、模型映射方式、
 // 转发实现、最终错误响应的形状。
@@ -55,7 +53,7 @@ func (r dispatchResult) ErrorMessage() string {
 // dispatchRequest 一次调度所需的输入
 type dispatchRequest struct {
 	// Scope 平台标识，用于黑名单定位、轮询状态与"最后使用的供应商"
-	// （自定义 CLI 形如 "custom:toolId"，Pi 形如 "pi:platform"）
+	// （Pi 形如 "pi:platform"）
 	Scope string
 	// Providers 已过滤好的候选 provider（过滤条件各平台不同，由调用方负责）
 	Providers []services.Provider
@@ -64,7 +62,7 @@ type dispatchRequest struct {
 	// 包 ErrClientRequestRejected → 直接 400；包 errResponseCommitted → 停止调度；
 	// 包 errClientAbort → 不计失败。
 	Forward func(provider services.Provider) (bool, error)
-	// LogPrefix 日志前缀（"" / "Gemini" / "CustomCLI"），只影响可读性
+	// LogPrefix 日志前缀（"" / "Gemini"），只影响可读性
 	LogPrefix string
 	// Notify 是否发送 provider 切换通知
 	Notify bool

@@ -1,6 +1,6 @@
 # Code Switch
 
-> 一站式管理你的 AI 编程助手（Claude Code / Codex / Gemini CLI）
+> Windows amd64 便携式 AI CLI 供应商管理与本地 Relay
 
 ## 这是什么？
 
@@ -11,20 +11,13 @@
 - 想统计每天用了多少 Token、花了多少钱？
 - 想集中管理 MCP 服务器配置？
 
-**一句话总结**：装上它，打开开关，Claude Code / Codex / Gemini CLI 的请求就会自动走你配置的供应商，支持自动降级、用量统计、成本追踪。
+**一句话总结**：下载单个 exe，打开开关，Claude Code、Codex、Gemini CLI、Reasonix、Pi 和 Grok Build 的请求即可使用本地 Relay，支持失败降级、用量统计与成本追踪。
 
 ## 快速开始
 
-### 1. 下载安装
+### 1. 下载便携版
 
-前往 [Releases](https://github.com/Rogers-F/code-switch-R/releases) 下载对应系统的安装包：
-
-| 系统 | 推荐下载 |
-|------|---------|
-| Windows | `codeSwitchR-amd64-installer.exe` |
-| macOS (M1/M2/M3) | `codeSwitchR-macos-arm64.zip` |
-| macOS (Intel) | `codeSwitchR-macos-amd64.zip` |
-| Linux | `codeSwitchR.AppImage` |
+前往 [Releases](https://github.com/maqibg/code-switch-R/releases) 下载 `codeSwitchR.exe`。项目只发布 Windows amd64 便携版，不提供安装器；将 exe 放入有写权限的固定目录后直接运行。
 
 ### 2. 添加供应商
 
@@ -41,7 +34,7 @@
 
 在供应商列表上方，打开 **代理开关**（蓝色表示开启）。
 
-完成！现在你的 Claude Code / Codex / Gemini CLI 请求会自动走 Code Switch 代理。
+完成！现在对应 CLI 请求会自动走 Code Switch Relay。
 
 ## 功能介绍
 
@@ -92,10 +85,10 @@
 
 ### MCP 服务器管理
 
-集中管理 Claude Code 和 Codex 的 MCP Server：
+集中管理 Claude Code、Codex、Gemini CLI 和 Reasonix 的 MCP Server：
 - 可视化添加/编辑/删除
 - 支持 URL 和命令两种类型
-- 自动同步到两个平台
+- 按平台同步受管条目，保留外部配置的其他条目
 
 ### CLI 配置编辑器
 
@@ -107,11 +100,11 @@
 
 ### 其他功能
 
-- **技能市场**：一键安装 Claude Skills
-- **速度测试**：测试供应商延迟
 - **自定义提示词**：管理系统提示词
 - **深度链接**：通过 `ccswitch://` 链接导入配置
-- **自动更新**：内置更新检查
+- **配置迁移**：导出不含凭据和日志的 `.csrconfig`
+- **加密完整备份**：使用密码生成 `.csrbackup`
+- **便携自更新**：确认后替换当前 exe 并重启
 
 ## 工作原理
 
@@ -165,53 +158,20 @@ Claude Code / Codex / Gemini CLI
 
 ### 如何备份配置？
 
-配置文件位置：
-- Windows: `%USERPROFILE%\.code-switch\`
-- macOS/Linux: `~/.code-switch/`
+应用数据位于 `codeSwitchR.exe` 同级的 `.code-switch-R` 目录。移动 exe 时，如需保留全部数据，应同时移动该目录。
 
 主要文件：
 - `claude-code.json` - Claude Code 供应商配置
 - `codex.json` - Codex 供应商配置
-- `mcp.json` - MCP 服务器配置
+- `mcp-{platform}.json` - 各平台 MCP 服务器配置
+- `app.db` - 请求、统计、黑名单和应用设置
 
-## 安装详细说明
+## 便携版使用
 
-### Windows
-
-**安装器方式（推荐）**：
-1. 下载 `codeSwitchR-amd64-installer.exe`
-2. 双击运行，按提示安装
-3. 从开始菜单启动
-
-**便携版**：
 1. 下载 `codeSwitchR.exe`
-2. 放到任意目录，双击运行
-
-### macOS
-
-1. 下载对应芯片的 zip 文件
-2. 解压得到 `Code Switch.app`
-3. 拖到"应用程序"文件夹
-4. 首次打开如提示"无法验证开发者"，在"系统设置 → 隐私与安全性"中允许
-
-### Linux
-
-**AppImage（推荐）**：
-```bash
-chmod +x codeSwitchR.AppImage
-./codeSwitchR.AppImage
-```
-
-**DEB 包（Ubuntu/Debian）**：
-```bash
-sudo dpkg -i codeswitch_*.deb
-sudo apt-get install -f  # 如有依赖问题
-```
-
-**RPM 包（Fedora/RHEL）**：
-```bash
-sudo rpm -i codeswitch-*.rpm
-```
+2. 放到普通用户有写权限的固定目录
+3. 双击运行；应用数据会创建在同级 `.code-switch-R` 目录
+4. 更新前可在设置页创建加密完整备份
 
 ## 开发者指南
 
@@ -237,7 +197,7 @@ wails3 task dev
 # 更新构建资源
 wails3 task common:update:build-assets
 
-# 打包当前平台
+# 构建 Windows amd64 便携版
 wails3 task package
 ```
 
@@ -248,7 +208,7 @@ wails3 task package
 | 框架 | [Wails 3](https://v3.wails.io) |
 | 后端 | Go 1.24 + Gin + SQLite |
 | 前端 | Vue 3 + TypeScript + Tailwind CSS |
-| 打包 | NSIS (Windows) / nFPM (Linux) |
+| 打包 | Windows amd64 便携 exe |
 
 ## 开源协议
 
@@ -256,4 +216,4 @@ MIT License
 
 ---
 
-**有问题？** 欢迎在 [Issues](https://github.com/Rogers-F/code-switch-R/issues) 反馈
+**有问题？** 欢迎在 [Issues](https://github.com/maqibg/code-switch-R/issues) 反馈

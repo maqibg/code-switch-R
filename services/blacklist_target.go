@@ -18,9 +18,9 @@ import (
 
 // BlacklistTarget 标识一个黑名单条目
 type BlacklistTarget struct {
-	// platform 规范化平台 ID（自定义 CLI 为 "custom"）
+	// platform 规范化平台 ID
 	platform string
-	// sourceID 自定义 CLI 的 toolId，其余为空
+	// sourceID 保留为数据库结构字段，当前注册平台均为空
 	sourceID string
 	// providerID 关联 provider 表；0 表示未知（供应商已被删除，
 	// 或调用方只拿到名字——如 UI 手动解除拉黑）
@@ -33,17 +33,9 @@ type BlacklistTarget struct {
 //
 // Gemini 不再需要单独的构造函数：它的转发循环已改用统一 Provider 类型
 // （A3 阶段 1），走 BlacklistTargetFor("gemini", provider) 即可。
-//
-// relayScope 的形态与 provider 表不同：自定义 CLI 是 "custom:toolId"，
-// 这里拆成 platform + sourceID。
 func BlacklistTargetFor(relayScope string, provider Provider) BlacklistTarget {
 	target := BlacklistTarget{name: provider.Name, providerID: provider.ID}
 	normalized := strings.ToLower(strings.TrimSpace(relayScope))
-	if strings.HasPrefix(normalized, customProviderKindPrefix) {
-		target.platform = "custom"
-		target.sourceID = strings.TrimPrefix(normalized, customProviderKindPrefix)
-		return target
-	}
 	if id := resolvePlatformID(normalized); id != "" {
 		target.platform = id
 		return target
@@ -59,10 +51,7 @@ func BlacklistTargetFor(relayScope string, provider Provider) BlacklistTarget {
 func BlacklistTargetByName(relayScope string, providerName string) BlacklistTarget {
 	target := BlacklistTarget{name: strings.TrimSpace(providerName)}
 	normalized := strings.ToLower(strings.TrimSpace(relayScope))
-	if strings.HasPrefix(normalized, customProviderKindPrefix) {
-		target.platform = "custom"
-		target.sourceID = strings.TrimPrefix(normalized, customProviderKindPrefix)
-	} else if id := resolvePlatformID(normalized); id != "" {
+	if id := resolvePlatformID(normalized); id != "" {
 		target.platform = id
 	} else {
 		target.platform = normalized
@@ -107,5 +96,5 @@ func (t BlacklistTarget) nullableID() any {
 // Platform 返回规范化平台 ID（relay 测试按定位字段查库用）
 func (t BlacklistTarget) Platform() string { return t.platform }
 
-// SourceID 返回自定义 CLI 的 toolId（非自定义平台为空）
+// SourceID 返回数据库定位字段，当前注册平台为空。
 func (t BlacklistTarget) SourceID() string { return t.sourceID }

@@ -11,9 +11,9 @@ require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.38
+	golang.org/x/crypto v0.40.0
 	golang.org/x/net v0.42.0
 	golang.org/x/sync v0.16.0
-	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.36.0
 )
 
@@ -92,7 +92,6 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/arch v0.20.0 // indirect
-	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/mod v0.25.0 // indirect

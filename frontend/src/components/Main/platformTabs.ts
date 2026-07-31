@@ -13,7 +13,6 @@ export const defaultTabs = [
   { id: 'reasonix', label: 'Reasonix' },
   { id: 'grok', label: 'Grok Build' },
   { id: 'grok-oauth', label: 'Grok Build OAuth' },
-  { id: 'others', label: '其他' },
 ] as const
 
 export type HomePlatformTabID = (typeof defaultTabs)[number]['id']
@@ -26,7 +25,6 @@ export const providerTabIds: ProviderTab[] = [
   'gemini',
   'reasonix',
   'grok',
-  'others',
 ]
 
 // 按用户保存的顺序排列 Tab；未知 ID 忽略，遗漏的按默认顺序补在后面

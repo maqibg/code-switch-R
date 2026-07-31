@@ -193,7 +193,7 @@ func (s *PiSettingsService) EnablePlatformProxy(providerID string) error {
 	if err != nil {
 		return err
 	}
-	managedAuthRaw, err := json.Marshal(PiAuthEntry{Type: "api_key", Key: piGatewayToken})
+	managedAuthRaw, err := json.Marshal(PiAuthEntry{Type: "api_key", Key: relayTokenForConfig()})
 	if err != nil {
 		return fmt.Errorf("构建 Pi 平台认证失败: %w", err)
 	}
@@ -449,7 +449,7 @@ func buildManagedPiPlatformRaw(original json.RawMessage, baseURL string) (json.R
 		return nil, err
 	}
 	fields["baseUrl"], _ = json.Marshal(baseURL)
-	fields["apiKey"], _ = json.Marshal(piGatewayToken)
+	fields["apiKey"], _ = json.Marshal(relayTokenForConfig())
 	return marshalOrderedPiProvider(fields)
 }
 
@@ -578,7 +578,7 @@ func piManagedProviderConnectionMatches(raw json.RawMessage, managedBaseURL stri
 	var baseURL, apiKey string
 	_ = json.Unmarshal(fields["baseUrl"], &baseURL)
 	_ = json.Unmarshal(fields["apiKey"], &apiKey)
-	return sameURL(baseURL, managedBaseURL) && apiKey == piGatewayToken && piManagedProviderRoutingCompatible(raw)
+	return sameURL(baseURL, managedBaseURL) && relayManagedTokenMatches(apiKey) && piManagedProviderRoutingCompatible(raw)
 }
 
 func piManagedProviderRoutingCompatible(raw json.RawMessage) bool {
