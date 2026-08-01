@@ -75,3 +75,10 @@ func relayManagedTokenMatches(candidate string) bool {
 	candidate = strings.TrimSpace(candidate)
 	return RelayTokenMatches(candidate) || candidate == "code-switch-r" || candidate == "code-switch-r-proxy"
 }
+
+// RelayManagedTokenMatches also accepts the fixed token used by versions before
+// the persistent random Relay Token migration. Long-running CLI processes can
+// keep that credential in memory after their config file has been upgraded.
+func RelayManagedTokenMatches(candidate string) bool {
+	return relayManagedTokenMatches(candidate)
+}

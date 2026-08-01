@@ -67,6 +67,24 @@ func TestRelayTokenMiddlewareRemovesClientCredential(t *testing.T) {
 	}
 }
 
+func TestRelayTokenMiddlewareAcceptsLegacyManagedToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	withRelayToken(t, strings.Repeat("d", 32))
+	router := gin.New()
+	router.Use(relayTokenMiddleware())
+	router.GET("/test", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	for _, token := range []string{"code-switch-r", "code-switch-r-proxy"} {
+		request := httptest.NewRequest(http.MethodGet, "/test", nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusNoContent {
+			t.Fatalf("旧版托管 Token %q 应在迁移期间通过，实际状态 %d", token, recorder.Code)
+		}
+	}
+}
+
 func TestProviderRelayRestartRestoresOldListenerWhenTargetPortOccupied(t *testing.T) {
 	withRelayToken(t, strings.Repeat("c", 32))
 	oldProbe, err := net.Listen("tcp", "127.0.0.1:0")

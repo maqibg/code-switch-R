@@ -368,7 +368,8 @@ func relayTokenMiddleware() gin.HandlerFunc {
 			return
 		}
 		token := relayCredentialFromRequest(c.Request)
-		if !services.RelayTokenMatches(token) {
+		if !services.RelayManagedTokenMatches(token) {
+			infra.LogWarn("Relay 请求认证失败", "method", c.Request.Method, "path", c.Request.URL.Path, "credential_length", len(token))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid relay token"})
 			return
 		}

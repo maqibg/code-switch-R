@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "2.6.58"
+		"file_version": "2.6.59"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "2.6.58",
+			"ProductVersion": "2.6.59",
 			"CompanyName": "code-switch-R",
 			"FileDescription": "code-switch-R desktop relay controller.",
 			"LegalCopyright": "(c) 2025, code-switch-R",
