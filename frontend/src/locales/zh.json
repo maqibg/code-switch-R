@@ -1576,64 +1576,6 @@
         "deleteMessage": "确认删除 {name} 吗？操作不可撤销"
       }
     },
-    "gemini": {
-      "hero": {
-        "eyebrow": "Gemini CLI 管理",
-        "title": "管理 Gemini 供应商",
-        "lead": "配置 Gemini CLI 的 API 供应商，支持 Google 官方和第三方中转服务。"
-      },
-      "controls": {
-        "back": "返回主页",
-        "settings": "打开设置",
-        "refresh": "刷新",
-        "create": "新增供应商"
-      },
-      "status": {
-        "enabled": "已启用",
-        "disabled": "未配置",
-        "active": "当前使用"
-      },
-      "auth": {
-        "oauth": "OAuth 认证",
-        "apiKey": "API Key 认证"
-      },
-      "category": {
-        "official": "官方",
-        "thirdParty": "第三方",
-        "custom": "自定义"
-      },
-      "presets": {
-        "title": "预设供应商"
-      },
-      "providers": {
-        "title": "已配置的供应商"
-      },
-      "list": {
-        "loading": "加载中...",
-        "empty": "暂无配置的供应商，点击预设卡片快速添加",
-        "edit": "编辑",
-        "delete": "删除"
-      },
-      "actions": {
-        "switch": "切换"
-      },
-      "form": {
-        "createTitle": "新增 Gemini 供应商",
-        "editTitle": "编辑 Gemini 供应商",
-        "deleteTitle": "删除供应商",
-        "deleteMessage": "确认删除 {name} 吗？操作不可撤销",
-        "name": "供应商名称",
-        "baseUrl": "API 地址",
-        "apiKey": "API 密钥",
-        "model": "默认模型",
-        "proxyEnabled": "使用代理",
-        "cancel": "取消",
-        "save": "保存",
-        "delete": "删除",
-        "switchOn": "已启用",
-        "switchOff": "未启用"
-      }
-    },
     "themesetting": {
       "select": {
         "opt_light": "亮色模式",

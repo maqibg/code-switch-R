@@ -24,5 +24,9 @@ codeswitch.exe
 *.rpm
 *.sha256
 
-# Go 构建缓存
+# 本地调试现场与构建缓存
+.tmp/
 .tmp-gocache/
+
+# wails build 自动生成的 NSIS 打包脚本
+build/windows/nsis/

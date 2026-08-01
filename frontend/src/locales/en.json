@@ -1574,64 +1574,6 @@
         "deleteMessage": "Are you sure you want to delete {name}? This action cannot be undone."
       }
     },
-    "gemini": {
-      "hero": {
-        "eyebrow": "Gemini CLI Manager",
-        "title": "Manage Gemini Providers",
-        "lead": "Configure API providers for Gemini CLI, supporting Google Official and third-party relay services."
-      },
-      "controls": {
-        "back": "Back to home",
-        "settings": "Open settings",
-        "refresh": "Refresh",
-        "create": "Add provider"
-      },
-      "status": {
-        "enabled": "Enabled",
-        "disabled": "Not configured",
-        "active": "Active"
-      },
-      "auth": {
-        "oauth": "OAuth Authentication",
-        "apiKey": "API Key Authentication"
-      },
-      "category": {
-        "official": "Official",
-        "thirdParty": "Third Party",
-        "custom": "Custom"
-      },
-      "presets": {
-        "title": "Preset Providers"
-      },
-      "providers": {
-        "title": "Configured Providers"
-      },
-      "list": {
-        "loading": "Loading...",
-        "empty": "No providers configured. Click a preset card to add one.",
-        "edit": "Edit",
-        "delete": "Delete"
-      },
-      "actions": {
-        "switch": "Switch"
-      },
-      "form": {
-        "createTitle": "Add Gemini Provider",
-        "editTitle": "Edit Gemini Provider",
-        "deleteTitle": "Delete Provider",
-        "deleteMessage": "Are you sure you want to delete {name}? This action cannot be undone.",
-        "name": "Provider name",
-        "baseUrl": "API URL",
-        "apiKey": "API Key",
-        "model": "Default model",
-        "proxyEnabled": "Use Proxy",
-        "cancel": "Cancel",
-        "save": "Save",
-        "delete": "Delete",
-        "switchOn": "Enabled",
-        "switchOff": "Disabled"
-      }
-    },
     "themesetting": {
       "select": {
         "opt_dark": "Dark Mode",
