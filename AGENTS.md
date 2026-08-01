@@ -131,15 +131,50 @@ Provider 自定义 Header 在兼容预设之后应用，可以覆盖 User-Agent 
 
 ## 构建、运行与测试
 
-优先使用仓库 Taskfile：
+开发时按改动范围选择最短反馈链路，不把桌面集成、完整构建和发布门禁套到每次修改：
+
+- 只修改前端时使用 Vite HMR 和定向 Vitest；不启动 Wails，不构建便携 exe。
+- 只修改 Go 内部实现时先运行所属 package 的定向测试；不重建前端，不生成 bindings。
+- 只有 Go 导出服务方法、参数、返回值或前端可见模型变化时才重新生成 bindings，并在生成后构建前端。
+- 只有 `build/config.yml` 的应用信息或文件关联变化时才运行 `wails3 task common:update:build-assets`；只有图标源文件变化时才运行图标生成任务。
+- 只有需要验证窗口、托盘、WebView、进程生命周期、Relay 监听或真实前后端调用时才运行桌面开发实例。
+- `go mod tidy` 只在 Go 依赖或 `go.mod` / `go.sum` 确实变化时运行；不得把它当作每次修改后的通用检查。
+- `npm install` 只用于首次安装或依赖声明变化；已有依赖且 lockfile 未变时不要重复安装。CI、发版和干净环境使用 `npm ci`。
+- `wails3 task build` 与 `wails3 task package` 属于集成/发布构建，不是普通源码修改后的默认验证。
+- 前端构建和嵌入 `frontend/dist` 的 Go 构建必须串行，禁止并行读写构建产物。
+
+常用命令按用途选择：
 
 ```powershell
+# 终端 A：前端开发（持续运行）
+Set-Location frontend
+npm run dev
+```
+
+```powershell
+# 终端 B：前端定向测试
+Set-Location frontend
+npm test -- --run <test-file>
+Set-Location ..
+
+# Go 定向测试
+go test ./services -run '<TestNameRegex>' -timeout 60s
+```
+
+```powershell
+# Go 导出契约变化后
+wails3 task common:generate:bindings
+Set-Location frontend
+npm run build
+Set-Location ..
+
+# 真实桌面联调、Windows 集成构建、发布构建
 wails3 task dev
 wails3 task build
 wails3 task package
-wails3 task common:generate:bindings
-wails3 task common:update:build-assets
 ```
+
+同一次验证只运行满足当前风险的最小命令；后续更高层验证已覆盖前一步时，不机械重复等价检查。命令失败时先处理当前失败，不通过追加更大范围命令掩盖根因。
 
 ### Windows 桌面开发实例
 
@@ -163,24 +198,9 @@ Get-NetTCPConnection -State Listen -LocalPort 18101 | Select-Object LocalAddress
 
 两条结果中的 PID 必须一致。重启时只停止路径为本仓库 `bin\dev\code-switch.exe` 的进程，不得终止用户安装的正式版或其他同名进程。
 
-前端单独验证：
+### 桌面联调与发布前构建
 
-```powershell
-Set-Location frontend
-npm install
-npm run build
-npm run build:dev
-```
-
-Go 测试：
-
-```powershell
-go test ./services -run TestGemini -timeout 60s
-go test ./resources/model-pricing -timeout 60s
-go test ./... -timeout 60s
-```
-
-Windows 单文件测试构建必须先生成 `frontend/dist`，再 Go build。不要并行运行前端构建和 Go 构建，因为 `main.go` 会嵌入 `frontend/dist`，并行可能造成资源文件竞争。当前环境做 Windows 发布验证时显式设置 `GOARCH=amd64` 和 `CGO_ENABLED=0`，不要依赖默认架构。
+上面的桌面实例只在需要真实窗口或 Relay 验证时使用。Windows 单文件构建必须先生成 `frontend/dist`，再 Go build；`main.go` 会嵌入该目录，构建步骤必须串行。当前环境必须显式设置 `GOOS=windows`、`GOARCH=amd64` 和 `CGO_ENABLED=0`，不要依赖默认架构。
 
 ```powershell
 Set-Location frontend
@@ -193,6 +213,23 @@ $env:CGO_ENABLED = "0"
 go build -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o bin/code-switch-R-test.exe
 ```
 
+发版前或跨模块改动需要完整信心时，按以下顺序执行一次即可：
+
+```powershell
+Set-Location frontend
+npm ci
+npm test -- --run
+npm run build
+Set-Location ..
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
+$env:CGO_ENABLED = "0"
+go test ./... -timeout 300s
+wails3 task package
+```
+
+完整 `go test ./...` 不是日常编辑后的默认命令；它包含数据库、Relay、迁移和跨服务测试，可能明显慢于定向测试。发版前应在接近 CI 的干净环境中执行，并确认 `frontend/dist`、bindings 和便携 exe 都由当前提交生成。
+
 ## 发布流程
 
 GitHub Release 由 `.github/workflows/release.yml` 在推送 `v*` tag 时触发。Workflow 只构建 Windows amd64 便携版，生成并发布 `codeSwitchR.exe`、`codeSwitchR.exe.sha256` 与 `latest.json`。
@@ -203,7 +240,8 @@ GitHub Release 由 `.github/workflows/release.yml` 在推送 `v*` tag 时触发�
 - `RELEASE_NOTES.md` 或 Release body 需要展示的版本说明。
 - `build/config.yml`、`build/windows/info.json` 与 `version_service.go` 版本是否一致。
 - `frontend/bindings/` 是否与 Go 导出服务签名一致。
-- 运行必要的 Go 测试和 `frontend` 构建。
+- 先运行前端测试和生产构建，再运行 `go test ./... -timeout 300s`；最后按顺序构建 Windows amd64 便携 exe。
+- 在接近 CI 的干净环境验证一次，不能因为本机残留的 `frontend/dist`、bindings 或 Go/npm 缓存而跳过真实步骤。
 
 需要用 `gh` 查询 Actions 或 Release 时，先检查当前进程是否有 `GH_TOKEN`，不得打印 token。若未继承但 Windows User/Machine 环境变量存在，可在单条 PowerShell 命令中临时注入再执行 `gh auth status` 或 `gh api user --jq .login`。
 
@@ -228,12 +266,13 @@ GitHub Release 由 `.github/workflows/release.yml` 在推送 `v*` tag 时触发�
 |---|---|
 | Provider 模型、映射、认证、Level、删除、改名 | `go test ./services -run "TestProvider|TestModels|TestRename|TestSaveProviders|TestDefaultConnectivityAuthType" -timeout 60s` |
 | Pi 模型、网关、请求头模板、metadata 与预览 | `go test ./services -run "TestPi|TestBuildPiGateway|TestValidatePiProviderMetadata|TestRequestHeaderTemplate|TestApplyProviderRequestBodyPolicy" -timeout 120s` |
-| Relay 转发、协议转换、日志解析 | `go test ./services -run "TestReplaceModel|TestModelMapping|TestProviderConfig|TestModels" -timeout 60s` |
+| Relay 转发、协议转换、日志解析 | `go test ./internal/relay ./services/protocol -timeout 120s` |
 | Gemini provider 或 `.env` 解析 | `go test ./services -run TestGemini -timeout 60s` |
 | 日志、统计、时区、成本 | `go test ./services -run "Test.*Range|Test.*Stats|Test.*Timezone" -timeout 60s` 和 `go test ./resources/model-pricing -timeout 60s` |
 | Go 导出服务签名 | `wails3 task common:generate:bindings`，再 `npm run build` |
-| 前端页面或服务封装 | `cd frontend && npm run build` |
-| 构建/发布/资源嵌入 | 先前端 build，再按目标平台运行 Wails 或 Go build |
+| 前端页面或服务封装 | 先运行对应 Vitest；需要类型或产物确认时，在 `frontend` 目录运行 `npm run build` |
+| 配置迁移、备份、MCP、网络与安全边界 | `go test ./services -run 'Test(Migration|Config|Backup|MCP|Network|Relay|Removed)' -timeout 120s` |
+| 构建/发布/资源嵌入 | 先 `npm test -- --run` 和前端 build，再按顺序运行 `go test ./... -timeout 300s` 与 `wails3 task package` |
 
 无法运行完整验证时，说明具体失败命令、失败原因和剩余风险，不把未执行的测试写成已通过。
 

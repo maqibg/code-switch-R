@@ -345,3 +345,101 @@ func TestClaudeManagedCredentialRefreshRotatesTokenAndState(t *testing.T) {
 		t.Fatalf("托管状态 Token 未轮换: %q", state.InjectedAuthToken)
 	}
 }
+
+func TestCodexManagedCredentialRefreshRecreatesMissingAuthFile(t *testing.T) {
+	home := withTempHome(t)
+	resetProxyState(t, "codex")
+	previous := RelayToken()
+	t.Cleanup(func() { _ = SetRelayToken(previous) })
+	oldToken := strings.Repeat("a", 32)
+	newToken := strings.Repeat("b", 32)
+	if err := SetRelayToken(oldToken); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewCodexSettingsService("127.0.0.1:18100")
+	writeCodexConfig(t, home, "model = \"gpt-5\"\n")
+	if err := service.EnableProxy(); err != nil {
+		t.Fatal(err)
+	}
+	authPath, _, err := service.authPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(authPath); err != nil {
+		t.Fatalf("删除测试 auth.json 失败: %v", err)
+	}
+	if err := SetRelayToken(newToken); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.refreshManagedCredential(); err != nil {
+		t.Fatalf("缺失 auth.json 时应能恢复托管凭据: %v", err)
+	}
+	authContent, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var auth map[string]any
+	if err := json.Unmarshal(authContent, &auth); err != nil {
+		t.Fatal(err)
+	}
+	if got := anyToString(auth[codexEnvKey]); got != newToken {
+		t.Fatalf("重建的 auth.json 未写入新 Token，长度=%d", len(got))
+	}
+	state, err := LoadProxyState("codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.InjectedAuthToken != newToken {
+		t.Fatalf("托管状态 Token 未同步，长度=%d", len(state.InjectedAuthToken))
+	}
+}
+
+func TestRefreshManagedRelayCredentialsContinuesAfterPlatformConflict(t *testing.T) {
+	home := withTempHome(t)
+	resetProxyState(t, "claude", "gemini")
+	previous := RelayToken()
+	t.Cleanup(func() { _ = SetRelayToken(previous) })
+	oldToken := strings.Repeat("a", 32)
+	newToken := strings.Repeat("b", 32)
+	if err := SetRelayToken(oldToken); err != nil {
+		t.Fatal(err)
+	}
+
+	claude := NewClaudeSettingsService("127.0.0.1:18100")
+	if err := claude.EnableProxy(); err != nil {
+		t.Fatal(err)
+	}
+	claudePath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.WriteFile(claudePath, []byte(`{"env":{"ANTHROPIC_BASE_URL":"https://external.example"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	gemini := NewGeminiService("127.0.0.1:18100")
+	if err := gemini.EnableProxy(); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetRelayToken(newToken); err != nil {
+		t.Fatal(err)
+	}
+
+	err := RefreshManagedRelayCredentials(
+		claude,
+		NewCodexSettingsService("127.0.0.1:18100"),
+		gemini,
+		NewReasonixSettingsService("127.0.0.1:18100"),
+		NewPiSettingsService("127.0.0.1:18100", nil),
+		NewGrokBuildService("127.0.0.1:18100", nil, nil),
+	)
+	if err == nil || !strings.Contains(err.Error(), "Claude Code") {
+		t.Fatalf("应返回 Claude 冲突，但实际错误为: %v", err)
+	}
+	state, err := LoadProxyState("gemini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.InjectedAuthToken != newToken {
+		t.Fatalf("Claude 冲突不应阻止 Gemini 迁移，Token 长度=%d", len(state.InjectedAuthToken))
+	}
+}

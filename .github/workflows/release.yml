@@ -26,6 +26,10 @@ jobs:
           $source = $source -replace 'const AppVersion = "v[^"]*"', "const AppVersion = `"v$version`""
           Set-Content version_service.go $source -Encoding utf8
 
+          $config = Get-Content build/config.yml -Raw -Encoding utf8
+          $config = $config -replace '(?m)^  version: "[^"]*"', "  version: `"$version`""
+          Set-Content build/config.yml $config -Encoding utf8
+
           $info = Get-Content build/windows/info.json -Raw -Encoding utf8 | ConvertFrom-Json
           $info.fixed.file_version = $version
           $info.info.'0000'.ProductVersion = $version

@@ -288,7 +288,7 @@ func (css *CodexSettingsService) DisableProxy() error {
 
 var codexManagedProviderFields = []string{"name", "base_url", "wire_api", "requires_openai_auth"}
 
-func (css *CodexSettingsService) validateManagedFields(raw map[string]any, state *ProxyState) error {
+func (css *CodexSettingsService) validateManagedConfigFields(raw map[string]any, state *ProxyState) error {
 	if anyToString(raw["model_provider"]) != codexProviderKey {
 		return fmt.Errorf("Codex model_provider 已被外部修改，拒绝覆盖")
 	}
@@ -306,6 +306,13 @@ func (css *CodexSettingsService) validateManagedFields(raw map[string]any, state
 		return fmt.Errorf("Codex 托管 Provider 已被外部修改，拒绝覆盖")
 	}
 
+	return nil
+}
+
+func (css *CodexSettingsService) validateManagedFields(raw map[string]any, state *ProxyState) error {
+	if err := css.validateManagedConfigFields(raw, state); err != nil {
+		return err
+	}
 	authPath := state.AuthFilePath
 	if strings.TrimSpace(authPath) == "" {
 		var err error

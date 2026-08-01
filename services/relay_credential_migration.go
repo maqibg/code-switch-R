@@ -12,7 +12,8 @@ import (
 )
 
 // RefreshManagedRelayCredentials upgrades only configurations already owned by
-// code-switch-R. A conflict aborts startup before the Relay becomes available.
+// code-switch-R. Each platform is isolated so one stale external CLI file does
+// not prevent the application and other platform migrations from starting.
 func RefreshManagedRelayCredentials(
 	claude *ClaudeSettingsService,
 	codex *CodexSettingsService,
@@ -32,12 +33,13 @@ func RefreshManagedRelayCredentials(
 		{"Pi", pi.refreshManagedCredentials},
 		{"Grok", grok.refreshManagedRelayCredential},
 	}
+	var errs []error
 	for _, step := range steps {
 		if err := step.run(); err != nil {
-			return fmt.Errorf("升级 %s Relay 凭据失败: %w", step.name, err)
+			errs = append(errs, fmt.Errorf("升级 %s Relay 凭据失败: %w", step.name, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (p jsonProxyPlatform) refreshManagedCredential(relayAddr string) error {
@@ -120,7 +122,7 @@ func (css *CodexSettingsService) refreshManagedCredential() error {
 	if err := toml.Unmarshal(configBefore, &raw); err != nil {
 		return fmt.Errorf("Codex config.toml 解析失败: %w", err)
 	}
-	if err := css.validateManagedFields(raw, state); err != nil {
+	if err := css.validateManagedConfigFields(raw, state); err != nil {
 		return err
 	}
 	authPath := state.AuthFilePath
@@ -131,16 +133,24 @@ func (css *CodexSettingsService) refreshManagedCredential() error {
 		}
 	}
 	authBefore, authExisted, err := readOptionalFile(authPath)
-	if err != nil || !authExisted {
+	if err != nil {
 		return fmt.Errorf("读取 Codex auth.json 失败: %w", err)
 	}
-	var auth map[string]any
-	if err := json.Unmarshal(authBefore, &auth); err != nil {
-		return fmt.Errorf("Codex auth.json 解析失败: %w", err)
+	auth := make(map[string]any)
+	if authExisted {
+		if err := json.Unmarshal(authBefore, &auth); err != nil {
+			return fmt.Errorf("Codex auth.json 解析失败: %w", err)
+		}
+		if auth == nil {
+			return fmt.Errorf("Codex auth.json 顶层必须是 JSON 对象")
+		}
+		if anyToString(auth[codexEnvKey]) != state.InjectedAuthToken {
+			return fmt.Errorf("Codex OPENAI_API_KEY 已被外部修改，拒绝覆盖")
+		}
 	}
 	nextURL := css.baseURL()
 	nextToken := relayTokenForConfig()
-	if urlMatchesProxy(state.InjectedBaseURL, nextURL) && state.InjectedAuthToken == nextToken {
+	if authExisted && urlMatchesProxy(state.InjectedBaseURL, nextURL) && state.InjectedAuthToken == nextToken {
 		return nil
 	}
 	provider := ensureProviderTable(ensureTomlTable(raw, "model_providers"), codexProviderKey)

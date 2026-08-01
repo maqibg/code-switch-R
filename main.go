@@ -165,7 +165,7 @@ func main() {
 		piSettings,
 		grokBuildService,
 	); err != nil {
-		log.Fatalf("升级已托管 CLI 的 Relay 凭据失败: %v", err)
+		log.Printf("升级已托管 CLI 的 Relay 凭据失败，应用将继续启动；请在对应 CLI 设置中重试: %v", err)
 	}
 
 	if err := providerRelay.Start(); err != nil {
