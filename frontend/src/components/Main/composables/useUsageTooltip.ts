@@ -4,6 +4,7 @@
 import { computed, reactive, type Ref } from 'vue'
 import type { UsageHeatmapDay } from '../../../data/usageHeatmap'
 import { clamp, formatMetric, formatTokenNumber } from '../utils'
+import { decimalMoney } from '../../../utils/money'
 
 type Translate = (key: string, values?: Record<string, unknown>) => string
 type TooltipPlacement = 'above' | 'below'
@@ -33,7 +34,7 @@ export function useUsageTooltip(deps: {
     inputTokens: 0,
     outputTokens: 0,
     reasoningTokens: 0,
-    cost: 0,
+    cost: '0',
   })
 
   const tooltipDateFormatter = computed(() =>
@@ -63,9 +64,10 @@ export function useUsageTooltip(deps: {
     return tooltipDateFormatter.value.format(date)
   })
 
-  const formattedTooltipAmount = computed(() =>
-    currencyFormatter.value.format(Math.max(usageTooltip.cost, 0)),
-  )
+  const formattedTooltipAmount = computed(() => {
+    const amount = decimalMoney(usageTooltip.cost)
+    return currencyFormatter.value.format(amount.isNegative() ? 0 : amount.toNumber())
+  })
 
   const usageTooltipMetrics = computed(() => [
     {

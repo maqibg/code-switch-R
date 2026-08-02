@@ -14,6 +14,7 @@ import (
 	modelpricing "codeswitch/resources/model-pricing"
 
 	"github.com/daodao97/xgo/xdb"
+	"github.com/shopspring/decimal"
 )
 
 var beijingLocation = func() *time.Location {
@@ -67,7 +68,7 @@ type dashboardAccumulator struct {
 	successes      int64
 	durationSumSec float64
 	durationCount  int64
-	costTotal      float64
+	costTotal      decimal.Decimal
 }
 
 func (acc *dashboardAccumulator) add(record xdb.Record, cost modelpricing.CostBreakdown) {
@@ -83,7 +84,7 @@ func (acc *dashboardAccumulator) add(record xdb.Record, cost modelpricing.CostBr
 		acc.durationSumSec += durationSec
 		acc.durationCount++
 	}
-	acc.costTotal += cost.TotalCost
+	acc.costTotal = acc.costTotal.Add(cost.TotalCost)
 }
 
 type statsWindow struct {
@@ -180,6 +181,8 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 		"created_at", "platform", "source_id", "ephemeral_5m_tokens", "ephemeral_1h_tokens", "service_tier",
 		"input_cost", "output_cost", "reasoning_cost", "cache_create_cost", "cache_read_cost",
 		"ephemeral_5m_cost", "ephemeral_1h_cost", "total_cost", "has_pricing", "cost_calculated",
+		"input_cost_decimal", "output_cost_decimal", "reasoning_cost_decimal", "cache_create_cost_decimal", "cache_read_cost_decimal",
+		"ephemeral_5m_cost_decimal", "ephemeral_1h_cost_decimal", "total_cost_decimal", "pricing_snapshot",
 		"pricing_version", "pricing_source", "pricing_rule_id",
 	)
 
@@ -298,16 +301,17 @@ func bucketLabel(bucketStart time.Time, bucket string) string {
 	return bucketStart.Format("2006-01-02")
 }
 
-func (ls *LogService) CostSince(start string, platform string) (float64, error) {
+func (ls *LogService) CostSince(start string, platform string) (string, error) {
 	startTime, err := parseTimeInput(start)
 	if err != nil {
-		return 0, err
+		return "0", err
 	}
 	db, err := xdb.DB("default")
 	if err != nil {
-		return 0, err
+		return "0", err
 	}
-	return queryCostSince(db, startTime, platform)
+	cost, err := queryCostSince(db, startTime, platform)
+	return moneyString(cost), err
 }
 
 // buildSnapshotFromRecord 从 request_log 记录构造定价输入,统一处理 ephemeral 拆分 + service_tier。
@@ -781,20 +785,39 @@ func loadStoredCost(logEntry *RequestLog, record xdb.Record) bool {
 	if record.GetInt("cost_calculated") == 0 {
 		return false
 	}
-	logEntry.InputCost = record.GetFloat64("input_cost")
-	logEntry.OutputCost = record.GetFloat64("output_cost")
-	logEntry.ReasoningCost = record.GetFloat64("reasoning_cost")
-	logEntry.CacheCreateCost = record.GetFloat64("cache_create_cost")
-	logEntry.CacheReadCost = record.GetFloat64("cache_read_cost")
-	logEntry.Ephemeral5mCost = record.GetFloat64("ephemeral_5m_cost")
-	logEntry.Ephemeral1hCost = record.GetFloat64("ephemeral_1h_cost")
-	logEntry.TotalCost = record.GetFloat64("total_cost")
+	logEntry.InputCost = moneyString(moneyFromRecordExact(record, "input_cost_decimal", "input_cost"))
+	logEntry.OutputCost = moneyString(moneyFromRecordExact(record, "output_cost_decimal", "output_cost"))
+	logEntry.ReasoningCost = moneyString(moneyFromRecordExact(record, "reasoning_cost_decimal", "reasoning_cost"))
+	logEntry.CacheCreateCost = moneyString(moneyFromRecordExact(record, "cache_create_cost_decimal", "cache_create_cost"))
+	logEntry.CacheReadCost = moneyString(moneyFromRecordExact(record, "cache_read_cost_decimal", "cache_read_cost"))
+	logEntry.Ephemeral5mCost = moneyString(moneyFromRecordExact(record, "ephemeral_5m_cost_decimal", "ephemeral_5m_cost"))
+	logEntry.Ephemeral1hCost = moneyString(moneyFromRecordExact(record, "ephemeral_1h_cost_decimal", "ephemeral_1h_cost"))
+	logEntry.TotalCost = moneyString(moneyFromRecordExact(record, "total_cost_decimal", "total_cost"))
 	logEntry.HasPricing = record.GetInt("has_pricing") == 1
 	logEntry.CostCalculated = true
 	logEntry.PricingVersion = record.GetString("pricing_version")
 	logEntry.PricingSource = record.GetString("pricing_source")
 	logEntry.PricingRuleID = record.GetString("pricing_rule_id")
 	return true
+}
+
+func moneyFromRecord(record xdb.Record, field string) Money {
+	value := strings.TrimSpace(record.GetString(field))
+	if value != "" {
+		if amount, err := parseMoney(value); err == nil {
+			return amount
+		}
+	}
+	return moneyFromLegacyFloat(record.GetFloat64(field))
+}
+
+func moneyFromRecordExact(record xdb.Record, exactField, legacyField string) Money {
+	if value := strings.TrimSpace(record.GetString(exactField)); value != "" {
+		if amount, err := parseMoney(value); err == nil {
+			return amount
+		}
+	}
+	return moneyFromRecord(record, legacyField)
 }
 
 func (ls *LogService) backfillStoredRequestCosts(limit int) error {
@@ -870,19 +893,19 @@ func (ls *LogService) backfillStoredRequestCostsBatch(limit int) (int, error) {
 		cost := result.Cost
 		if _, err := tx.Exec(`
 			UPDATE request_log
-			SET input_cost = ?, output_cost = ?, reasoning_cost = ?, cache_create_cost = ?, cache_read_cost = ?,
-			    ephemeral_5m_cost = ?, ephemeral_1h_cost = ?, total_cost = ?, has_pricing = ?, cost_calculated = 1,
+				SET input_cost_decimal = ?, output_cost_decimal = ?, reasoning_cost_decimal = ?, cache_create_cost_decimal = ?, cache_read_cost_decimal = ?,
+				    ephemeral_5m_cost_decimal = ?, ephemeral_1h_cost_decimal = ?, total_cost_decimal = ?, has_pricing = ?, cost_calculated = 1,
 			    pricing_version = ?, pricing_source = ?, pricing_rule_id = ?
 			WHERE id = ?
 		`,
-			cost.InputCost,
-			cost.OutputCost,
-			cost.ReasoningCost,
-			cost.CacheCreateCost,
-			cost.CacheReadCost,
-			cost.Ephemeral5mCost,
-			cost.Ephemeral1hCost,
-			cost.TotalCost,
+			moneyString(cost.InputCost),
+			moneyString(cost.OutputCost),
+			moneyString(cost.ReasoningCost),
+			moneyString(cost.CacheCreateCost),
+			moneyString(cost.CacheReadCost),
+			moneyString(cost.Ephemeral5mCost),
+			moneyString(cost.Ephemeral1hCost),
+			moneyString(cost.TotalCost),
 			boolToInt(cost.HasPricing),
 			result.Version,
 			result.Source,
@@ -926,14 +949,14 @@ func (ls *LogService) decorateCost(logEntry *RequestLog) {
 	result := ls.calculateCost(logEntry.Platform, logEntry.SourceID, logEntry.Model, usage)
 	cost := result.Cost
 	logEntry.HasPricing = cost.HasPricing
-	logEntry.InputCost = cost.InputCost
-	logEntry.OutputCost = cost.OutputCost
-	logEntry.ReasoningCost = cost.ReasoningCost
-	logEntry.CacheCreateCost = cost.CacheCreateCost
-	logEntry.CacheReadCost = cost.CacheReadCost
-	logEntry.Ephemeral5mCost = cost.Ephemeral5mCost
-	logEntry.Ephemeral1hCost = cost.Ephemeral1hCost
-	logEntry.TotalCost = cost.TotalCost
+	logEntry.InputCost = moneyString(cost.InputCost)
+	logEntry.OutputCost = moneyString(cost.OutputCost)
+	logEntry.ReasoningCost = moneyString(cost.ReasoningCost)
+	logEntry.CacheCreateCost = moneyString(cost.CacheCreateCost)
+	logEntry.CacheReadCost = moneyString(cost.CacheReadCost)
+	logEntry.Ephemeral5mCost = moneyString(cost.Ephemeral5mCost)
+	logEntry.Ephemeral1hCost = moneyString(cost.Ephemeral1hCost)
+	logEntry.TotalCost = moneyString(cost.TotalCost)
 	logEntry.PricingVersion = result.Version
 	logEntry.PricingSource = result.Source
 	logEntry.PricingRuleID = result.RuleID
@@ -952,10 +975,10 @@ func (ls *LogService) calculateCost(platform, sourceID, model string, usage mode
 func (ls *LogService) costForRecord(record xdb.Record) modelpricing.CostBreakdown {
 	if record.GetInt("cost_calculated") == 1 {
 		return modelpricing.CostBreakdown{
-			InputCost: record.GetFloat64("input_cost"), OutputCost: record.GetFloat64("output_cost"),
-			ReasoningCost: record.GetFloat64("reasoning_cost"), CacheCreateCost: record.GetFloat64("cache_create_cost"),
-			CacheReadCost: record.GetFloat64("cache_read_cost"), Ephemeral5mCost: record.GetFloat64("ephemeral_5m_cost"),
-			Ephemeral1hCost: record.GetFloat64("ephemeral_1h_cost"), TotalCost: record.GetFloat64("total_cost"),
+			InputCost: moneyFromRecordExact(record, "input_cost_decimal", "input_cost"), OutputCost: moneyFromRecordExact(record, "output_cost_decimal", "output_cost"),
+			ReasoningCost: moneyFromRecordExact(record, "reasoning_cost_decimal", "reasoning_cost"), CacheCreateCost: moneyFromRecordExact(record, "cache_create_cost_decimal", "cache_create_cost"),
+			CacheReadCost: moneyFromRecordExact(record, "cache_read_cost_decimal", "cache_read_cost"), Ephemeral5mCost: moneyFromRecordExact(record, "ephemeral_5m_cost_decimal", "ephemeral_5m_cost"),
+			Ephemeral1hCost: moneyFromRecordExact(record, "ephemeral_1h_cost_decimal", "ephemeral_1h_cost"), TotalCost: moneyFromRecordExact(record, "total_cost_decimal", "total_cost"),
 			HasPricing: record.GetInt("has_pricing") == 1,
 		}
 	}
@@ -1093,24 +1116,24 @@ func isNoSuchTableErr(err error) bool {
 }
 
 type HeatmapStat struct {
-	Day             string  `json:"day"`
-	TotalRequests   int64   `json:"total_requests"`
-	InputTokens     int64   `json:"input_tokens"`
-	OutputTokens    int64   `json:"output_tokens"`
-	ReasoningTokens int64   `json:"reasoning_tokens"`
-	TotalCost       float64 `json:"total_cost"`
+	Day             string `json:"day"`
+	TotalRequests   int64  `json:"total_requests"`
+	InputTokens     int64  `json:"input_tokens"`
+	OutputTokens    int64  `json:"output_tokens"`
+	ReasoningTokens int64  `json:"reasoning_tokens"`
+	TotalCost       string `json:"total_cost"`
 }
 
 type DashboardOverview struct {
 	RangeKey               string  `json:"range_key"`
 	CurrentRequests        int64   `json:"current_requests"`
 	CurrentTokens          int64   `json:"current_tokens"`
-	CurrentCost            float64 `json:"current_cost"`
+	CurrentCost            string  `json:"current_cost"`
 	CurrentAvgDurationSec  float64 `json:"current_avg_duration_sec"`
 	CurrentSuccessRate     float64 `json:"current_success_rate"`
 	PreviousRequests       int64   `json:"previous_requests"`
 	PreviousTokens         int64   `json:"previous_tokens"`
-	PreviousCost           float64 `json:"previous_cost"`
+	PreviousCost           string  `json:"previous_cost"`
 	PreviousAvgDurationSec float64 `json:"previous_avg_duration_sec"`
 	PreviousSuccessRate    float64 `json:"previous_success_rate"`
 	HasPreviousComparison  bool    `json:"has_previous_comparison"`
@@ -1124,11 +1147,11 @@ type LogStats struct {
 	ReasoningTokens   int64            `json:"reasoning_tokens"`
 	CacheCreateTokens int64            `json:"cache_create_tokens"`
 	CacheReadTokens   int64            `json:"cache_read_tokens"`
-	CostTotal         float64          `json:"cost_total"`
-	CostInput         float64          `json:"cost_input"`
-	CostOutput        float64          `json:"cost_output"`
-	CostCacheCreate   float64          `json:"cost_cache_create"`
-	CostCacheRead     float64          `json:"cost_cache_read"`
+	CostTotal         string           `json:"cost_total"`
+	CostInput         string           `json:"cost_input"`
+	CostOutput        string           `json:"cost_output"`
+	CostCacheCreate   string           `json:"cost_cache_create"`
+	CostCacheRead     string           `json:"cost_cache_read"`
 	Series            []LogStatsSeries `json:"series"`
 }
 
@@ -1143,7 +1166,7 @@ type ProviderDailyStat struct {
 	ReasoningTokens    int64   `json:"reasoning_tokens"`
 	CacheCreateTokens  int64   `json:"cache_create_tokens"`
 	CacheReadTokens    int64   `json:"cache_read_tokens"`
-	CostTotal          float64 `json:"cost_total"`
+	CostTotal          string  `json:"cost_total"`
 }
 
 type ModelDailyStat struct {
@@ -1157,18 +1180,18 @@ type ModelDailyStat struct {
 	ReasoningTokens    int64   `json:"reasoning_tokens"`
 	CacheCreateTokens  int64   `json:"cache_create_tokens"`
 	CacheReadTokens    int64   `json:"cache_read_tokens"`
-	CostTotal          float64 `json:"cost_total"`
+	CostTotal          string  `json:"cost_total"`
 }
 
 type LogStatsSeries struct {
-	Day               string  `json:"day"`
-	TotalRequests     int64   `json:"total_requests"`
-	InputTokens       int64   `json:"input_tokens"`
-	OutputTokens      int64   `json:"output_tokens"`
-	ReasoningTokens   int64   `json:"reasoning_tokens"`
-	CacheCreateTokens int64   `json:"cache_create_tokens"`
-	CacheReadTokens   int64   `json:"cache_read_tokens"`
-	TotalCost         float64 `json:"total_cost"`
+	Day               string `json:"day"`
+	TotalRequests     int64  `json:"total_requests"`
+	InputTokens       int64  `json:"input_tokens"`
+	OutputTokens      int64  `json:"output_tokens"`
+	ReasoningTokens   int64  `json:"reasoning_tokens"`
+	CacheCreateTokens int64  `json:"cache_create_tokens"`
+	CacheReadTokens   int64  `json:"cache_read_tokens"`
+	TotalCost         string `json:"total_cost"`
 }
 
 type RecordStorageInfo struct {

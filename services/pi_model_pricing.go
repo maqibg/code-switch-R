@@ -197,6 +197,24 @@ func applyPiCostOverride(base PiModelCost, override PiModelOverrideCost) PiModel
 
 func clonePiModelCost(source PiModelCost) PiModelCost {
 	cloned := source
+	cloned.Input = normalizePiMoneyString(cloned.Input)
+	cloned.Output = normalizePiMoneyString(cloned.Output)
+	cloned.CacheRead = normalizePiMoneyString(cloned.CacheRead)
+	cloned.CacheWrite = normalizePiMoneyString(cloned.CacheWrite)
 	cloned.Tiers = append([]PiModelCostTier(nil), source.Tiers...)
+	for index := range cloned.Tiers {
+		cloned.Tiers[index].Input = normalizePiMoneyString(cloned.Tiers[index].Input)
+		cloned.Tiers[index].Output = normalizePiMoneyString(cloned.Tiers[index].Output)
+		cloned.Tiers[index].CacheRead = normalizePiMoneyString(cloned.Tiers[index].CacheRead)
+		cloned.Tiers[index].CacheWrite = normalizePiMoneyString(cloned.Tiers[index].CacheWrite)
+	}
 	return cloned
+}
+
+func normalizePiMoneyString(value string) string {
+	amount, err := parseMoney(value)
+	if err != nil {
+		return "0"
+	}
+	return moneyString(amount)
 }

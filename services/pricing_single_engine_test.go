@@ -27,7 +27,7 @@ func TestLogServiceWithoutPricingDoesNotFallBackToAnotherEngine(t *testing.T) {
 	if result.Version != "" {
 		t.Errorf("没有 pricingService 时不应产出定价版本，实际 %q", result.Version)
 	}
-	if result.Cost.HasPricing || result.Cost.TotalCost != 0 {
+	if result.Cost.HasPricing || !result.Cost.TotalCost.IsZero() {
 		t.Errorf("没有 pricingService 时不应算出成本，实际 %+v", result.Cost)
 	}
 }

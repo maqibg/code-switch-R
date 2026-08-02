@@ -1,11 +1,12 @@
 /**
  * 供应商当日用量统计：加载、卡片展示文案、每分钟轮询。
  */
-import { computed, reactive, type Ref } from 'vue'
+import { reactive, type Ref } from 'vue'
 import { fetchProviderDailyStats, type ProviderDailyStat } from '../../../services/logs'
 import type { ProviderTab } from '../platformTabs'
 import { tabRecord, type MainState } from '../state'
 import { clamp, formatMetric, formatTokenNumber, normalizeProviderKey } from '../utils'
+import { decimalMoney, formatMoney } from '../../../utils/money'
 
 type Translate = (key: string, values?: Record<string, unknown>) => string
 
@@ -52,15 +53,6 @@ export function useProviderStats(
     }
   }
 
-  const currencyFormatter = computed(() =>
-    new Intl.NumberFormat(locale.value || 'en', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }),
-  )
-
   const formatSuccessRateLabel = (value: number) => {
     const percent = clamp(value, 0, 1) * 100
     const decimals = percent >= 99.5 || percent === 0 ? 0 : 1
@@ -98,7 +90,7 @@ export function useProviderStats(
       state: 'ready',
       requests: `${t('components.main.providers.requests')}: ${formatMetric(stat.total_requests)}`,
       tokens: `${t('components.main.providers.tokens')}: ${formatTokenNumber(totalTokens)}`,
-      cost: `${t('components.main.providers.cost')}: ${currencyFormatter.value.format(Math.max(stat.cost_total, 0))}`,
+	      cost: `${t('components.main.providers.cost')}: ${formatMoney(decimalMoney(stat.cost_total).toFixed(), 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US')}`,
       successRateLabel,
       successRateClass,
     }

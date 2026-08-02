@@ -43,15 +43,24 @@ func RequestLogInsertStatement(log RequestLog) dbcore.Statement {
 			reasoning_tokens, is_stream, duration_sec, ephemeral_5m_tokens,
 			ephemeral_1h_tokens, service_tier, input_cost, output_cost, reasoning_cost,
 			cache_create_cost, cache_read_cost, ephemeral_5m_cost, ephemeral_1h_cost,
-			total_cost, has_pricing, cost_calculated, pricing_version, pricing_source, pricing_rule_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				total_cost, has_pricing, cost_calculated, pricing_version, pricing_source, pricing_rule_id,
+				input_cost_decimal, output_cost_decimal, reasoning_cost_decimal, cache_create_cost_decimal,
+				cache_read_cost_decimal, ephemeral_5m_cost_decimal, ephemeral_1h_cost_decimal, total_cost_decimal, pricing_snapshot
+			) VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			)
 	`, Args: []any{log.RequestID, log.Platform, log.SourceID, log.ClientProtocol, log.UpstreamProtocol,
 		log.RequestedModel, log.Model, log.Provider, dbcore.NullableID(log.ProviderID), log.HttpCode, log.AttemptCount, log.ErrorType,
 		log.InputTokens, log.OutputTokens, log.CacheCreateTokens, log.CacheReadTokens,
 		log.ReasoningTokens, dbcore.BoolToInt(log.IsStream), log.DurationSec, log.Ephemeral5mTokens,
 		log.Ephemeral1hTokens, log.ServiceTier, log.InputCost, log.OutputCost, log.ReasoningCost,
 		log.CacheCreateCost, log.CacheReadCost, log.Ephemeral5mCost, log.Ephemeral1hCost,
-		log.TotalCost, dbcore.BoolToInt(log.HasPricing), 1, log.PricingVersion, log.PricingSource, log.PricingRuleID}}
+		log.TotalCost, dbcore.BoolToInt(log.HasPricing), 1, log.PricingVersion, log.PricingSource, log.PricingRuleID,
+		log.InputCost, log.OutputCost, log.ReasoningCost, log.CacheCreateCost, log.CacheReadCost,
+		log.Ephemeral5mCost, log.Ephemeral1hCost, log.TotalCost, log.PricingSnapshot}}
 }
 
 // RelayAttemptInsertStatement 组装一条转发尝试的 relay_attempt 插入语句。
@@ -62,11 +71,11 @@ func RelayAttemptInsertStatement(requestID, platform, sourceID string, attempt R
 			request_id, attempt_index, platform, source_id, provider, provider_id, model,
 			upstream_protocol, http_code, success, error_type, error_message,
 			duration_sec, input_tokens, output_tokens, cache_create_tokens,
-			cache_read_tokens, reasoning_tokens, total_cost, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+				cache_read_tokens, reasoning_tokens, total_cost, total_cost_decimal, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`, Args: []any{requestID, attempt.AttemptIndex, platform, sourceID,
 		attempt.Provider, dbcore.NullableID(attempt.ProviderID), attempt.Model, attempt.UpstreamProtocol, attempt.HTTPCode,
 		dbcore.BoolToInt(attempt.Success), attempt.ErrorType, attempt.ErrorMessage, attempt.DurationSec,
 		attempt.Usage.InputTokens, attempt.Usage.OutputTokens, attempt.Usage.CacheCreateTokens,
-		attempt.Usage.CacheReadTokens, attempt.Usage.ReasoningTokens, attempt.Cost.TotalCost}}
+		attempt.Usage.CacheReadTokens, attempt.Usage.ReasoningTokens, moneyString(attempt.Cost.TotalCost), moneyString(attempt.Cost.TotalCost)}}
 }

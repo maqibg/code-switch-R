@@ -172,14 +172,14 @@ func TestValidatePiProviderRejectsUnsupportedGatewayTransport(t *testing.T) {
 
 func TestBuildPiGatewayProviderAppliesModelOverrides(t *testing.T) {
 	contextWindow := 1_000_000
-	outputCost := 8.0
+	outputCost := "8"
 	high := "high"
 	gateway, err := BuildPiGatewayProvider([]Provider{{
 		Name: "openai", Enabled: true, UpstreamProtocol: "openai_responses",
 		PiModels: []PiModelEntry{{
 			ID: "gpt-test", Name: "Original", ThinkingLevelMap: map[string]*string{"high": &high},
 			Headers: map[string]string{"X-Base": "base"}, Compat: map[string]any{"supportsDeveloperRole": true},
-			Cost: &PiModelCost{Input: 1, Output: 5, CacheRead: 0.1, CacheWrite: 1.25},
+			Cost: &PiModelCost{Input: "1", Output: "5", CacheRead: "0.1", CacheWrite: "1.25"},
 		}},
 		PiModelOverrides: map[string]PiModelOverride{
 			"gpt-test": {
@@ -210,7 +210,7 @@ func TestBuildPiGatewayProviderAppliesModelOverrides(t *testing.T) {
 	if model.Compat["supportsDeveloperRole"] != true || model.Compat["supportsLongCacheRetention"] != true {
 		t.Fatalf("模型 compat 未合并: %#v", model.Compat)
 	}
-	if model.Cost == nil || model.Cost.Input != 1 || model.Cost.Output != outputCost {
+	if model.Cost == nil || model.Cost.Input != "1" || model.Cost.Output != outputCost {
 		t.Fatalf("模型 cost 未局部合并: %#v", model.Cost)
 	}
 }
@@ -317,8 +317,8 @@ func TestBuildPiGatewayProviderPreservesCompleteModelDefinitionAndOrder(t *testi
 			ID: "gpt-test", Name: "GPT Test",
 			Reasoning: &reasoning, ThinkingLevelMap: map[string]*string{"high": &high, "xhigh": nil},
 			Input: []string{"text", "image"}, ContextWindow: &contextWindow, MaxTokens: &maxTokens,
-			Cost: &PiModelCost{Input: 1, Output: 5, CacheRead: 0.1, CacheWrite: 1.25,
-				Tiers: []PiModelCostTier{{InputTokensAbove: 272000, Input: 2, Output: 7.5, CacheRead: 0.2, CacheWrite: 2.5}}},
+			Cost: &PiModelCost{Input: "1", Output: "5", CacheRead: "0.1", CacheWrite: "1.25",
+				Tiers: []PiModelCostTier{{InputTokensAbove: 272000, Input: "2", Output: "7.5", CacheRead: "0.2", CacheWrite: "2.5"}}},
 			Headers: map[string]string{"X-Model": "complete"}, Compat: map[string]any{"supportsDeveloperRole": false},
 		}},
 	}}, "http://127.0.0.1:18100/pi/v1")

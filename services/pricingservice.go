@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,6 +23,7 @@ import (
 	modelpricing "codeswitch/resources/model-pricing"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -52,11 +52,60 @@ var pricingReservedKeys = map[string]struct{}{
 }
 
 type PricingRates struct {
-	Input      float64 `json:"input"`
-	Output     float64 `json:"output"`
-	Reasoning  float64 `json:"reasoning"`
-	CacheRead  float64 `json:"cache_read"`
-	CacheWrite float64 `json:"cache_write"`
+	Input      string `json:"input"`
+	Output     string `json:"output"`
+	Reasoning  string `json:"reasoning"`
+	CacheRead  string `json:"cache_read"`
+	CacheWrite string `json:"cache_write"`
+}
+
+// UnmarshalJSON 同时兼容旧版规则里的数字和新格式字符串，但内部立即转成
+// 非负十进制文本，后续计算不会再经过 float64。
+func (rates *PricingRates) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	read := func(key string) (string, error) {
+		value, ok := raw[key]
+		if !ok || string(value) == "null" {
+			return "0", nil
+		}
+		var text string
+		if len(value) > 0 && value[0] == '"' {
+			if err := json.Unmarshal(value, &text); err != nil {
+				return "", err
+			}
+		} else {
+			text = string(value)
+		}
+		amount, err := parseMoney(text)
+		if err != nil {
+			return "", err
+		}
+		return moneyString(amount), nil
+	}
+	var err error
+	if rates.Input, err = read("input"); err != nil {
+		return err
+	}
+	if rates.Output, err = read("output"); err != nil {
+		return err
+	}
+	if rates.Reasoning, err = read("reasoning"); err != nil {
+		return err
+	}
+	if rates.CacheRead, err = read("cache_read"); err != nil {
+		return err
+	}
+	if rates.CacheWrite, err = read("cache_write"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func pricingRateDecimal(value string) (decimal.Decimal, error) {
+	return parseMoney(value)
 }
 
 type PricingTier struct {
@@ -94,19 +143,19 @@ type PricingOverview struct {
 }
 
 type PricingBuiltinRow struct {
-	Model           string  `json:"model"`
-	Provider        string  `json:"provider"`
-	Mode            string  `json:"mode"`
-	Input           float64 `json:"input"`
-	Output          float64 `json:"output"`
-	Reasoning       float64 `json:"reasoning"`
-	CacheRead       float64 `json:"cache_read"`
-	CacheWrite      float64 `json:"cache_write"`
-	ContextWindow   int     `json:"context_window"`
-	MaxOutputTokens int     `json:"max_output_tokens"`
-	BillingStatus   string  `json:"billing_status"`
-	CustomRuleID    string  `json:"custom_rule_id,omitempty"`
-	CustomRuleName  string  `json:"custom_rule_name,omitempty"`
+	Model           string `json:"model"`
+	Provider        string `json:"provider"`
+	Mode            string `json:"mode"`
+	Input           string `json:"input"`
+	Output          string `json:"output"`
+	Reasoning       string `json:"reasoning"`
+	CacheRead       string `json:"cache_read"`
+	CacheWrite      string `json:"cache_write"`
+	ContextWindow   int    `json:"context_window"`
+	MaxOutputTokens int    `json:"max_output_tokens"`
+	BillingStatus   string `json:"billing_status"`
+	CustomRuleID    string `json:"custom_rule_id,omitempty"`
+	CustomRuleName  string `json:"custom_rule_name,omitempty"`
 }
 
 type PricingBuiltinPage struct {
@@ -521,13 +570,13 @@ func compilePricingRules(rules []PricingCustomRule) ([]compiledPricingRule, stri
 }
 
 func validatePricingRates(rates PricingRates) error {
-	values := map[string]float64{
+	values := map[string]string{
 		"input": rates.Input, "output": rates.Output, "reasoning": rates.Reasoning,
 		"cache_read": rates.CacheRead, "cache_write": rates.CacheWrite,
 	}
 	for name, value := range values {
-		if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
-			return fmt.Errorf("%s 必须是非负有限数值", name)
+		if _, err := parseMoney(value); err != nil {
+			return fmt.Errorf("%s 必须是非负有限数值: %w", name, err)
 		}
 	}
 	return nil
@@ -660,11 +709,11 @@ func pricingBuiltinRow(record pricingCatalogRecord, rule *compiledPricingRule) P
 	}
 	row := PricingBuiltinRow{
 		Model: record.model, Provider: record.entry.LiteLLMProvider, Mode: record.entry.Mode,
-		Input:         record.entry.InputCostPerToken * 1_000_000,
-		Output:        record.entry.OutputCostPerToken * 1_000_000,
-		Reasoning:     record.entry.OutputCostPerReasoningToken * 1_000_000,
-		CacheRead:     record.entry.CacheReadInputTokenCost * 1_000_000,
-		CacheWrite:    record.entry.CacheCreationInputTokenCost * 1_000_000,
+		Input:         moneyString(record.entry.InputCostPerToken.Mul(decimal.NewFromInt(1_000_000))),
+		Output:        moneyString(record.entry.OutputCostPerToken.Mul(decimal.NewFromInt(1_000_000))),
+		Reasoning:     moneyString(record.entry.OutputCostPerReasoningToken.Mul(decimal.NewFromInt(1_000_000))),
+		CacheRead:     moneyString(record.entry.CacheReadInputTokenCost.Mul(decimal.NewFromInt(1_000_000))),
+		CacheWrite:    moneyString(record.entry.CacheCreationInputTokenCost.Mul(decimal.NewFromInt(1_000_000))),
 		ContextWindow: contextWindow, MaxOutputTokens: int(record.entry.MaxOutputTokens),
 		BillingStatus: status,
 	}
@@ -849,10 +898,10 @@ func (ps *PricingService) TestPricingMatch(model string) PricingMatchResult {
 		return PricingMatchResult{
 			Matched: true, Source: runtime.source.Source,
 			Rates: PricingRates{
-				Input: entry.InputCostPerToken * 1_000_000, Output: entry.OutputCostPerToken * 1_000_000,
-				Reasoning:  entry.OutputCostPerReasoningToken * 1_000_000,
-				CacheRead:  entry.CacheReadInputTokenCost * 1_000_000,
-				CacheWrite: entry.CacheCreationInputTokenCost * 1_000_000,
+				Input: moneyString(entry.InputCostPerToken.Mul(decimal.NewFromInt(1_000_000))), Output: moneyString(entry.OutputCostPerToken.Mul(decimal.NewFromInt(1_000_000))),
+				Reasoning:  moneyString(entry.OutputCostPerReasoningToken.Mul(decimal.NewFromInt(1_000_000))),
+				CacheRead:  moneyString(entry.CacheReadInputTokenCost.Mul(decimal.NewFromInt(1_000_000))),
+				CacheWrite: moneyString(entry.CacheCreationInputTokenCost.Mul(decimal.NewFromInt(1_000_000))),
 			},
 			Version: runtime.source.Source + ":" + shortPricingVersion(runtime.source.SHA256),
 		}
@@ -1012,13 +1061,18 @@ func customRuleRates(rule PricingCustomRule, usage modelpricing.UsageSnapshot) P
 }
 
 func pricingEntryFromRates(rates PricingRates) modelpricing.PricingEntry {
+	input, _ := pricingRateDecimal(rates.Input)
+	output, _ := pricingRateDecimal(rates.Output)
+	reasoning, _ := pricingRateDecimal(rates.Reasoning)
+	cacheRead, _ := pricingRateDecimal(rates.CacheRead)
+	cacheWrite, _ := pricingRateDecimal(rates.CacheWrite)
 	return modelpricing.PricingEntry{
-		InputCostPerToken:                   rates.Input / 1_000_000,
-		OutputCostPerToken:                  rates.Output / 1_000_000,
-		OutputCostPerReasoningToken:         rates.Reasoning / 1_000_000,
-		CacheReadInputTokenCost:             rates.CacheRead / 1_000_000,
-		CacheCreationInputTokenCost:         rates.CacheWrite / 1_000_000,
-		CacheCreationInputTokenCostAbove1Hr: rates.CacheWrite / 1_000_000,
+		InputCostPerToken:                   input.Div(decimal.NewFromInt(1_000_000)),
+		OutputCostPerToken:                  output.Div(decimal.NewFromInt(1_000_000)),
+		OutputCostPerReasoningToken:         reasoning.Div(decimal.NewFromInt(1_000_000)),
+		CacheReadInputTokenCost:             cacheRead.Div(decimal.NewFromInt(1_000_000)),
+		CacheCreationInputTokenCost:         cacheWrite.Div(decimal.NewFromInt(1_000_000)),
+		CacheCreationInputTokenCostAbove1Hr: cacheWrite.Div(decimal.NewFromInt(1_000_000)),
 	}
 }
 
@@ -1095,12 +1149,17 @@ func calculatePiModelCost(cost PiModelCost, usage modelpricing.UsageSnapshot) mo
 	}
 	cacheWriteShort := usage.CacheCreateTokens - cacheWrite1h
 	breakdown := modelpricing.CostBreakdown{HasPricing: true, IsTiered: matchedThreshold >= 0}
-	breakdown.InputCost = rates.Input * float64(usage.InputTokens) / 1_000_000
-	breakdown.OutputCost = rates.Output * float64(usage.OutputTokens) / 1_000_000
-	breakdown.CacheReadCost = rates.CacheRead * float64(usage.CacheReadTokens) / 1_000_000
-	breakdown.Ephemeral5mCost = rates.CacheWrite * float64(cacheWriteShort) / 1_000_000
-	breakdown.Ephemeral1hCost = rates.Input * 2 * float64(cacheWrite1h) / 1_000_000
-	breakdown.CacheCreateCost = breakdown.Ephemeral5mCost + breakdown.Ephemeral1hCost
-	breakdown.TotalCost = breakdown.InputCost + breakdown.OutputCost + breakdown.CacheReadCost + breakdown.CacheCreateCost
+	input, _ := pricingRateDecimal(rates.Input)
+	output, _ := pricingRateDecimal(rates.Output)
+	cacheRead, _ := pricingRateDecimal(rates.CacheRead)
+	cacheWrite, _ := pricingRateDecimal(rates.CacheWrite)
+	scale := decimal.NewFromInt(1_000_000)
+	breakdown.InputCost = input.Mul(decimal.NewFromInt(int64(usage.InputTokens))).Div(scale)
+	breakdown.OutputCost = output.Mul(decimal.NewFromInt(int64(usage.OutputTokens))).Div(scale)
+	breakdown.CacheReadCost = cacheRead.Mul(decimal.NewFromInt(int64(usage.CacheReadTokens))).Div(scale)
+	breakdown.Ephemeral5mCost = cacheWrite.Mul(decimal.NewFromInt(int64(cacheWriteShort))).Div(scale)
+	breakdown.Ephemeral1hCost = input.Mul(decimal.NewFromInt(2)).Mul(decimal.NewFromInt(int64(cacheWrite1h))).Div(scale)
+	breakdown.CacheCreateCost = breakdown.Ephemeral5mCost.Add(breakdown.Ephemeral1hCost)
+	breakdown.TotalCost = breakdown.InputCost.Add(breakdown.OutputCost).Add(breakdown.CacheReadCost).Add(breakdown.CacheCreateCost)
 	return breakdown
 }

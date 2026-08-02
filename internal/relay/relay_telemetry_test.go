@@ -12,6 +12,7 @@ import (
 	relayprotocol "codeswitch/services/protocol"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
@@ -24,7 +25,7 @@ func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
 		{
 			Provider: "second", Model: "gpt-5", HTTPCode: 200, Success: true, UpstreamProtocol: "openai_chat",
 			Usage:         services.RequestLog{InputTokens: 10, OutputTokens: 5},
-			Cost:          modelpricing.CostBreakdown{InputCost: 0.1, OutputCost: 0.2, TotalCost: 0.3, HasPricing: true},
+			Cost:          modelpricing.CostBreakdown{InputCost: decimal.RequireFromString("0.1"), OutputCost: decimal.RequireFromString("0.2"), TotalCost: decimal.RequireFromString("0.3"), HasPricing: true},
 			PricingSource: services.PricingSourceCustom, PricingVersion: "custom:abc", PricingRuleID: "rule-1",
 		},
 	}
@@ -32,7 +33,7 @@ func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
 	if logical.AttemptCount != 2 || logical.Provider != "second" || logical.InputTokens != 10 || logical.OutputTokens != 5 {
 		t.Fatalf("逻辑请求聚合错误: %#v", logical)
 	}
-	if !logical.CostCalculated || !logical.HasPricing || logical.TotalCost != 0.3 || logical.PricingSource != services.PricingSourceCustom || logical.PricingVersion != "custom:abc" || logical.PricingRuleID != "rule-1" {
+	if !logical.CostCalculated || !logical.HasPricing || logical.TotalCost != "0.3" || logical.PricingSource != services.PricingSourceCustom || logical.PricingVersion != "custom:abc" || logical.PricingRuleID != "rule-1" {
 		t.Fatalf("逻辑请求未保留请求开始时捕获的价格元数据: %#v", logical)
 	}
 }

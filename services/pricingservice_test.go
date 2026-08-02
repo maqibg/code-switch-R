@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +12,7 @@ import (
 	"testing"
 
 	modelpricing "codeswitch/resources/model-pricing"
+	"github.com/shopspring/decimal"
 )
 
 func newPricingServiceForTest(t *testing.T, rules []PricingCustomRule) *PricingService {
@@ -37,8 +37,8 @@ func newPricingServiceForTest(t *testing.T, rules []PricingCustomRule) *PricingS
 
 func TestCustomPricingRulesAreCaseInsensitiveAndFirstMatchWins(t *testing.T) {
 	rules := []PricingCustomRule{
-		{ID: "generic", Name: "generic", Pattern: "gpt-.*", Enabled: true, Order: 0, Rates: PricingRates{Input: 2}},
-		{ID: "specific", Name: "specific", Pattern: "^gpt-test$", Enabled: true, Order: 1, Rates: PricingRates{Input: 9}},
+		{ID: "generic", Name: "generic", Pattern: "gpt-.*", Enabled: true, Order: 0, Rates: PricingRates{Input: "2"}},
+		{ID: "specific", Name: "specific", Pattern: "^gpt-test$", Enabled: true, Order: 1, Rates: PricingRates{Input: "9"}},
 	}
 	service := newPricingServiceForTest(t, rules)
 	snapshot := service.newRequestSnapshot("codex", "", "GPT-TEST")
@@ -46,7 +46,7 @@ func TestCustomPricingRulesAreCaseInsensitiveAndFirstMatchWins(t *testing.T) {
 	if result.Source != PricingSourceCustom || result.RuleID != "generic" {
 		t.Fatalf("应由第一条忽略大小写的规则命中: %#v", result)
 	}
-	if math.Abs(result.Cost.TotalCost-2) > 1e-9 || !result.Cost.HasPricing {
+	if !result.Cost.TotalCost.Equal(decimal.RequireFromString("2")) || !result.Cost.HasPricing {
 		t.Fatalf("自定义价格计算错误: %#v", result.Cost)
 	}
 }
@@ -64,7 +64,7 @@ func TestPricingMatchUsesBuiltinResolverCandidates(t *testing.T) {
 			continue
 		}
 		entry, matched := runtime.engine.ResolvePricing(normalizedCandidate)
-		if matched && (entry.InputCostPerToken > 0 || entry.OutputCostPerToken > 0) {
+		if matched && (entry.InputCostPerToken.GreaterThan(decimal.Zero) || entry.OutputCostPerToken.GreaterThan(decimal.Zero)) {
 			candidate = normalizedCandidate
 			break
 		}
@@ -81,22 +81,22 @@ func TestPricingMatchUsesBuiltinResolverCandidates(t *testing.T) {
 func TestCustomPricingRuleTierUsesHighestStrictThreshold(t *testing.T) {
 	rule := PricingCustomRule{
 		ID: "tier", Name: "tier", Pattern: "^tier-model$", Enabled: true,
-		Rates: PricingRates{Input: 1},
+		Rates: PricingRates{Input: "1"},
 		Tiers: []PricingTier{
-			{InputTokensAbove: 100, Rates: PricingRates{Input: 2}},
-			{InputTokensAbove: 200, Rates: PricingRates{Input: 3}},
+			{InputTokensAbove: 100, Rates: PricingRates{Input: "2"}},
+			{InputTokensAbove: 200, Rates: PricingRates{Input: "3"}},
 		},
 	}
 	service := newPricingServiceForTest(t, []PricingCustomRule{rule})
 	for _, test := range []struct {
 		tokens int
-		rate   float64
-	}{{100, 1}, {101, 2}, {201, 3}} {
+		rate   string
+	}{{100, "1"}, {101, "2"}, {201, "3"}} {
 		result := service.newRequestSnapshot("claude", "", "tier-model").Calculate(
 			"tier-model", modelpricing.UsageSnapshot{InputTokens: test.tokens},
 		)
-		want := float64(test.tokens) * test.rate / 1_000_000
-		if math.Abs(result.Cost.TotalCost-want) > 1e-12 {
+		want := decimal.NewFromInt(int64(test.tokens)).Mul(decimal.RequireFromString(test.rate)).Div(decimal.NewFromInt(1_000_000))
+		if !result.Cost.TotalCost.Equal(want) {
 			t.Fatalf("tokens=%d: got %v want %v", test.tokens, result.Cost.TotalCost, want)
 		}
 	}
@@ -106,7 +106,7 @@ func TestSaveCustomPricingRulePersistsAndRejectsStaleRevision(t *testing.T) {
 	service := newPricingServiceForTest(t, nil)
 	revision := service.runtime.Load().customRevision
 	saved, err := service.SaveCustomPricingRule(PricingCustomRule{
-		Name: "custom", Pattern: "^model$", Enabled: true, Rates: PricingRates{Input: 1},
+		Name: "custom", Pattern: "^model$", Enabled: true, Rates: PricingRates{Input: "1"},
 	}, revision)
 	if err != nil {
 		t.Fatal(err)

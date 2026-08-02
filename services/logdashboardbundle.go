@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daodao97/xgo/xdb"
+	"github.com/shopspring/decimal"
 )
 
 type DashboardBundle struct {
@@ -26,11 +27,11 @@ type aggregateSnapshot struct {
 	Reasoning       int64
 	CacheCreate     int64
 	CacheRead       int64
-	CostTotal       float64
-	CostInput       float64
-	CostOutput      float64
-	CostCacheCreate float64
-	CostCacheRead   float64
+	CostTotal       decimal.Decimal
+	CostInput       decimal.Decimal
+	CostOutput      decimal.Decimal
+	CostCacheCreate decimal.Decimal
+	CostCacheRead   decimal.Decimal
 	Successes       int64
 	DurationSumSec  float64
 	DurationCount   int64
@@ -91,12 +92,12 @@ func buildBundleOverview(rangeKey string, current, previous aggregateSnapshot, h
 		RangeKey:               rangeKey,
 		CurrentRequests:        current.Requests,
 		CurrentTokens:          current.InputTokens + current.OutputTokens + current.Reasoning,
-		CurrentCost:            current.CostTotal,
+		CurrentCost:            moneyString(current.CostTotal),
 		CurrentAvgDurationSec:  averageAggregateDuration(current),
 		CurrentSuccessRate:     aggregateSuccessRate(current),
 		PreviousRequests:       previous.Requests,
 		PreviousTokens:         previous.InputTokens + previous.OutputTokens + previous.Reasoning,
-		PreviousCost:           previous.CostTotal,
+		PreviousCost:           moneyString(previous.CostTotal),
 		PreviousAvgDurationSec: averageAggregateDuration(previous),
 		PreviousSuccessRate:    aggregateSuccessRate(previous),
 		HasPreviousComparison:  hasPrevious,
@@ -117,17 +118,18 @@ func queryAggregateSnapshotFiltered(db *sql.DB, start *time.Time, end time.Time,
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0),
-			COALESCE(SUM(input_cost), 0),
-			COALESCE(SUM(output_cost), 0),
-			COALESCE(SUM(cache_create_cost), 0),
-			COALESCE(SUM(cache_read_cost), 0),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("input_cost_decimal", "input_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("output_cost_decimal", "output_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_create_cost_decimal", "cache_create_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_read_cost_decimal", "cache_read_cost") + `, '|'), ''),
 			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN duration_sec ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN 1 ELSE 0 END), 0)
 		FROM request_log
 		WHERE ` + where
 	var snapshot aggregateSnapshot
+	var costTotal, costInput, costOutput, costCacheCreate, costCacheRead string
 	err := db.QueryRow(query, args...).Scan(
 		&snapshot.Requests,
 		&snapshot.InputTokens,
@@ -135,15 +137,20 @@ func queryAggregateSnapshotFiltered(db *sql.DB, start *time.Time, end time.Time,
 		&snapshot.Reasoning,
 		&snapshot.CacheCreate,
 		&snapshot.CacheRead,
-		&snapshot.CostTotal,
-		&snapshot.CostInput,
-		&snapshot.CostOutput,
-		&snapshot.CostCacheCreate,
-		&snapshot.CostCacheRead,
+		&costTotal,
+		&costInput,
+		&costOutput,
+		&costCacheCreate,
+		&costCacheRead,
 		&snapshot.Successes,
 		&snapshot.DurationSumSec,
 		&snapshot.DurationCount,
 	)
+	snapshot.CostTotal = sumMoneyList(costTotal)
+	snapshot.CostInput = sumMoneyList(costInput)
+	snapshot.CostOutput = sumMoneyList(costOutput)
+	snapshot.CostCacheCreate = sumMoneyList(costCacheCreate)
+	snapshot.CostCacheRead = sumMoneyList(costCacheRead)
 	if err != nil && isNoSuchTableErr(err) {
 		return aggregateSnapshot{}, nil
 	}
@@ -160,7 +167,7 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0)
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		GROUP BY bucket_key
@@ -191,6 +198,7 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 		); err != nil {
 			return LogStats{}, err
 		}
+		item.TotalCost = moneyString(sumMoneyList(item.TotalCost))
 		seriesMap[item.Day] = item
 	}
 	if err := rows.Err(); err != nil {
@@ -206,11 +214,11 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 		ReasoningTokens:   snapshot.Reasoning,
 		CacheCreateTokens: snapshot.CacheCreate,
 		CacheReadTokens:   snapshot.CacheRead,
-		CostTotal:         snapshot.CostTotal,
-		CostInput:         snapshot.CostInput,
-		CostOutput:        snapshot.CostOutput,
-		CostCacheCreate:   snapshot.CostCacheCreate,
-		CostCacheRead:     snapshot.CostCacheRead,
+		CostTotal:         moneyString(snapshot.CostTotal),
+		CostInput:         moneyString(snapshot.CostInput),
+		CostOutput:        moneyString(snapshot.CostOutput),
+		CostCacheCreate:   moneyString(snapshot.CostCacheCreate),
+		CostCacheRead:     moneyString(snapshot.CostCacheRead),
 		Series:            ordered,
 	}, nil
 }
@@ -232,11 +240,11 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0),
-			COALESCE(SUM(input_cost), 0),
-			COALESCE(SUM(output_cost), 0),
-			COALESCE(SUM(cache_create_cost), 0),
-			COALESCE(SUM(cache_read_cost), 0),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("input_cost_decimal", "input_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("output_cost_decimal", "output_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_create_cost_decimal", "cache_create_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_read_cost_decimal", "cache_read_cost") + `, '|'), ''),
 			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN duration_sec ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN 1 ELSE 0 END), 0)
@@ -263,6 +271,7 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 			durationCnt int64
 		)
 		stats.RangeKey = window.key
+		var costTotal, costInput, costOutput, costCacheCreate, costCacheRead string
 		if err := rows.Scan(
 			&platformKey,
 			&stats.TotalRequests,
@@ -271,28 +280,33 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 			&stats.ReasoningTokens,
 			&stats.CacheCreateTokens,
 			&stats.CacheReadTokens,
-			&stats.CostTotal,
-			&stats.CostInput,
-			&stats.CostOutput,
-			&stats.CostCacheCreate,
-			&stats.CostCacheRead,
+			&costTotal,
+			&costInput,
+			&costOutput,
+			&costCacheCreate,
+			&costCacheRead,
 			&successes,
 			&durationSum,
 			&durationCnt,
 		); err != nil {
 			return nil, aggregateSnapshot{}, err
 		}
+		stats.CostTotal = moneyString(sumMoneyList(costTotal))
+		stats.CostInput = moneyString(sumMoneyList(costInput))
+		stats.CostOutput = moneyString(sumMoneyList(costOutput))
+		stats.CostCacheCreate = moneyString(sumMoneyList(costCacheCreate))
+		stats.CostCacheRead = moneyString(sumMoneyList(costCacheRead))
 		total.Requests += stats.TotalRequests
 		total.InputTokens += stats.InputTokens
 		total.OutputTokens += stats.OutputTokens
 		total.Reasoning += stats.ReasoningTokens
 		total.CacheCreate += stats.CacheCreateTokens
 		total.CacheRead += stats.CacheReadTokens
-		total.CostTotal += stats.CostTotal
-		total.CostInput += stats.CostInput
-		total.CostOutput += stats.CostOutput
-		total.CostCacheCreate += stats.CostCacheCreate
-		total.CostCacheRead += stats.CostCacheRead
+		total.CostTotal = total.CostTotal.Add(parseMoneyOrLegacy(stats.CostTotal))
+		total.CostInput = total.CostInput.Add(parseMoneyOrLegacy(stats.CostInput))
+		total.CostOutput = total.CostOutput.Add(parseMoneyOrLegacy(stats.CostOutput))
+		total.CostCacheCreate = total.CostCacheCreate.Add(parseMoneyOrLegacy(stats.CostCacheCreate))
+		total.CostCacheRead = total.CostCacheRead.Add(parseMoneyOrLegacy(stats.CostCacheRead))
 		total.Successes += successes
 		total.DurationSumSec += durationSum
 		total.DurationCount += durationCnt
@@ -319,7 +333,7 @@ func queryProviderRanks(db *sql.DB, window statsWindow, limit int) ([]ProviderDa
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0)
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		GROUP BY provider_name
@@ -362,6 +376,9 @@ func queryProviderRanks(db *sql.DB, window statsWindow, limit int) ([]ProviderDa
 }
 
 func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailyStat, error) {
+	if limit <= 0 {
+		return []ModelDailyStat{}, nil
+	}
 	query := `
 		SELECT
 			COALESCE(NULLIF(TRIM(model), ''), '(unknown)') AS model_name,
@@ -373,14 +390,12 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0)
-		FROM request_log
-		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
-		GROUP BY model_name
-		ORDER BY total_requests DESC, total_cost DESC, model_name ASC
-		LIMIT ?
-	`
-	args := append(buildRangeOnlyArgs(window.currentStart, window.currentEnd), limit)
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
+			FROM request_log
+			WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
+			GROUP BY model_name
+		`
+	args := buildRangeOnlyArgs(window.currentStart, window.currentEnd)
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		if isNoSuchTableErr(err) {
@@ -412,7 +427,24 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 		}
 		results = append(results, stat)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].TotalRequests != results[j].TotalRequests {
+			return results[i].TotalRequests > results[j].TotalRequests
+		}
+		leftCost := parseMoneyOrLegacy(results[i].CostTotal)
+		rightCost := parseMoneyOrLegacy(results[j].CostTotal)
+		if !leftCost.Equal(rightCost) {
+			return leftCost.GreaterThan(rightCost)
+		}
+		return results[i].Model < results[j].Model
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
 }
 
 func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]RequestLog, error) {
@@ -421,8 +453,14 @@ func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]RequestLog, e
 			id, platform, model, provider, http_code,
 			input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 			reasoning_tokens, is_stream, duration_sec, created_at,
-			input_cost, output_cost, reasoning_cost, cache_create_cost, cache_read_cost,
-			ephemeral_5m_cost, ephemeral_1h_cost, total_cost, has_pricing
+					` + decimalMoneySQL("input_cost_decimal", "input_cost") + `,
+					` + decimalMoneySQL("output_cost_decimal", "output_cost") + `,
+					` + decimalMoneySQL("reasoning_cost_decimal", "reasoning_cost") + `,
+					` + decimalMoneySQL("cache_create_cost_decimal", "cache_create_cost") + `,
+					` + decimalMoneySQL("cache_read_cost_decimal", "cache_read_cost") + `,
+					` + decimalMoneySQL("ephemeral_5m_cost_decimal", "ephemeral_5m_cost") + `,
+					` + decimalMoneySQL("ephemeral_1h_cost_decimal", "ephemeral_1h_cost") + `,
+					` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, has_pricing
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		ORDER BY id DESC

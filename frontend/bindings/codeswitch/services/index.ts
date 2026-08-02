@@ -108,11 +108,8 @@ export {
     PiBuiltinModelAddRequest,
     PiBuiltinModelAddResult,
     PiBuiltinProvider,
-    PiModelCost,
-    PiModelCostTier,
     PiModelEntry,
     PiModelOverride,
-    PiModelOverrideCost,
     PiModelsCatalogModel,
     PiModelsCatalogSnapshot,
     PiModelsCatalogTemplate,
@@ -159,4 +156,9 @@ export {
     UpdateState,
     UpdateStateSnapshot,
     WSLDetection
+} from "./models.js";
+
+export type {
+    PiModelCost,
+    PiModelOverrideCost
 } from "./models.js";

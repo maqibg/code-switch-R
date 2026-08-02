@@ -2,6 +2,9 @@ package services
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -254,5 +257,120 @@ func TestMigrationsCreateExpectedIndexes(t *testing.T) {
 		if !found[idx] {
 			t.Errorf("索引 %s 应已创建", idx)
 		}
+	}
+}
+
+func TestDecimalMoneyBackfillResumesInBatches(t *testing.T) {
+	db := openMigrationTestDB(t)
+	if err := RunMigrationsOn(db); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+	for index, value := range []string{"0.1", "0.2", "0.3"} {
+		if _, err := db.Exec(`
+			INSERT INTO request_log (platform, provider, model, input_cost, total_cost, cost_calculated)
+			VALUES ('claude', ?, 'model', ?, ?, 1)
+		`, fmt.Sprintf("provider-%d", index), value, value); err != nil {
+			t.Fatalf("写入历史日志失败: %v", err)
+		}
+	}
+	if _, err := db.Exec(`
+		INSERT INTO relay_attempt (request_id, attempt_index, provider, total_cost)
+		VALUES ('request-1', 1, 'provider', 0.4), ('request-2', 1, 'provider', 0.5)
+	`); err != nil {
+		t.Fatalf("写入历史尝试失败: %v", err)
+	}
+
+	updated, done, err := backfillDecimalMoneyBatchOn(db, 1)
+	if err != nil {
+		t.Fatalf("第一批金额迁移失败: %v", err)
+	}
+	if updated != 2 || done {
+		t.Fatalf("第一批应各处理一行且未完成: updated=%d done=%v", updated, done)
+	}
+	var firstInput, firstSource string
+	if err := db.QueryRow(`SELECT input_cost_decimal, pricing_source FROM request_log ORDER BY id LIMIT 1`).Scan(&firstInput, &firstSource); err != nil {
+		t.Fatal(err)
+	}
+	if firstInput != "0.1" || firstSource != "legacy" {
+		t.Fatalf("第一批转换结果错误: input=%q source=%q", firstInput, firstSource)
+	}
+
+	for i := 0; i < 5 && !done; i++ {
+		_, done, err = backfillDecimalMoneyBatchOn(db, 1)
+		if err != nil {
+			t.Fatalf("续接金额迁移失败: %v", err)
+		}
+	}
+	if !done {
+		t.Fatal("有限历史数据应在有限批次内完成迁移")
+	}
+	var migrated int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM request_log WHERE input_cost_decimal IS NOT NULL AND total_cost_decimal IS NOT NULL`).Scan(&migrated); err != nil {
+		t.Fatal(err)
+	}
+	if migrated != 3 {
+		t.Fatalf("请求日志精确金额迁移数量错误: %d", migrated)
+	}
+	var attemptCost string
+	if err := db.QueryRow(`SELECT total_cost_decimal FROM relay_attempt ORDER BY id LIMIT 1`).Scan(&attemptCost); err != nil {
+		t.Fatal(err)
+	}
+	if attemptCost != "0.4" {
+		t.Fatalf("relay_attempt 精确金额错误: %q", attemptCost)
+	}
+
+	updated, done, err = backfillDecimalMoneyBatchOn(db, 1)
+	if err != nil || updated != 0 || !done {
+		t.Fatalf("已完成迁移应幂等: updated=%d done=%v err=%v", updated, done, err)
+	}
+}
+
+func TestDecimalMoneyStatsFallbackBeforeBackfill(t *testing.T) {
+	db := openMigrationTestDB(t)
+	if err := RunMigrationsOn(db); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO request_log (platform, provider, model, http_code, input_cost, total_cost, cost_calculated, created_at)
+		VALUES ('claude', 'legacy', 'model', 200, 0.125, 0.375, 1, CURRENT_TIMESTAMP)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := queryAggregateSnapshot(db, nil, nowInBeijing().AddDate(0, 0, 1), "claude")
+	if err != nil {
+		t.Fatalf("迁移期间统计失败: %v", err)
+	}
+	if !snapshot.CostInput.Equal(parseMoneyOrLegacy("0.125")) || !snapshot.CostTotal.Equal(parseMoneyOrLegacy("0.375")) {
+		t.Fatalf("迁移未完成时统计不应丢失旧金额: %#v", snapshot)
+	}
+}
+
+func TestDecimalMigrationBackupsAreCapped(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", buildAppSQLiteDSN(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE marker (value TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		if err := backupDatabaseForDecimalMigration(db); err != nil {
+			t.Fatalf("创建第 %d 个备份失败: %v", i+1, err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".bak" {
+			count++
+		}
+	}
+	if count > 3 {
+		t.Fatalf("金额迁移备份不应超过 3 份，实际 %d", count)
 	}
 }

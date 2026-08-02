@@ -12,19 +12,19 @@ func TestAppSettingsCacheRefreshesAfterExternalChange(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "app.json")
 	service := &AppSettingsService{path: path}
 	initial := service.defaultSettings()
-	initial.BudgetTotal = 12
+	initial.BudgetTotal = "12"
 	writeAppSettingsTestFile(t, path, initial)
 
 	loaded, err := service.GetAppSettings()
 	if err != nil {
 		t.Fatalf("GetAppSettings() error = %v", err)
 	}
-	if loaded.BudgetTotal != 12 {
+	if loaded.BudgetTotal != "12" {
 		t.Fatalf("BudgetTotal = %v, want 12", loaded.BudgetTotal)
 	}
 
 	updated := initial
-	updated.BudgetTotal = 12345
+	updated.BudgetTotal = "12345"
 	writeAppSettingsTestFile(t, path, updated)
 	future := time.Now().Add(2 * time.Second)
 	if err := os.Chtimes(path, future, future); err != nil {
@@ -35,7 +35,7 @@ func TestAppSettingsCacheRefreshesAfterExternalChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAppSettings() after external change error = %v", err)
 	}
-	if loaded.BudgetTotal != 12345 {
+	if loaded.BudgetTotal != "12345" {
 		t.Fatalf("BudgetTotal after external change = %v, want 12345", loaded.BudgetTotal)
 	}
 }

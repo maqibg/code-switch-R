@@ -17,11 +17,11 @@ func queryLogStats(db *sql.DB, window statsWindow, platform, provider string) (L
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0),
-			COALESCE(SUM(input_cost), 0),
-			COALESCE(SUM(output_cost), 0),
-			COALESCE(SUM(cache_create_cost), 0),
-			COALESCE(SUM(cache_read_cost), 0)
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("input_cost_decimal", "input_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("output_cost_decimal", "output_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_create_cost_decimal", "cache_create_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_read_cost_decimal", "cache_read_cost") + `, '|'), '')
 		FROM request_log
 		WHERE ` + where + `
 		GROUP BY bucket_key
@@ -39,7 +39,7 @@ func queryLogStats(db *sql.DB, window statsWindow, platform, provider string) (L
 	snapshot := aggregateSnapshot{}
 	for rows.Next() {
 		var item LogStatsSeries
-		var costInput, costOutput, costCacheCreate, costCacheRead float64
+		var costInput, costOutput, costCacheCreate, costCacheRead string
 		if err := rows.Scan(
 			&item.Day,
 			&item.TotalRequests,
@@ -63,11 +63,11 @@ func queryLogStats(db *sql.DB, window statsWindow, platform, provider string) (L
 		snapshot.Reasoning += item.ReasoningTokens
 		snapshot.CacheCreate += item.CacheCreateTokens
 		snapshot.CacheRead += item.CacheReadTokens
-		snapshot.CostTotal += item.TotalCost
-		snapshot.CostInput += costInput
-		snapshot.CostOutput += costOutput
-		snapshot.CostCacheCreate += costCacheCreate
-		snapshot.CostCacheRead += costCacheRead
+		snapshot.CostTotal = snapshot.CostTotal.Add(sumMoneyList(item.TotalCost))
+		snapshot.CostInput = snapshot.CostInput.Add(sumMoneyList(costInput))
+		snapshot.CostOutput = snapshot.CostOutput.Add(sumMoneyList(costOutput))
+		snapshot.CostCacheCreate = snapshot.CostCacheCreate.Add(sumMoneyList(costCacheCreate))
+		snapshot.CostCacheRead = snapshot.CostCacheRead.Add(sumMoneyList(costCacheRead))
 	}
 	if err := rows.Err(); err != nil {
 		return LogStats{}, err
@@ -84,11 +84,11 @@ func logStatsFromSnapshot(window statsWindow, snapshot aggregateSnapshot, series
 		ReasoningTokens:   snapshot.Reasoning,
 		CacheCreateTokens: snapshot.CacheCreate,
 		CacheReadTokens:   snapshot.CacheRead,
-		CostTotal:         snapshot.CostTotal,
-		CostInput:         snapshot.CostInput,
-		CostOutput:        snapshot.CostOutput,
-		CostCacheCreate:   snapshot.CostCacheCreate,
-		CostCacheRead:     snapshot.CostCacheRead,
+		CostTotal:         moneyString(snapshot.CostTotal),
+		CostInput:         moneyString(snapshot.CostInput),
+		CostOutput:        moneyString(snapshot.CostOutput),
+		CostCacheCreate:   moneyString(snapshot.CostCacheCreate),
+		CostCacheRead:     moneyString(snapshot.CostCacheRead),
 		Series:            series,
 	}
 }
@@ -106,7 +106,7 @@ func queryProviderStats(db *sql.DB, window statsWindow, platform, provider, sour
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0)
+			COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
 		FROM request_log
 		WHERE ` + where + `
 		GROUP BY 1
@@ -137,6 +137,7 @@ func queryProviderStats(db *sql.DB, window statsWindow, platform, provider, sour
 		); err != nil {
 			return nil, err
 		}
+		stat.CostTotal = moneyString(sumMoneyList(stat.CostTotal))
 		if stat.TotalRequests > 0 {
 			stat.SuccessRate = float64(stat.SuccessfulRequests) / float64(stat.TotalRequests)
 		}
@@ -158,7 +159,7 @@ func queryModelStats(db *sql.DB, window statsWindow, platform string) ([]ModelDa
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-			COALESCE(SUM(total_cost), 0)
+			COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
 		FROM request_log
 		WHERE ` + where + `
 		GROUP BY 1
@@ -189,6 +190,7 @@ func queryModelStats(db *sql.DB, window statsWindow, platform string) ([]ModelDa
 		); err != nil {
 			return nil, err
 		}
+		stat.CostTotal = moneyString(sumMoneyList(stat.CostTotal))
 		if stat.TotalRequests > 0 {
 			stat.SuccessRate = float64(stat.SuccessfulRequests) / float64(stat.TotalRequests)
 		}
@@ -205,7 +207,7 @@ func queryHeatmapStats(db *sql.DB, start time.Time, totalHours int) ([]HeatmapSt
 			COALESCE(SUM(input_tokens), 0),
 			COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(reasoning_tokens), 0),
-			COALESCE(SUM(total_cost), 0)
+			COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
 		FROM request_log
 		WHERE created_at >= ?
 		GROUP BY bucket_key
@@ -233,6 +235,7 @@ func queryHeatmapStats(db *sql.DB, start time.Time, totalHours int) ([]HeatmapSt
 		); err != nil {
 			return nil, err
 		}
+		stat.TotalCost = moneyString(sumMoneyList(stat.TotalCost))
 		if len(stat.Day) >= len("2006-01-02 15") {
 			stat.Day = stat.Day[5:13]
 		}
@@ -241,20 +244,20 @@ func queryHeatmapStats(db *sql.DB, start time.Time, totalHours int) ([]HeatmapSt
 	return stats, rows.Err()
 }
 
-func queryCostSince(db *sql.DB, start time.Time, platform string) (float64, error) {
+func queryCostSince(db *sql.DB, start time.Time, platform string) (Money, error) {
 	clauses := []string{"created_at >= ?"}
 	args := []interface{}{formatCreatedAtBoundary(start)}
 	if strings.TrimSpace(platform) != "" {
 		clauses = append(clauses, "platform = ?")
 		args = append(args, platform)
 	}
-	var total float64
+	var total string
 	err := db.QueryRow(
-		`SELECT COALESCE(SUM(total_cost), 0) FROM request_log WHERE `+strings.Join(clauses, " AND "),
+		`SELECT COALESCE(GROUP_CONCAT(`+decimalMoneySQL("total_cost_decimal", "total_cost")+`, '|'), '') FROM request_log WHERE `+strings.Join(clauses, " AND "),
 		args...,
 	).Scan(&total)
 	if err != nil && isNoSuchTableErr(err) {
-		return 0, nil
+		return Money{}, nil
 	}
-	return total, err
+	return sumMoneyList(total), err
 }

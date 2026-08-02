@@ -33,18 +33,19 @@ type RequestLog struct {
 	ErrorType         string  `json:"error_type,omitempty"`
 	CreatedAt         string  `json:"created_at"`
 	// ServiceTier 上游实际分配的档位(default/priority/flex 等),空=未区分。
-	ServiceTier     string  `json:"service_tier"`
-	InputCost       float64 `json:"input_cost"`
-	OutputCost      float64 `json:"output_cost"`
-	ReasoningCost   float64 `json:"reasoning_cost"`
-	CacheCreateCost float64 `json:"cache_create_cost"`
-	CacheReadCost   float64 `json:"cache_read_cost"`
-	Ephemeral5mCost float64 `json:"ephemeral_5m_cost"`
-	Ephemeral1hCost float64 `json:"ephemeral_1h_cost"`
-	TotalCost       float64 `json:"total_cost"`
-	HasPricing      bool    `json:"has_pricing"`
-	CostCalculated  bool    `json:"cost_calculated,omitempty"`
-	PricingVersion  string  `json:"pricing_version,omitempty"`
-	PricingSource   string  `json:"pricing_source,omitempty"`
-	PricingRuleID   string  `json:"pricing_rule_id,omitempty"`
+	ServiceTier     string `json:"service_tier"`
+	InputCost       string `json:"input_cost"`
+	OutputCost      string `json:"output_cost"`
+	ReasoningCost   string `json:"reasoning_cost"`
+	CacheCreateCost string `json:"cache_create_cost"`
+	CacheReadCost   string `json:"cache_read_cost"`
+	Ephemeral5mCost string `json:"ephemeral_5m_cost"`
+	Ephemeral1hCost string `json:"ephemeral_1h_cost"`
+	TotalCost       string `json:"total_cost"`
+	HasPricing      bool   `json:"has_pricing"`
+	CostCalculated  bool   `json:"cost_calculated,omitempty"`
+	PricingVersion  string `json:"pricing_version,omitempty"`
+	PricingSource   string `json:"pricing_source,omitempty"`
+	PricingRuleID   string `json:"pricing_rule_id,omitempty"`
+	PricingSnapshot string `json:"pricing_snapshot,omitempty"`
 }

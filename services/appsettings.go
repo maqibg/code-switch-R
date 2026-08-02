@@ -18,35 +18,35 @@ const (
 )
 
 type AppSettings struct {
-	ShowHeatmap               bool    `json:"show_heatmap"`
-	ShowHomeTitle             bool    `json:"show_home_title"`
-	BudgetTotal               float64 `json:"budget_total"`
-	BudgetUsedAdjustment      float64 `json:"budget_used_adjustment"`
-	BudgetCycleEnabled        bool    `json:"budget_cycle_enabled"`
-	BudgetCycleMode           string  `json:"budget_cycle_mode"`
-	BudgetRefreshTime         string  `json:"budget_refresh_time"`
-	BudgetRefreshDay          int     `json:"budget_refresh_day"`
-	BudgetShowCountdown       bool    `json:"budget_show_countdown"`
-	BudgetShowForecast        bool    `json:"budget_show_forecast"`
-	BudgetForecastMethod      string  `json:"budget_forecast_method"`
-	BudgetTotalCodex          float64 `json:"budget_total_codex"`
-	BudgetUsedAdjustmentCodex float64 `json:"budget_used_adjustment_codex"`
-	BudgetCycleEnabledCodex   bool    `json:"budget_cycle_enabled_codex"`
-	BudgetCycleModeCodex      string  `json:"budget_cycle_mode_codex"`
-	BudgetRefreshTimeCodex    string  `json:"budget_refresh_time_codex"`
-	BudgetRefreshDayCodex     int     `json:"budget_refresh_day_codex"`
-	BudgetShowCountdownCodex  bool    `json:"budget_show_countdown_codex"`
-	BudgetShowForecastCodex   bool    `json:"budget_show_forecast_codex"`
-	BudgetForecastMethodCodex string  `json:"budget_forecast_method_codex"`
-	AutoStart                 bool    `json:"auto_start"`
-	AutoUpdate                bool    `json:"auto_update"`
-	EnableSwitchNotify        bool    `json:"enable_switch_notify"` // 供应商切换通知开关
-	EnableRoundRobin          bool    `json:"enable_round_robin"`   // 同 Level 轮询负载均衡开关（默认关闭）
-	GlobalProxyEnabled        bool    `json:"global_proxy_enabled"`
-	GlobalProxyProtocol       string  `json:"global_proxy_protocol"`
-	GlobalProxyHost           string  `json:"global_proxy_host"`
-	GlobalProxyPort           int     `json:"global_proxy_port"`
-	LogRetentionDays          int     `json:"log_retention_days"`
+	ShowHeatmap               bool   `json:"show_heatmap"`
+	ShowHomeTitle             bool   `json:"show_home_title"`
+	BudgetTotal               string `json:"budget_total"`
+	BudgetUsedAdjustment      string `json:"budget_used_adjustment"`
+	BudgetCycleEnabled        bool   `json:"budget_cycle_enabled"`
+	BudgetCycleMode           string `json:"budget_cycle_mode"`
+	BudgetRefreshTime         string `json:"budget_refresh_time"`
+	BudgetRefreshDay          int    `json:"budget_refresh_day"`
+	BudgetShowCountdown       bool   `json:"budget_show_countdown"`
+	BudgetShowForecast        bool   `json:"budget_show_forecast"`
+	BudgetForecastMethod      string `json:"budget_forecast_method"`
+	BudgetTotalCodex          string `json:"budget_total_codex"`
+	BudgetUsedAdjustmentCodex string `json:"budget_used_adjustment_codex"`
+	BudgetCycleEnabledCodex   bool   `json:"budget_cycle_enabled_codex"`
+	BudgetCycleModeCodex      string `json:"budget_cycle_mode_codex"`
+	BudgetRefreshTimeCodex    string `json:"budget_refresh_time_codex"`
+	BudgetRefreshDayCodex     int    `json:"budget_refresh_day_codex"`
+	BudgetShowCountdownCodex  bool   `json:"budget_show_countdown_codex"`
+	BudgetShowForecastCodex   bool   `json:"budget_show_forecast_codex"`
+	BudgetForecastMethodCodex string `json:"budget_forecast_method_codex"`
+	AutoStart                 bool   `json:"auto_start"`
+	AutoUpdate                bool   `json:"auto_update"`
+	EnableSwitchNotify        bool   `json:"enable_switch_notify"` // 供应商切换通知开关
+	EnableRoundRobin          bool   `json:"enable_round_robin"`   // 同 Level 轮询负载均衡开关（默认关闭）
+	GlobalProxyEnabled        bool   `json:"global_proxy_enabled"`
+	GlobalProxyProtocol       string `json:"global_proxy_protocol"`
+	GlobalProxyHost           string `json:"global_proxy_host"`
+	GlobalProxyPort           int    `json:"global_proxy_port"`
+	LogRetentionDays          int    `json:"log_retention_days"`
 	// LogRetentionInitialized 标记保留策略是否已经对用户明确过。
 	//
 	// LogRetentionDays 的 0 表示"永不清理"，但旧版本 app.json 里根本没有这个字段，
@@ -58,6 +58,50 @@ type AppSettings struct {
 	// LogRetentionNotice 一次性提示文案，非空表示需要向用户说明保留策略的变化。
 	// 前端读取并展示后调用 AcknowledgeLogRetentionNotice 清除。
 	LogRetentionNotice string `json:"log_retention_notice,omitempty"`
+}
+
+func (settings *AppSettings) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, key := range []string{"budget_total", "budget_used_adjustment", "budget_total_codex", "budget_used_adjustment_codex"} {
+		value, ok := raw[key]
+		if !ok || len(value) == 0 || string(value) == "null" {
+			continue
+		}
+		text := string(value)
+		if value[0] != '"' {
+			amount, err := parseSignedMoney(text)
+			if err != nil {
+				return fmt.Errorf("解析 %s 失败: %w", key, err)
+			}
+			text = moneyString(amount)
+		} else {
+			var quoted string
+			if err := json.Unmarshal(value, &quoted); err != nil {
+				return err
+			}
+			amount, err := parseSignedMoney(quoted)
+			if err != nil {
+				return fmt.Errorf("解析 %s 失败: %w", key, err)
+			}
+			text = moneyString(amount)
+		}
+		encoded := json.RawMessage("\"" + text + "\"")
+		raw[key] = encoded
+	}
+	normalized, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	type plain AppSettings
+	var parsed plain
+	if err := json.Unmarshal(normalized, &parsed); err != nil {
+		return err
+	}
+	*settings = AppSettings(parsed)
+	return nil
 }
 
 type AppSettingsService struct {
@@ -153,8 +197,8 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 	return AppSettings{
 		ShowHeatmap:               true,
 		ShowHomeTitle:             true,
-		BudgetTotal:               0,
-		BudgetUsedAdjustment:      0,
+		BudgetTotal:               "0",
+		BudgetUsedAdjustment:      "0",
 		BudgetCycleEnabled:        false,
 		BudgetCycleMode:           "daily",
 		BudgetRefreshTime:         "00:00",
@@ -162,8 +206,8 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 		BudgetShowCountdown:       false,
 		BudgetShowForecast:        false,
 		BudgetForecastMethod:      "cycle",
-		BudgetTotalCodex:          0,
-		BudgetUsedAdjustmentCodex: 0,
+		BudgetTotalCodex:          "0",
+		BudgetUsedAdjustmentCodex: "0",
 		BudgetCycleEnabledCodex:   false,
 		BudgetCycleModeCodex:      "daily",
 		BudgetRefreshTimeCodex:    "00:00",

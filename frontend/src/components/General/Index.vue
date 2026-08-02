@@ -26,6 +26,8 @@ import { extractErrorMessage } from '../../utils/error'
 import { applyTheme, getCurrentTheme } from '../../utils/ThemeManager'
 import { setupI18n } from '../../utils/i18n'
 import { getStoredLocale, hydrateFrontendPreferences } from '../../utils/frontendPreferences'
+import { decimalMoney } from '../../utils/money'
+import Decimal from 'decimal.js'
 
 const { t } = useI18n()
 
@@ -58,8 +60,8 @@ const globalProxyProtocol = ref<AppSettings['global_proxy_protocol']>(
 const globalProxyHost = ref(getCachedString('globalProxyHost', '127.0.0.1'))
 const globalProxyPort = ref(getCachedNumber('globalProxyPort', 7890))
 const logRetentionDays = ref(getCachedNumber('logRetentionDays', 0))
-const budgetTotal = ref(getCachedNumber('budgetTotal', 0))
-const budgetUsedAdjustment = ref(getCachedNumber('budgetUsedAdjustment', 0))
+const budgetTotal = ref(getCachedString('budgetTotal', '0'))
+const budgetUsedAdjustment = ref(getCachedString('budgetUsedAdjustment', '0'))
 const budgetForecastMethod = ref(getCachedString('budgetForecastMethod', 'cycle'))
 const budgetCycleEnabled = ref(getCachedValue('budgetCycleEnabled', false))
 const budgetCycleMode = ref(getCachedString('budgetCycleMode', 'daily'))
@@ -67,8 +69,8 @@ const budgetRefreshTime = ref(getCachedString('budgetRefreshTime', '00:00'))
 const budgetRefreshDay = ref(getCachedNumber('budgetRefreshDay', 1))
 const budgetShowCountdown = ref(getCachedValue('budgetShowCountdown', false))
 const budgetShowForecast = ref(getCachedValue('budgetShowForecast', false))
-const budgetTotalCodex = ref(getCachedNumber('budgetTotalCodex', 0))
-const budgetUsedAdjustmentCodex = ref(getCachedNumber('budgetUsedAdjustmentCodex', 0))
+const budgetTotalCodex = ref(getCachedString('budgetTotalCodex', '0'))
+const budgetUsedAdjustmentCodex = ref(getCachedString('budgetUsedAdjustmentCodex', '0'))
 const budgetForecastMethodCodex = ref(getCachedString('budgetForecastMethodCodex', 'cycle'))
 const budgetCycleEnabledCodex = ref(getCachedValue('budgetCycleEnabledCodex', false))
 const budgetCycleModeCodex = ref(getCachedString('budgetCycleModeCodex', 'daily'))
@@ -133,8 +135,8 @@ const loadAppSettings = async () => {
     const data = await fetchAppSettings()
     heatmapEnabled.value = data?.show_heatmap ?? true
     homeTitleVisible.value = data?.show_home_title ?? true
-    budgetTotal.value = Number(data?.budget_total ?? 0)
-    budgetUsedAdjustment.value = Number(data?.budget_used_adjustment ?? 0)
+    budgetTotal.value = data?.budget_total ?? '0'
+    budgetUsedAdjustment.value = data?.budget_used_adjustment ?? '0'
     budgetForecastMethod.value = normalizeBudgetForecastMethod(data?.budget_forecast_method ?? 'cycle')
     budgetCycleEnabled.value = data?.budget_cycle_enabled ?? false
     budgetCycleMode.value = data?.budget_cycle_mode === 'weekly' ? 'weekly' : 'daily'
@@ -142,8 +144,8 @@ const loadAppSettings = async () => {
     budgetRefreshDay.value = Number.isFinite(data?.budget_refresh_day) ? data?.budget_refresh_day : 1
     budgetShowCountdown.value = data?.budget_show_countdown ?? false
     budgetShowForecast.value = data?.budget_show_forecast ?? false
-    budgetTotalCodex.value = Number(data?.budget_total_codex ?? 0)
-    budgetUsedAdjustmentCodex.value = Number(data?.budget_used_adjustment_codex ?? 0)
+    budgetTotalCodex.value = data?.budget_total_codex ?? '0'
+    budgetUsedAdjustmentCodex.value = data?.budget_used_adjustment_codex ?? '0'
     budgetForecastMethodCodex.value = normalizeBudgetForecastMethod(data?.budget_forecast_method_codex ?? 'cycle')
     budgetCycleEnabledCodex.value = data?.budget_cycle_enabled_codex ?? false
     budgetCycleModeCodex.value = data?.budget_cycle_mode_codex === 'weekly' ? 'weekly' : 'daily'
@@ -195,8 +197,8 @@ const loadAppSettings = async () => {
     console.error('failed to load app settings', error)
     heatmapEnabled.value = true
     homeTitleVisible.value = true
-    budgetTotal.value = 0
-    budgetUsedAdjustment.value = 0
+    budgetTotal.value = '0'
+    budgetUsedAdjustment.value = '0'
     budgetForecastMethod.value = 'cycle'
     budgetCycleEnabled.value = false
     budgetCycleMode.value = 'daily'
@@ -204,8 +206,8 @@ const loadAppSettings = async () => {
     budgetRefreshDay.value = 1
     budgetShowCountdown.value = false
     budgetShowForecast.value = false
-    budgetTotalCodex.value = 0
-    budgetUsedAdjustmentCodex.value = 0
+    budgetTotalCodex.value = '0'
+    budgetUsedAdjustmentCodex.value = '0'
     budgetForecastMethodCodex.value = 'cycle'
     budgetCycleEnabledCodex.value = false
     budgetCycleModeCodex.value = 'daily'
@@ -229,21 +231,15 @@ const persistAppSettings = async () => {
   if (settingsLoading.value || saveBusy.value) return
   saveBusy.value = true
   try {
-    const normalizedBudgetTotal = Number.isFinite(budgetTotal.value) ? Math.max(0, budgetTotal.value) : 0
+    const normalizedBudgetTotal = Decimal.max(decimalMoney(budgetTotal.value), 0).toFixed()
     budgetTotal.value = normalizedBudgetTotal
-    const normalizedBudgetUsedAdjustment = Number.isFinite(budgetUsedAdjustment.value)
-      ? budgetUsedAdjustment.value
-      : 0
+    const normalizedBudgetUsedAdjustment = decimalMoney(budgetUsedAdjustment.value).toFixed()
     budgetUsedAdjustment.value = normalizedBudgetUsedAdjustment
     const normalizedBudgetForecastMethod = normalizeBudgetForecastMethod(budgetForecastMethod.value)
     budgetForecastMethod.value = normalizedBudgetForecastMethod
-    const normalizedBudgetTotalCodex = Number.isFinite(budgetTotalCodex.value)
-      ? Math.max(0, budgetTotalCodex.value)
-      : 0
+    const normalizedBudgetTotalCodex = Decimal.max(decimalMoney(budgetTotalCodex.value), 0).toFixed()
     budgetTotalCodex.value = normalizedBudgetTotalCodex
-    const normalizedBudgetUsedAdjustmentCodex = Number.isFinite(budgetUsedAdjustmentCodex.value)
-      ? budgetUsedAdjustmentCodex.value
-      : 0
+    const normalizedBudgetUsedAdjustmentCodex = decimalMoney(budgetUsedAdjustmentCodex.value).toFixed()
     budgetUsedAdjustmentCodex.value = normalizedBudgetUsedAdjustmentCodex
     const normalizedBudgetForecastMethodCodex = normalizeBudgetForecastMethod(budgetForecastMethodCodex.value)
     budgetForecastMethodCodex.value = normalizedBudgetForecastMethodCodex
@@ -713,7 +709,7 @@ onMounted(async () => {
                   min="0"
                   step="0.01"
                   :disabled="settingsLoading || saveBusy"
-                  v-model.number="budgetTotal"
+                  v-model="budgetTotal"
                   @change="persistAppSettings"
                   class="mac-input budget-input-field"
                 />
@@ -730,7 +726,7 @@ onMounted(async () => {
                   inputmode="decimal"
                   step="0.01"
                   :disabled="settingsLoading || saveBusy"
-                  v-model.number="budgetUsedAdjustment"
+                  v-model="budgetUsedAdjustment"
                   @change="persistAppSettings"
                   class="mac-input budget-input-field"
                 />
@@ -839,7 +835,7 @@ onMounted(async () => {
                   min="0"
                   step="0.01"
                   :disabled="settingsLoading || saveBusy"
-                  v-model.number="budgetTotalCodex"
+                  v-model="budgetTotalCodex"
                   @change="persistAppSettings"
                   class="mac-input budget-input-field"
                 />
@@ -856,7 +852,7 @@ onMounted(async () => {
                   inputmode="decimal"
                   step="0.01"
                   :disabled="settingsLoading || saveBusy"
-                  v-model.number="budgetUsedAdjustmentCodex"
+                  v-model="budgetUsedAdjustmentCodex"
                   @change="persistAppSettings"
                   class="mac-input budget-input-field"
                 />

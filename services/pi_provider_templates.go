@@ -36,11 +36,11 @@ func defaultPiProviderTemplates() []PiProviderTemplate {
 			API:         "anthropic-messages", UpstreamProtocol: string(UpstreamProtocolAnthropic),
 			DefaultEndpoint: "/v1/messages", DefaultAuth: "x-api-key",
 			KnownModels: map[string]PiModelEntry{
-				"claude-haiku-4-5-20251001": piTemplateModel("claude-haiku-4-5-20251001", "Claude Haiku 4.5", nil, 200000, 64000, PiModelCost{Input: 1, Output: 5, CacheRead: 0.1, CacheWrite: 1.25}, nil),
-				"claude-fable-5":            piTemplateModel("claude-fable-5", "Claude Fable 5", map[string]*string{"off": nil, "xhigh": stringPointer("xhigh"), "max": stringPointer("max")}, 1000000, 128000, PiModelCost{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5}, map[string]any{"forceAdaptiveThinking": true}),
-				"claude-sonnet-4-6":         piTemplateModel("claude-sonnet-4-6", "Claude Sonnet 4.6", map[string]*string{"max": stringPointer("max")}, 1000000, 128000, PiModelCost{Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75}, map[string]any{"forceAdaptiveThinking": true}),
-				"claude-opus-4-7":           piTemplateModel("claude-opus-4-7", "Claude Opus 4.7", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max")}, 1000000, 128000, PiModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25}, map[string]any{"forceAdaptiveThinking": true, "supportsTemperature": false}),
-				"claude-opus-4-8":           piTemplateModel("claude-opus-4-8", "Claude Opus 4.8", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max")}, 1000000, 128000, PiModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25}, map[string]any{"forceAdaptiveThinking": true, "supportsTemperature": false}),
+				"claude-haiku-4-5-20251001": piTemplateModel("claude-haiku-4-5-20251001", "Claude Haiku 4.5", nil, 200000, 64000, piCost("1", "5", "0.1", "1.25"), nil),
+				"claude-fable-5":            piTemplateModel("claude-fable-5", "Claude Fable 5", map[string]*string{"off": nil, "xhigh": stringPointer("xhigh"), "max": stringPointer("max")}, 1000000, 128000, piCost("10", "50", "1", "12.5"), map[string]any{"forceAdaptiveThinking": true}),
+				"claude-sonnet-4-6":         piTemplateModel("claude-sonnet-4-6", "Claude Sonnet 4.6", map[string]*string{"max": stringPointer("max")}, 1000000, 128000, piCost("3", "15", "0.3", "3.75"), map[string]any{"forceAdaptiveThinking": true}),
+				"claude-opus-4-7":           piTemplateModel("claude-opus-4-7", "Claude Opus 4.7", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max")}, 1000000, 128000, piCost("5", "25", "0.5", "6.25"), map[string]any{"forceAdaptiveThinking": true, "supportsTemperature": false}),
+				"claude-opus-4-8":           piTemplateModel("claude-opus-4-8", "Claude Opus 4.8", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max")}, 1000000, 128000, piCost("5", "25", "0.5", "6.25"), map[string]any{"forceAdaptiveThinking": true, "supportsTemperature": false}),
 			},
 		},
 		{
@@ -56,17 +56,31 @@ func defaultPiProviderTemplates() []PiProviderTemplate {
 			API:         "openai-responses", UpstreamProtocol: string(UpstreamProtocolOpenAIResponses),
 			DefaultEndpoint: "/v1/responses", DefaultAuth: "bearer",
 			KnownModels: map[string]PiModelEntry{
-				"gpt-5.5":           piTemplateModelWithTiers("gpt-5.5", "GPT-5.5", map[string]*string{"xhigh": stringPointer("xhigh"), "minimal": stringPointer("low")}, 272000, PiModelCost{Input: 5, Output: 30, CacheRead: 0.5, Tiers: []PiModelCostTier{{InputTokensAbove: 272000, Input: 10, Output: 45, CacheRead: 1}}}),
-				"codex-auto-review": piTemplateModelWithTiers("codex-auto-review", "Codex Auto Review", map[string]*string{"xhigh": stringPointer("xhigh"), "minimal": stringPointer("low")}, 272000, PiModelCost{Input: 5, Output: 30, CacheRead: 0.5, Tiers: []PiModelCostTier{{InputTokensAbove: 272000, Input: 10, Output: 45, CacheRead: 1}}}),
-				"gpt-5.6-luna":      piTemplateModelWithTiers("gpt-5.6-luna", "GPT-5.6 Luna", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max"), "minimal": stringPointer("low")}, 372000, PiModelCost{Input: 1, Output: 6, CacheRead: 0.1, CacheWrite: 1.25, Tiers: []PiModelCostTier{{InputTokensAbove: 272000, Input: 2, Output: 9, CacheRead: 0.2, CacheWrite: 2.5}}}),
-				"gpt-5.6-terra":     piTemplateModel("gpt-5.6-terra", "GPT-5.6 Terra", nil, 372000, 128000, PiModelCost{Input: 2.5, Output: 15, CacheRead: 0.25, CacheWrite: 3.125}, nil),
-				"gpt-5.6-sol":       piTemplateModelWithTiers("gpt-5.6-sol", "GPT-5.6 Sol", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max"), "minimal": stringPointer("low")}, 372000, PiModelCost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25, Tiers: []PiModelCostTier{{InputTokensAbove: 272000, Input: 10, Output: 45, CacheRead: 1, CacheWrite: 12.5}}}),
+				"gpt-5.5":           piTemplateModelWithTiers("gpt-5.5", "GPT-5.5", map[string]*string{"xhigh": stringPointer("xhigh"), "minimal": stringPointer("low")}, 272000, piCostWithTiers("5", "30", "0.5", "0", piTier(272000, "10", "45", "1", "0"))),
+				"codex-auto-review": piTemplateModelWithTiers("codex-auto-review", "Codex Auto Review", map[string]*string{"xhigh": stringPointer("xhigh"), "minimal": stringPointer("low")}, 272000, piCostWithTiers("5", "30", "0.5", "0", piTier(272000, "10", "45", "1", "0"))),
+				"gpt-5.6-luna":      piTemplateModelWithTiers("gpt-5.6-luna", "GPT-5.6 Luna", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max"), "minimal": stringPointer("low")}, 372000, piCostWithTiers("1", "6", "0.1", "1.25", piTier(272000, "2", "9", "0.2", "2.5"))),
+				"gpt-5.6-terra":     piTemplateModel("gpt-5.6-terra", "GPT-5.6 Terra", nil, 372000, 128000, piCost("2.5", "15", "0.25", "3.125"), nil),
+				"gpt-5.6-sol":       piTemplateModelWithTiers("gpt-5.6-sol", "GPT-5.6 Sol", map[string]*string{"xhigh": stringPointer("xhigh"), "max": stringPointer("max"), "minimal": stringPointer("low")}, 372000, piCostWithTiers("5", "30", "0.5", "6.25", piTier(272000, "10", "45", "1", "12.5"))),
 			},
 		},
 	}
 }
 
 func stringPointer(value string) *string { return &value }
+
+func piCost(input, output, cacheRead, cacheWrite string) PiModelCost {
+	return PiModelCost{Input: input, Output: output, CacheRead: cacheRead, CacheWrite: cacheWrite}
+}
+
+func piCostWithTiers(input, output, cacheRead, cacheWrite string, tiers ...PiModelCostTier) PiModelCost {
+	cost := piCost(input, output, cacheRead, cacheWrite)
+	cost.Tiers = tiers
+	return cost
+}
+
+func piTier(threshold int64, input, output, cacheRead, cacheWrite string) PiModelCostTier {
+	return PiModelCostTier{InputTokensAbove: threshold, Input: input, Output: output, CacheRead: cacheRead, CacheWrite: cacheWrite}
+}
 
 func piTemplateModel(id, name string, thinking map[string]*string, contextWindow, maxTokens int, cost PiModelCost, compat map[string]any) PiModelEntry {
 	return PiModelEntry{ID: id, Name: name, Reasoning: boolPointer(true), ThinkingLevelMap: thinking, Input: []string{"text", "image"}, ContextWindow: intPointer(contextWindow), MaxTokens: intPointer(maxTokens), Cost: &cost, Compat: compat}

@@ -64,7 +64,7 @@
             <span class="number-input" :class="{ 'field-invalid': baseRateError(field.key) }">
               <span aria-hidden="true">$</span>
               <input
-                v-model.number="draft.rates[field.key]"
+                v-model="draft.rates[field.key]"
                 type="number"
                 min="0"
                 step="any"
@@ -133,7 +133,7 @@
                 <span class="number-input" :class="{ 'field-invalid': tierRateError(index, field.key) }">
                   <span aria-hidden="true">$</span>
                   <input
-                    v-model.number="tier.rates[field.key]"
+                    v-model="tier.rates[field.key]"
                     type="number"
                     min="0"
                     step="any"
@@ -178,9 +178,10 @@ import { CircleAlert, LoaderCircle, Plus, Save, Trash2 } from 'lucide-vue-next'
 import type { PricingCustomRule, PricingRates, PricingTier } from '../../../bindings/codeswitch/services/models'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
+import { decimalMoney } from '../../utils/money'
 
 type RateKey = keyof PricingRates
-type EditableRates = Record<RateKey, number>
+type EditableRates = Record<RateKey, string>
 type EditableTier = { input_tokens_above: number; rates: EditableRates }
 
 const props = withDefaults(defineProps<{
@@ -214,13 +215,13 @@ const rateFields: Array<{ key: RateKey; labelKey: string }> = [
   { key: 'cache_write', labelKey: 'pricingPage.rates.cacheWrite' },
 ]
 
-const emptyRates = (): EditableRates => ({ input: 0, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 })
+const emptyRates = (): EditableRates => ({ input: '0', output: '0', reasoning: '0', cache_read: '0', cache_write: '0' })
 const copyRates = (source?: Partial<PricingRates>): EditableRates => ({
-  input: Number(source?.input ?? 0),
-  output: Number(source?.output ?? 0),
-  reasoning: Number(source?.reasoning ?? 0),
-  cache_read: Number(source?.cache_read ?? 0),
-  cache_write: Number(source?.cache_write ?? 0),
+  input: String(source?.input ?? '0'),
+  output: String(source?.output ?? '0'),
+  reasoning: String(source?.reasoning ?? '0'),
+  cache_read: String(source?.cache_read ?? '0'),
+  cache_write: String(source?.cache_write ?? '0'),
 })
 
 const draft = reactive<{
@@ -272,8 +273,10 @@ const touchIdentity = (field: 'name' | 'pattern') => {
 }
 
 const shouldValidate = (key: string) => submitted.value || touchedFields[key]
-const validRate = (value: unknown) => value !== '' && value !== null && value !== undefined
-  && Number.isFinite(Number(value)) && Number(value) >= 0
+const validRate = (value: unknown) => {
+  if (value === '' || value === null || value === undefined) return false
+  try { return decimalMoney(String(value)).gte(0) } catch { return false }
+}
 
 const baseRateError = (key: RateKey) => shouldValidate(`base-${key}`) && !validRate(draft.rates[key])
   ? t('pricingPage.ruleModal.rateFieldError')
@@ -339,11 +342,11 @@ const removeTier = (index: number) => {
 }
 
 const normalizeRates = (rates: EditableRates): PricingRates => ({
-  input: Number(rates.input),
-  output: Number(rates.output),
-  reasoning: Number(rates.reasoning),
-  cache_read: Number(rates.cache_read),
-  cache_write: Number(rates.cache_write),
+  input: decimalMoney(rates.input).toFixed(),
+  output: decimalMoney(rates.output).toFixed(),
+  reasoning: decimalMoney(rates.reasoning).toFixed(),
+  cache_read: decimalMoney(rates.cache_read).toFixed(),
+  cache_write: decimalMoney(rates.cache_write).toFixed(),
 }) as PricingRates
 
 const ratesValid = (rates: EditableRates) => rateFields.every(({ key }) => validRate(rates[key]))

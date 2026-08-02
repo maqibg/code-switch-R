@@ -190,6 +190,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { formatBeijingDateTime } from '../../utils/beijingTime'
+import { compareMoney, decimalMoney, formatMoney, moneyNumber } from '../../utils/money'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import {
@@ -265,8 +266,8 @@ const openCostDetailModal = async () => {
     const stats = await fetchProviderDailyStats(filters.platform, filters.range, filters.provider)
     // 按金额降序排序，过滤掉金额为 0 的
     costDetailModal.data = (stats ?? [])
-      .filter(item => item.cost_total > 0)
-      .sort((a, b) => b.cost_total - a.cost_total)
+      .filter(item => decimalMoney(item.cost_total).gt(0))
+      .sort((a, b) => compareMoney(b.cost_total, a.cost_total))
   } catch (error) {
     console.error('failed to load provider daily stats', error)
   } finally {
@@ -305,7 +306,7 @@ const chartData = computed(() => {
     datasets: [
       {
         label: t('components.logs.tokenLabels.cost'),
-        data: series.map((item) => Number(((item.total_cost ?? 0)).toFixed(4))),
+        data: series.map((item) => Number(decimalMoney(item.total_cost).toFixed(4))),
         borderColor: '#f97316',
         backgroundColor: 'rgba(249, 115, 22, 0.2)',
         tension: 0.3,
@@ -591,17 +592,11 @@ const formatCacheHitRate = (cacheRead?: number, inputTokens?: number) => {
   return `${rate.toFixed(1)}%`
 }
 
-const formatCurrency = (value?: number) => {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return '$0.0000'
-  }
-  if (value >= 1) {
-    return `$${value.toFixed(2)}`
-  }
-  if (value >= 0.01) {
-    return `$${value.toFixed(3)}`
-  }
-  return `$${value.toFixed(4)}`
+const formatCurrency = (value?: string | number) => {
+  const amount = decimalMoney(value)
+  if (amount.gte(1)) return formatMoney(amount.toFixed(2))
+  if (amount.gte(0.01)) return formatMoney(amount.toFixed(3))
+  return formatMoney(amount.toFixed(4))
 }
 
 const statsCards = computed(() => {

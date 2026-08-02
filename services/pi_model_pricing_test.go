@@ -1,11 +1,11 @@
 package services
 
 import (
-	"math"
 	"path/filepath"
 	"testing"
 
 	modelpricing "codeswitch/resources/model-pricing"
+	"github.com/shopspring/decimal"
 )
 
 func newPiPricingServiceForTest(t *testing.T) *PiSettingsService {
@@ -17,7 +17,7 @@ func newPiPricingServiceForTest(t *testing.T) *PiSettingsService {
 			PiVersion: "0.80.6", ModelVersion: "0.80.6",
 			Providers: []PiBuiltinProvider{{ID: "openai", Models: []PiBuiltinModel{{
 				ID: "builtin-model", Provider: "openai",
-				Cost: &PiModelCost{Input: 1, Output: 2, CacheRead: 0.1, CacheWrite: 1.25},
+				Cost: &PiModelCost{Input: "1", Output: "2", CacheRead: "0.1", CacheWrite: "1.25"},
 			}}}},
 		}, nil
 	}
@@ -45,15 +45,15 @@ func TestResolvePiPricingUsesCustomOverrideThenBuiltinSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source != pricingSourcePiOverride || overridden.Input != 1 || overridden.Output != 7 {
+	if source != pricingSourcePiOverride || overridden.Input != "1" || overridden.Output != "7" {
 		t.Fatalf("Pi modelOverrides 应字段级合并: source=%s cost=%#v", source, overridden)
 	}
 	custom, source, _, err := service.resolveModelPricing("openai", "custom-model")
-	if err != nil || source != pricingSourcePiCustom || custom.Input != 3 {
+	if err != nil || source != pricingSourcePiCustom || custom.Input != "3" {
 		t.Fatalf("Pi 自定义模型价格错误: source=%s cost=%#v err=%v", source, custom, err)
 	}
 	free, source, _, err := service.resolveModelPricing("openai", "free-model")
-	if err != nil || source != pricingSourcePiCustom || free.Input != 0 || free.Output != 0 {
+	if err != nil || source != pricingSourcePiCustom || free.Input != "0" || free.Output != "0" {
 		t.Fatalf("未填写 cost 的 Pi 自定义模型应按 Pi 语义为零价: source=%s cost=%#v err=%v", source, free, err)
 	}
 }
@@ -62,13 +62,13 @@ func TestPiPricingFallsBackToGlobalCustomWhenPiMisses(t *testing.T) {
 	piService := newPiPricingServiceForTest(t)
 	pricing := newPricingServiceForTest(t, []PricingCustomRule{{
 		ID: "fallback", Name: "fallback", Pattern: "^missing-model$", Enabled: true,
-		Rates: PricingRates{Input: 5},
+		Rates: PricingRates{Input: "5"},
 	}})
 	pricing.piSettings = piService
 	result := pricing.newRequestSnapshot("pi", "openai", "missing-model").Calculate(
 		"mapped-upstream-model", modelpricing.UsageSnapshot{InputTokens: 1_000_000},
 	)
-	if result.Source != PricingSourceCustom || result.RuleID != "fallback" || math.Abs(result.Cost.TotalCost-5) > 1e-9 {
+	if result.Source != PricingSourceCustom || result.RuleID != "fallback" || !result.Cost.TotalCost.Equal(decimal.RequireFromString("5")) {
 		t.Fatalf("Pi 未命中后应按请求模型回退全局自定义价格: %#v", result)
 	}
 }
@@ -81,7 +81,7 @@ func TestPiPricingFallsBackToGlobalBuiltinWhenPiAndCustomMiss(t *testing.T) {
 	model := ""
 	for _, candidate := range pricing.runtime.Load().orderedModels {
 		record := pricing.runtime.Load().records[candidate]
-		if record.hasInputPrice && record.entry.InputCostPerToken > 0 {
+		if record.hasInputPrice && record.entry.InputCostPerToken.GreaterThan(decimal.Zero) {
 			model = candidate
 			break
 		}
@@ -92,23 +92,23 @@ func TestPiPricingFallsBackToGlobalBuiltinWhenPiAndCustomMiss(t *testing.T) {
 	result := pricing.newRequestSnapshot("pi", "openai", model).Calculate(
 		"mapped-upstream-model", modelpricing.UsageSnapshot{InputTokens: 1_000_000},
 	)
-	if result.Source != pricingSourceEmbedded || !result.Cost.HasPricing || result.Cost.TotalCost <= 0 {
+	if result.Source != pricingSourceEmbedded || !result.Cost.HasPricing || !result.Cost.TotalCost.GreaterThan(decimal.Zero) {
 		t.Fatalf("Pi 与全局自定义均未命中后应按请求模型回退全局内置价格: model=%s result=%#v", model, result)
 	}
 }
 
 func TestCalculatePiModelCostMatchesPiTierAndOneHourCacheSemantics(t *testing.T) {
 	cost := PiModelCost{
-		Input: 1, Output: 2, CacheRead: 0.1, CacheWrite: 1.25,
-		Tiers: []PiModelCostTier{{InputTokensAbove: 100, Input: 3, Output: 4, CacheRead: 0.3, CacheWrite: 3.75}},
+		Input: "1", Output: "2", CacheRead: "0.1", CacheWrite: "1.25",
+		Tiers: []PiModelCostTier{{InputTokensAbove: 100, Input: "3", Output: "4", CacheRead: "0.3", CacheWrite: "3.75"}},
 	}
 	usage := modelpricing.UsageSnapshot{
 		InputTokens: 50, OutputTokens: 10, CacheReadTokens: 20, CacheCreateTokens: 40,
 		CacheCreation: &modelpricing.CacheCreationDetail{Ephemeral5mTokens: 30, Ephemeral1hTokens: 10},
 	}
 	result := calculatePiModelCost(cost, usage)
-	want := (3*50 + 4*10 + 0.3*20 + 3.75*30 + 3*2*10) / 1_000_000
-	if !result.IsTiered || math.Abs(result.TotalCost-want) > 1e-12 {
+	want := decimal.RequireFromString("3").Mul(decimal.NewFromInt(50)).Add(decimal.RequireFromString("4").Mul(decimal.NewFromInt(10))).Add(decimal.RequireFromString("0.3").Mul(decimal.NewFromInt(20))).Add(decimal.RequireFromString("3.75").Mul(decimal.NewFromInt(30))).Add(decimal.RequireFromString("3").Mul(decimal.NewFromInt(2)).Mul(decimal.NewFromInt(10))).Div(decimal.NewFromInt(1_000_000))
+	if !result.IsTiered || !result.TotalCost.Equal(want) {
 		t.Fatalf("Pi tier/1h cache 计费错误: got=%#v want=%v", result, want)
 	}
 }

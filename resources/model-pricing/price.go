@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/shopspring/decimal"
 )
 
 //go:embed model_prices_and_context_window.json
@@ -47,7 +49,7 @@ var familyRules = []struct {
 type Service struct {
 	pricingMap   map[string]*PricingEntry
 	normalized   map[string]string
-	ephemeral1h  map[string]float64
+	ephemeral1h  map[string]decimal.Decimal
 	longContexts map[string]LongContextPricing
 }
 
@@ -59,50 +61,50 @@ type PricingEntry struct {
 	MaxInputTokens  float64 `json:"max_input_tokens"`
 	MaxOutputTokens float64 `json:"max_output_tokens"`
 
-	InputCostPerToken           float64 `json:"input_cost_per_token"`
-	OutputCostPerToken          float64 `json:"output_cost_per_token"`
-	OutputCostPerReasoningToken float64 `json:"output_cost_per_reasoning_token"`
-	CacheCreationInputTokenCost float64 `json:"cache_creation_input_token_cost"`
-	CacheReadInputTokenCost     float64 `json:"cache_read_input_token_cost"`
+	InputCostPerToken           decimal.Decimal `json:"input_cost_per_token"`
+	OutputCostPerToken          decimal.Decimal `json:"output_cost_per_token"`
+	OutputCostPerReasoningToken decimal.Decimal `json:"output_cost_per_reasoning_token"`
+	CacheCreationInputTokenCost decimal.Decimal `json:"cache_creation_input_token_cost"`
+	CacheReadInputTokenCost     decimal.Decimal `json:"cache_read_input_token_cost"`
 	// DeepSeek 等将 cache_read 以 cache_hit 命名,当 cache_read 缺失时作回退。
-	InputCostPerTokenCacheHit float64 `json:"input_cost_per_token_cache_hit"`
+	InputCostPerTokenCacheHit decimal.Decimal `json:"input_cost_per_token_cache_hit"`
 
 	// 128k 档(少数 Gemini 系列)
-	InputCostPerTokenAbove128k  float64 `json:"input_cost_per_token_above_128k_tokens"`
-	OutputCostPerTokenAbove128k float64 `json:"output_cost_per_token_above_128k_tokens"`
+	InputCostPerTokenAbove128k  decimal.Decimal `json:"input_cost_per_token_above_128k_tokens"`
+	OutputCostPerTokenAbove128k decimal.Decimal `json:"output_cost_per_token_above_128k_tokens"`
 
 	// 200k 档(Anthropic 长上下文 Sonnet)
-	InputCostPerTokenAbove200k          float64 `json:"input_cost_per_token_above_200k_tokens"`
-	OutputCostPerTokenAbove200k         float64 `json:"output_cost_per_token_above_200k_tokens"`
-	CacheCreationInputTokenCostAbove200 float64 `json:"cache_creation_input_token_cost_above_200k_tokens"`
-	CacheReadInputTokenCostAbove200k    float64 `json:"cache_read_input_token_cost_above_200k_tokens"`
+	InputCostPerTokenAbove200k          decimal.Decimal `json:"input_cost_per_token_above_200k_tokens"`
+	OutputCostPerTokenAbove200k         decimal.Decimal `json:"output_cost_per_token_above_200k_tokens"`
+	CacheCreationInputTokenCostAbove200 decimal.Decimal `json:"cache_creation_input_token_cost_above_200k_tokens"`
+	CacheReadInputTokenCostAbove200k    decimal.Decimal `json:"cache_read_input_token_cost_above_200k_tokens"`
 
 	// 272k 档(GPT-5.x 系列)
-	InputCostPerTokenAbove272k          float64 `json:"input_cost_per_token_above_272k_tokens"`
-	OutputCostPerTokenAbove272k         float64 `json:"output_cost_per_token_above_272k_tokens"`
-	CacheCreationInputTokenCostAbove272 float64 `json:"cache_creation_input_token_cost_above_272k_tokens"`
-	CacheReadInputTokenCostAbove272k    float64 `json:"cache_read_input_token_cost_above_272k_tokens"`
+	InputCostPerTokenAbove272k          decimal.Decimal `json:"input_cost_per_token_above_272k_tokens"`
+	OutputCostPerTokenAbove272k         decimal.Decimal `json:"output_cost_per_token_above_272k_tokens"`
+	CacheCreationInputTokenCostAbove272 decimal.Decimal `json:"cache_creation_input_token_cost_above_272k_tokens"`
+	CacheReadInputTokenCostAbove272k    decimal.Decimal `json:"cache_read_input_token_cost_above_272k_tokens"`
 
 	// Cache 1h(Anthropic ephemeral-1h)
-	CacheCreationInputTokenCostAbove1Hr         float64 `json:"cache_creation_input_token_cost_above_1hr"`
-	CacheCreationInputTokenCostAbove1HrAbove200 float64 `json:"cache_creation_input_token_cost_above_1hr_above_200k_tokens"`
+	CacheCreationInputTokenCostAbove1Hr         decimal.Decimal `json:"cache_creation_input_token_cost_above_1hr"`
+	CacheCreationInputTokenCostAbove1HrAbove200 decimal.Decimal `json:"cache_creation_input_token_cost_above_1hr_above_200k_tokens"`
 
 	// Priority service tier(OpenAI/Azure 提供的更贵但响应更快的档位)。
-	InputCostPerTokenPriority                float64 `json:"input_cost_per_token_priority"`
-	OutputCostPerTokenPriority               float64 `json:"output_cost_per_token_priority"`
-	CacheReadInputTokenCostPriority          float64 `json:"cache_read_input_token_cost_priority"`
-	InputCostPerTokenAbove200kPriority       float64 `json:"input_cost_per_token_above_200k_tokens_priority"`
-	OutputCostPerTokenAbove200kPriority      float64 `json:"output_cost_per_token_above_200k_tokens_priority"`
-	CacheReadInputTokenCostAbove200kPriority float64 `json:"cache_read_input_token_cost_above_200k_tokens_priority"`
-	InputCostPerTokenAbove272kPriority       float64 `json:"input_cost_per_token_above_272k_tokens_priority"`
-	OutputCostPerTokenAbove272kPriority      float64 `json:"output_cost_per_token_above_272k_tokens_priority"`
-	CacheReadInputTokenCostAbove272kPriority float64 `json:"cache_read_input_token_cost_above_272k_tokens_priority"`
+	InputCostPerTokenPriority                decimal.Decimal `json:"input_cost_per_token_priority"`
+	OutputCostPerTokenPriority               decimal.Decimal `json:"output_cost_per_token_priority"`
+	CacheReadInputTokenCostPriority          decimal.Decimal `json:"cache_read_input_token_cost_priority"`
+	InputCostPerTokenAbove200kPriority       decimal.Decimal `json:"input_cost_per_token_above_200k_tokens_priority"`
+	OutputCostPerTokenAbove200kPriority      decimal.Decimal `json:"output_cost_per_token_above_200k_tokens_priority"`
+	CacheReadInputTokenCostAbove200kPriority decimal.Decimal `json:"cache_read_input_token_cost_above_200k_tokens_priority"`
+	InputCostPerTokenAbove272kPriority       decimal.Decimal `json:"input_cost_per_token_above_272k_tokens_priority"`
+	OutputCostPerTokenAbove272kPriority      decimal.Decimal `json:"output_cost_per_token_above_272k_tokens_priority"`
+	CacheReadInputTokenCostAbove272kPriority decimal.Decimal `json:"cache_read_input_token_cost_above_272k_tokens_priority"`
 
 	// Flex service tier 低价异步档位字段,常用于非实时任务,定价通常与批处理同价。
 	// 仅有基础三项;JSON 中无长上下文 flex 变体,长窗口由 scaleLongRate 按比例外推。
-	InputCostPerTokenFlex       float64 `json:"input_cost_per_token_flex"`
-	OutputCostPerTokenFlex      float64 `json:"output_cost_per_token_flex"`
-	CacheReadInputTokenCostFlex float64 `json:"cache_read_input_token_cost_flex"`
+	InputCostPerTokenFlex       decimal.Decimal `json:"input_cost_per_token_flex"`
+	OutputCostPerTokenFlex      decimal.Decimal `json:"output_cost_per_token_flex"`
+	CacheReadInputTokenCostFlex decimal.Decimal `json:"cache_read_input_token_cost_flex"`
 
 	TieredPricing []TieredPricingBand `json:"tiered_pricing,omitempty"`
 }
@@ -165,20 +167,20 @@ func normalizeServiceTier(tier ServiceTier) ServiceTier {
 // firstNonZero(aboveBandRate, baseRate)。
 // 任一输入 <=0 时保守回退到 longDefault:longDefault<=0 说明调用前提不成立,
 // tierBase/defaultBase 缺失则避免把长窗口单价降到 0。
-func scaleLongRate(longDefault, tierBase, defaultBase float64) float64 {
-	if longDefault <= 0 || tierBase <= 0 || defaultBase <= 0 {
+func scaleLongRate(longDefault, tierBase, defaultBase decimal.Decimal) decimal.Decimal {
+	if longDefault.LessThanOrEqual(decimal.Zero) || tierBase.LessThanOrEqual(decimal.Zero) || defaultBase.LessThanOrEqual(decimal.Zero) {
 		return longDefault
 	}
-	return longDefault * (tierBase / defaultBase)
+	return longDefault.Mul(tierBase).Div(defaultBase)
 }
 
 // TieredPricingBand 表示 tiered_pricing 中的单段。range 语义为 [lo, hi),
 // 上界值本身归入下一档(实现见 pickTier)。
 type TieredPricingBand struct {
-	Range                   [2]float64 `json:"range"`
-	InputCostPerToken       float64    `json:"input_cost_per_token"`
-	OutputCostPerToken      float64    `json:"output_cost_per_token"`
-	CacheReadInputTokenCost float64    `json:"cache_read_input_token_cost,omitempty"`
+	Range                   [2]float64      `json:"range"`
+	InputCostPerToken       decimal.Decimal `json:"input_cost_per_token"`
+	OutputCostPerToken      decimal.Decimal `json:"output_cost_per_token"`
+	CacheReadInputTokenCost decimal.Decimal `json:"cache_read_input_token_cost,omitempty"`
 }
 
 // overlayConfig 描述 overlay 文件的结构,目前仅支持 aliases。
@@ -206,23 +208,23 @@ type CacheCreationDetail struct {
 
 // CostBreakdown 表示一次费用计算的结果。
 type CostBreakdown struct {
-	InputCost       float64 `json:"input_cost"`
-	OutputCost      float64 `json:"output_cost"`
-	ReasoningCost   float64 `json:"reasoning_cost"`
-	CacheCreateCost float64 `json:"cache_create_cost"`
-	CacheReadCost   float64 `json:"cache_read_cost"`
-	Ephemeral5mCost float64 `json:"ephemeral_5m_cost"`
-	Ephemeral1hCost float64 `json:"ephemeral_1h_cost"`
-	TotalCost       float64 `json:"total_cost"`
-	HasPricing      bool    `json:"has_pricing"`
-	IsLongContext   bool    `json:"is_long_context"`
-	IsTiered        bool    `json:"is_tiered"`
+	InputCost       decimal.Decimal `json:"input_cost"`
+	OutputCost      decimal.Decimal `json:"output_cost"`
+	ReasoningCost   decimal.Decimal `json:"reasoning_cost"`
+	CacheCreateCost decimal.Decimal `json:"cache_create_cost"`
+	CacheReadCost   decimal.Decimal `json:"cache_read_cost"`
+	Ephemeral5mCost decimal.Decimal `json:"ephemeral_5m_cost"`
+	Ephemeral1hCost decimal.Decimal `json:"ephemeral_1h_cost"`
+	TotalCost       decimal.Decimal `json:"total_cost"`
+	HasPricing      bool            `json:"has_pricing"`
+	IsLongContext   bool            `json:"is_long_context"`
+	IsTiered        bool            `json:"is_tiered"`
 }
 
 // LongContextPricing 描述 1M 上下文模型的单价。
 type LongContextPricing struct {
-	Input  float64
-	Output float64
+	Input  decimal.Decimal
+	Output decimal.Decimal
 }
 
 // DefaultService 返回单例。
@@ -371,34 +373,34 @@ func (s *Service) calculateCostWithEntry(model string, usage UsageSnapshot, entr
 	case len(entry.TieredPricing) > 0:
 		band := pickTier(entry.TieredPricing, totalPromptTokens)
 		breakdown.IsTiered = true
-		breakdown.InputCost = float64(usage.InputTokens) * band.InputCostPerToken
-		breakdown.OutputCost = float64(usage.OutputTokens) * band.OutputCostPerToken
-		breakdown.CacheReadCost = float64(usage.CacheReadTokens) *
-			firstNonZero(band.CacheReadInputTokenCost, baseCacheRead)
+		breakdown.InputCost = decimal.NewFromInt(int64(usage.InputTokens)).Mul(band.InputCostPerToken)
+		breakdown.OutputCost = decimal.NewFromInt(int64(usage.OutputTokens)).Mul(band.OutputCostPerToken)
+		breakdown.CacheReadCost = decimal.NewFromInt(int64(usage.CacheReadTokens)).Mul(
+			firstNonZero(band.CacheReadInputTokenCost, baseCacheRead))
 	case useLong:
 		breakdown.IsLongContext = true
-		breakdown.InputCost = float64(usage.InputTokens) * longTier.Input
-		breakdown.OutputCost = float64(usage.OutputTokens) * longTier.Output
-		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * baseCacheRead
+		breakdown.InputCost = decimal.NewFromInt(int64(usage.InputTokens)).Mul(longTier.Input)
+		breakdown.OutputCost = decimal.NewFromInt(int64(usage.OutputTokens)).Mul(longTier.Output)
+		breakdown.CacheReadCost = decimal.NewFromInt(int64(usage.CacheReadTokens)).Mul(baseCacheRead)
 	case longBand.active:
 		breakdown.IsLongContext = true
-		breakdown.InputCost = float64(usage.InputTokens) * longBand.inputPerTok
-		breakdown.OutputCost = float64(usage.OutputTokens) * longBand.outputPerTok
-		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * longBand.cacheRead
+		breakdown.InputCost = decimal.NewFromInt(int64(usage.InputTokens)).Mul(longBand.inputPerTok)
+		breakdown.OutputCost = decimal.NewFromInt(int64(usage.OutputTokens)).Mul(longBand.outputPerTok)
+		breakdown.CacheReadCost = decimal.NewFromInt(int64(usage.CacheReadTokens)).Mul(longBand.cacheRead)
 	default:
-		breakdown.InputCost = float64(usage.InputTokens) * baseInput
-		breakdown.OutputCost = float64(usage.OutputTokens) * baseOutput
-		breakdown.CacheReadCost = float64(usage.CacheReadTokens) * baseCacheRead
+		breakdown.InputCost = decimal.NewFromInt(int64(usage.InputTokens)).Mul(baseInput)
+		breakdown.OutputCost = decimal.NewFromInt(int64(usage.OutputTokens)).Mul(baseOutput)
+		breakdown.CacheReadCost = decimal.NewFromInt(int64(usage.CacheReadTokens)).Mul(baseCacheRead)
 	}
 
-	if usage.ReasoningTokens > 0 && entry.OutputCostPerReasoningToken > 0 {
-		breakdown.ReasoningCost = float64(usage.ReasoningTokens) * entry.OutputCostPerReasoningToken
+	if usage.ReasoningTokens > 0 && entry.OutputCostPerReasoningToken.GreaterThan(decimal.Zero) {
+		breakdown.ReasoningCost = decimal.NewFromInt(int64(usage.ReasoningTokens)).Mul(entry.OutputCostPerReasoningToken)
 	}
 
 	cacheCreateTokens, cache1hTokens := resolveCacheTokens(usage)
 	cache5mRate := entry.CacheCreationInputTokenCost
 	// 1h 价取值优先级:longBand.cacheCreate1h > JSON above_1hr 字段 > 硬编码兜底
-	cache1hFallback := 0.0
+	cache1hFallback := decimal.Zero
 	if useBuiltInFallbacks {
 		cache1hFallback = s.getEphemeral1hPricing(model)
 	}
@@ -407,13 +409,13 @@ func (s *Service) calculateCostWithEntry(model string, usage UsageSnapshot, entr
 		cache5mRate = firstNonZero(longBand.cacheCreate, entry.CacheCreationInputTokenCost)
 		cache1hRate = firstNonZero(longBand.cacheCreate1h, cache1hRate)
 	}
-	cache5mCost := float64(cacheCreateTokens) * cache5mRate
-	cache1hCost := float64(cache1hTokens) * cache1hRate
+	cache5mCost := decimal.NewFromInt(int64(cacheCreateTokens)).Mul(cache5mRate)
+	cache1hCost := decimal.NewFromInt(int64(cache1hTokens)).Mul(cache1hRate)
 	breakdown.Ephemeral5mCost = cache5mCost
 	breakdown.Ephemeral1hCost = cache1hCost
-	breakdown.CacheCreateCost = cache5mCost + cache1hCost
-	breakdown.TotalCost = breakdown.InputCost + breakdown.OutputCost + breakdown.ReasoningCost + breakdown.CacheCreateCost + breakdown.CacheReadCost
-	if breakdown.TotalCost > 0 {
+	breakdown.CacheCreateCost = cache5mCost.Add(cache1hCost)
+	breakdown.TotalCost = breakdown.InputCost.Add(breakdown.OutputCost).Add(breakdown.ReasoningCost).Add(breakdown.CacheCreateCost).Add(breakdown.CacheReadCost)
+	if breakdown.TotalCost.GreaterThan(decimal.Zero) {
 		breakdown.HasPricing = true
 	}
 	return breakdown
@@ -435,11 +437,11 @@ func pickTier(bands []TieredPricingBand, totalTokens int) *TieredPricingBand {
 // longContextBand 描述超阈值档位计费值,所有字段都已解析好,直接乘 tokens 即可。
 type longContextBand struct {
 	active        bool
-	inputPerTok   float64
-	outputPerTok  float64
-	cacheRead     float64
-	cacheCreate   float64
-	cacheCreate1h float64
+	inputPerTok   decimal.Decimal
+	outputPerTok  decimal.Decimal
+	cacheRead     decimal.Decimal
+	cacheCreate   decimal.Decimal
+	cacheCreate1h decimal.Decimal
 }
 
 // resolveLongContextBand 按 prompt tokens 选择 >272k / >200k / >128k 档,未超阈值返回 active=false。
@@ -448,7 +450,7 @@ type longContextBand struct {
 // (例:部分 272k+ 模型有 output_cost_per_token_priority 但无 output_cost_per_token_above_272k_tokens_priority)。
 // tier=flex 时:JSON 无 *_flex_above_200k/272k 字段,由 scaleLongRate 按短窗 flex/default 比例外推长窗单价。
 func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int, tier ServiceTier) longContextBand {
-	if totalPromptTokens > 272000 && e.InputCostPerTokenAbove272k > 0 {
+	if totalPromptTokens > 272000 && e.InputCostPerTokenAbove272k.GreaterThan(decimal.Zero) {
 		input := e.InputCostPerTokenAbove272k
 		output := firstNonZero(e.OutputCostPerTokenAbove272k, e.OutputCostPerToken)
 		cacheRead := firstNonZero(e.CacheReadInputTokenCostAbove272k, e.CacheReadInputTokenCost)
@@ -468,10 +470,10 @@ func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int, tier Servic
 			outputPerTok:  output,
 			cacheRead:     cacheRead,
 			cacheCreate:   firstNonZero(e.CacheCreationInputTokenCostAbove272, e.CacheCreationInputTokenCost),
-			cacheCreate1h: 0,
+			cacheCreate1h: decimal.Zero,
 		}
 	}
-	if totalPromptTokens > 200000 && e.InputCostPerTokenAbove200k > 0 {
+	if totalPromptTokens > 200000 && e.InputCostPerTokenAbove200k.GreaterThan(decimal.Zero) {
 		input := e.InputCostPerTokenAbove200k
 		output := firstNonZero(e.OutputCostPerTokenAbove200k, e.OutputCostPerToken)
 		cacheRead := firstNonZero(e.CacheReadInputTokenCostAbove200k, e.CacheReadInputTokenCost)
@@ -494,7 +496,7 @@ func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int, tier Servic
 			cacheCreate1h: e.CacheCreationInputTokenCostAbove1HrAbove200,
 		}
 	}
-	if totalPromptTokens > 128000 && e.InputCostPerTokenAbove128k > 0 {
+	if totalPromptTokens > 128000 && e.InputCostPerTokenAbove128k.GreaterThan(decimal.Zero) {
 		return longContextBand{
 			active:       true,
 			inputPerTok:  e.InputCostPerTokenAbove128k,
@@ -507,13 +509,13 @@ func (e *PricingEntry) resolveLongContextBand(totalPromptTokens int, tier Servic
 }
 
 // firstNonZero 返回第一个非零值,用于 fallback 链。
-func firstNonZero(values ...float64) float64 {
+func firstNonZero(values ...decimal.Decimal) decimal.Decimal {
 	for _, v := range values {
-		if v > 0 {
+		if v.GreaterThan(decimal.Zero) {
 			return v
 		}
 	}
-	return 0
+	return decimal.Zero
 }
 
 // getPricing 按确定性顺序查找模型定价,不再使用无序 substring 模糊匹配。
@@ -600,20 +602,20 @@ func (s *Service) longContextTier(model string, usage UsageSnapshot) (LongContex
 	return LongContextPricing{}, false
 }
 
-func (s *Service) getEphemeral1hPricing(model string) float64 {
+func (s *Service) getEphemeral1hPricing(model string) decimal.Decimal {
 	if price, ok := s.ephemeral1h[model]; ok {
 		return price
 	}
 	name := strings.ToLower(model)
 	switch {
 	case strings.Contains(name, "opus"):
-		return 0.00003
+		return decimal.RequireFromString("0.00003")
 	case strings.Contains(name, "sonnet"):
-		return 0.000006
+		return decimal.RequireFromString("0.000006")
 	case strings.Contains(name, "haiku"):
-		return 0.0000016
+		return decimal.RequireFromString("0.0000016")
 	default:
-		return 0
+		return decimal.Zero
 	}
 }
 
@@ -621,12 +623,12 @@ func ensureCachePricing(entry *PricingEntry) {
 	if entry == nil {
 		return
 	}
-	if entry.CacheCreationInputTokenCost == 0 && entry.InputCostPerToken > 0 {
-		entry.CacheCreationInputTokenCost = entry.InputCostPerToken * 1.25
+	if entry.CacheCreationInputTokenCost.IsZero() && entry.InputCostPerToken.GreaterThan(decimal.Zero) {
+		entry.CacheCreationInputTokenCost = entry.InputCostPerToken.Mul(decimal.RequireFromString("1.25"))
 	}
-	if entry.CacheReadInputTokenCost == 0 {
+	if entry.CacheReadInputTokenCost.IsZero() {
 		// DeepSeek/novita/zai 等用 cache_hit 命名缓存命中价,优先吃它再退回 10% 兜底
-		entry.CacheReadInputTokenCost = firstNonZero(entry.InputCostPerTokenCacheHit, entry.InputCostPerToken*0.1)
+		entry.CacheReadInputTokenCost = firstNonZero(entry.InputCostPerTokenCacheHit, entry.InputCostPerToken.Mul(decimal.RequireFromString("0.1")))
 	}
 }
 
@@ -663,46 +665,46 @@ func resolveCacheTokens(usage UsageSnapshot) (fiveMin int, oneHour int) {
 	return five, one
 }
 
-func buildEphemeral1hPricing() map[string]float64 {
-	return map[string]float64{
-		"claude-opus-4-5":            0.00001,
-		"claude-opus-4-5-20251101":   0.00001,
-		"claude-opus-4-5-20250929":   0.00001,
-		"claude-opus-4-1":            0.00003,
-		"claude-opus-4-1-20250805":   0.00003,
-		"claude-opus-4":              0.00003,
-		"claude-opus-4-20250514":     0.00003,
-		"claude-3-opus":              0.00003,
-		"claude-3-opus-latest":       0.00003,
-		"claude-3-opus-20240229":     0.00003,
-		"claude-3-5-sonnet":          0.000006,
-		"claude-3-5-sonnet-latest":   0.000006,
-		"claude-3-5-sonnet-20241022": 0.000006,
-		"claude-3-5-sonnet-20240620": 0.000006,
-		"claude-3-sonnet":            0.000006,
-		"claude-3-sonnet-20240307":   0.000006,
-		"claude-sonnet-3":            0.000006,
-		"claude-sonnet-3-5":          0.000006,
-		"claude-sonnet-3-7":          0.000006,
-		"claude-sonnet-4":            0.000006,
-		"claude-sonnet-4-20250514":   0.000006,
-		"claude-3-5-haiku":           0.0000016,
-		"claude-3-5-haiku-latest":    0.0000016,
-		"claude-3-5-haiku-20241022":  0.0000016,
-		"claude-3-haiku":             0.0000016,
-		"claude-3-haiku-20240307":    0.0000016,
-		"claude-haiku-3":             0.0000016,
-		"claude-haiku-3-5":           0.0000016,
-		"claude-haiku-4-5":           0.000002,
-		"claude-haiku-4-5-20251001":  0.000002,
+func buildEphemeral1hPricing() map[string]decimal.Decimal {
+	return map[string]decimal.Decimal{
+		"claude-opus-4-5":            decimal.RequireFromString("0.00001"),
+		"claude-opus-4-5-20251101":   decimal.RequireFromString("0.00001"),
+		"claude-opus-4-5-20250929":   decimal.RequireFromString("0.00001"),
+		"claude-opus-4-1":            decimal.RequireFromString("0.00003"),
+		"claude-opus-4-1-20250805":   decimal.RequireFromString("0.00003"),
+		"claude-opus-4":              decimal.RequireFromString("0.00003"),
+		"claude-opus-4-20250514":     decimal.RequireFromString("0.00003"),
+		"claude-3-opus":              decimal.RequireFromString("0.00003"),
+		"claude-3-opus-latest":       decimal.RequireFromString("0.00003"),
+		"claude-3-opus-20240229":     decimal.RequireFromString("0.00003"),
+		"claude-3-5-sonnet":          decimal.RequireFromString("0.000006"),
+		"claude-3-5-sonnet-latest":   decimal.RequireFromString("0.000006"),
+		"claude-3-5-sonnet-20241022": decimal.RequireFromString("0.000006"),
+		"claude-3-5-sonnet-20240620": decimal.RequireFromString("0.000006"),
+		"claude-3-sonnet":            decimal.RequireFromString("0.000006"),
+		"claude-3-sonnet-20240307":   decimal.RequireFromString("0.000006"),
+		"claude-sonnet-3":            decimal.RequireFromString("0.000006"),
+		"claude-sonnet-3-5":          decimal.RequireFromString("0.000006"),
+		"claude-sonnet-3-7":          decimal.RequireFromString("0.000006"),
+		"claude-sonnet-4":            decimal.RequireFromString("0.000006"),
+		"claude-sonnet-4-20250514":   decimal.RequireFromString("0.000006"),
+		"claude-3-5-haiku":           decimal.RequireFromString("0.0000016"),
+		"claude-3-5-haiku-latest":    decimal.RequireFromString("0.0000016"),
+		"claude-3-5-haiku-20241022":  decimal.RequireFromString("0.0000016"),
+		"claude-3-haiku":             decimal.RequireFromString("0.0000016"),
+		"claude-3-haiku-20240307":    decimal.RequireFromString("0.0000016"),
+		"claude-haiku-3":             decimal.RequireFromString("0.0000016"),
+		"claude-haiku-3-5":           decimal.RequireFromString("0.0000016"),
+		"claude-haiku-4-5":           decimal.RequireFromString("0.000002"),
+		"claude-haiku-4-5-20251001":  decimal.RequireFromString("0.000002"),
 	}
 }
 
 func buildLongContextPricing() map[string]LongContextPricing {
 	return map[string]LongContextPricing{
 		"claude-sonnet-4-20250514[1m]": {
-			Input:  0.000006,
-			Output: 0.0000225,
+			Input:  decimal.RequireFromString("0.000006"),
+			Output: decimal.RequireFromString("0.0000225"),
 		},
 	}
 }

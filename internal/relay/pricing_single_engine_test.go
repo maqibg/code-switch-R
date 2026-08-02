@@ -29,7 +29,7 @@ func TestRelayTelemetryWithoutPricingRecordsNoCost(t *testing.T) {
 		t.Errorf("没有 pricing 快照时不应产出定价来源/版本，实际 %q / %q",
 			attempt.PricingSource, attempt.PricingVersion)
 	}
-	if attempt.Cost.HasPricing || attempt.Cost.TotalCost != 0 {
+	if attempt.Cost.HasPricing || !attempt.Cost.TotalCost.IsZero() {
 		t.Errorf("没有 pricing 快照时不应算出成本，实际 %+v", attempt.Cost)
 	}
 }

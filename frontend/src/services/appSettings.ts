@@ -10,8 +10,8 @@ import type { AppSettings as GeneratedAppSettings } from '../../bindings/codeswi
 export type AppSettings = {
   show_heatmap: boolean
   show_home_title: boolean
-  budget_total: number
-  budget_used_adjustment: number
+  budget_total: string
+  budget_used_adjustment: string
   budget_cycle_enabled: boolean
   budget_cycle_mode: string
   budget_refresh_time: string
@@ -19,8 +19,8 @@ export type AppSettings = {
   budget_show_countdown: boolean
   budget_show_forecast: boolean
   budget_forecast_method: string
-  budget_total_codex: number
-  budget_used_adjustment_codex: number
+  budget_total_codex: string
+  budget_used_adjustment_codex: string
   budget_cycle_enabled_codex: boolean
   budget_cycle_mode_codex: string
   budget_refresh_time_codex: string
@@ -50,8 +50,8 @@ export type GlobalProxyTestResult = {
 const DEFAULT_SETTINGS: AppSettings = {
   show_heatmap: true,
   show_home_title: true,
-  budget_total: 0,
-  budget_used_adjustment: 0,
+  budget_total: '0',
+  budget_used_adjustment: '0',
   budget_cycle_enabled: false,
   budget_cycle_mode: 'daily',
   budget_refresh_time: '00:00',
@@ -59,8 +59,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   budget_show_countdown: false,
   budget_show_forecast: false,
   budget_forecast_method: 'cycle',
-  budget_total_codex: 0,
-  budget_used_adjustment_codex: 0,
+  budget_total_codex: '0',
+  budget_used_adjustment_codex: '0',
   budget_cycle_enabled_codex: false,
   budget_cycle_mode_codex: 'daily',
   budget_refresh_time_codex: '00:00',

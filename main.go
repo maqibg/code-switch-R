@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/services/dock"
@@ -499,14 +500,14 @@ func getTrayUsage(logService *services.LogService, appSettings *services.AppSett
 	if logService != nil {
 		stats, err := logService.StatsSince("")
 		if err == nil {
-			used = stats.CostTotal
+			used = decimalFloat(stats.CostTotal)
 		}
 	}
 	if appSettings != nil {
 		settings, err := appSettings.GetAppSettings()
 		if err == nil {
-			total = settings.BudgetTotal
-			adjustment = settings.BudgetUsedAdjustment
+			total = decimalFloat(settings.BudgetTotal)
+			adjustment = decimalFloat(settings.BudgetUsedAdjustment)
 		}
 	}
 	used += adjustment
@@ -517,6 +518,15 @@ func getTrayUsage(logService *services.LogService, appSettings *services.AppSett
 		total = 0
 	}
 	return used, total
+}
+
+func decimalFloat(value string) float64 {
+	amount, err := decimal.NewFromString(value)
+	if err != nil {
+		return 0
+	}
+	result, _ := amount.Float64()
+	return result
 }
 
 func buildUsageTrayMenu(used float64, total float64, onShow func(), onQuit func()) *application.Menu {

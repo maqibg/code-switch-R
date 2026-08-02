@@ -28,13 +28,13 @@ export type RequestLog = {
   is_stream?: boolean | number
   duration_sec?: number
   created_at: string
-  total_cost?: number
-  input_cost?: number
-  output_cost?: number
-  cache_create_cost?: number
-  cache_read_cost?: number
-  ephemeral_5m_cost?: number
-  ephemeral_1h_cost?: number
+	 total_cost?: string
+	 input_cost?: string
+	 output_cost?: string
+	 cache_create_cost?: string
+	 cache_read_cost?: string
+	 ephemeral_5m_cost?: string
+	 ephemeral_1h_cost?: string
   has_pricing?: boolean
 }
 
@@ -86,7 +86,7 @@ export type LogStatsSeries = {
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-  total_cost: number
+	 total_cost: string
 }
 
 export type LogStats = {
@@ -97,11 +97,11 @@ export type LogStats = {
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-  cost_total: number
-  cost_input: number
-  cost_output: number
-  cost_cache_create: number
-  cost_cache_read: number
+	 cost_total: string
+	 cost_input: string
+	 cost_output: string
+	 cost_cache_create: string
+	 cost_cache_read: string
   series: LogStatsSeries[]
 }
 
@@ -123,12 +123,12 @@ export type DashboardOverview = {
   range_key: StatsRange
   current_requests: number
   current_tokens: number
-  current_cost: number
+	 current_cost: string
   current_avg_duration_sec: number
   current_success_rate: number
   previous_requests: number
   previous_tokens: number
-  previous_cost: number
+	 previous_cost: string
   previous_avg_duration_sec: number
   previous_success_rate: number
   has_previous_comparison: boolean
@@ -144,7 +144,7 @@ export const fetchDashboardOverview = async (
   return (await LogService.DashboardOverviewByRange(platform, range)) as DashboardOverview
 }
 
-export const fetchCostSince = async (start: string, platform: LogPlatform | '' = ''): Promise<number> => {
+export const fetchCostSince = async (start: string, platform: LogPlatform | '' = ''): Promise<string> => {
   return LogService.CostSince(start, platform)
 }
 
@@ -159,7 +159,7 @@ export type ProviderDailyStat = {
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-  cost_total: number
+	 cost_total: string
 }
 
 export const fetchProviderDailyStats = async (
@@ -191,7 +191,7 @@ export type ModelDailyStat = {
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-  cost_total: number
+	 cost_total: string
 }
 
 export const fetchModelDailyStats = async (
@@ -255,7 +255,7 @@ export type HeatmapStat = {
   input_tokens: number
   output_tokens: number
   reasoning_tokens: number
-  total_cost: number
+	 total_cost: string
 }
 
 export const fetchHeatmapStats = async (days: number): Promise<HeatmapStat[]> => {

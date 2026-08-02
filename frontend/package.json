@@ -20,6 +20,7 @@
     "@wailsio/runtime": "^3.0.0-alpha.72",
     "chart.js": "^4.5.1",
     "codemirror": "^6.0.2",
+    "decimal.js": "^10.6.0",
     "lucide-vue-next": "^0.577.0",
     "vue": "^3.5.23",
     "vue-chartjs": "^5.3.3",

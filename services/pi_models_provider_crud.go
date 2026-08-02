@@ -385,11 +385,11 @@ func validateNativePiModelOverride(path string, override PiModelOverride) []stri
 	if override.Cost == nil {
 		return errors
 	}
-	for name, value := range map[string]*float64{
+	for name, value := range map[string]*string{
 		"input": override.Cost.Input, "output": override.Cost.Output,
 		"cacheRead": override.Cost.CacheRead, "cacheWrite": override.Cost.CacheWrite,
 	} {
-		if value != nil && !isFiniteNonNegative(*value) {
+		if value != nil && !isValidMoney(*value) {
 			errors = append(errors, fmt.Sprintf("%s.cost.%s 必须是非负有限数值", path, name))
 		}
 	}

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Decimal from 'decimal.js'
 import { computed, nextTick, onMounted, onUnmounted, proxyRefs, ref } from 'vue'
 // 走 bindings 生成的类型化函数，不用 Call.ByName：
 // 后者靠字符串拼服务名，Go 侧签名变化时编译期发现不了
@@ -6,6 +7,7 @@ import * as AppService from '../../../bindings/codeswitch/appservice'
 import { fetchCostSince, fetchLogStats } from '../../services/logs'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
 import { fetchProxyStatus } from '../../services/claudeSettings'
+import { decimalMoney, moneyString } from '../../utils/money'
 
 type Platform = 'claude' | 'codex'
 type ForecastMethod = 'cycle' | '10m' | '1h' | 'yesterday' | 'last24h'
@@ -15,17 +17,15 @@ const rootRef = ref<HTMLElement | null>(null)
 let ticker: number | undefined
 let refreshBusy = false
 
-const formatCurrency = (value?: number) => {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return '$0.0000'
+const formatCurrency = (value?: string | number | null) => {
+  const amount = decimalMoney(value)
+  if (amount.greaterThanOrEqualTo(1)) {
+    return `$${amount.toFixed(2)}`
   }
-  if (value >= 1) {
-    return `$${value.toFixed(2)}`
+  if (amount.greaterThanOrEqualTo(0.01)) {
+    return `$${amount.toFixed(3)}`
   }
-  if (value >= 0.01) {
-    return `$${value.toFixed(3)}`
-  }
-  return `$${value.toFixed(4)}`
+  return `$${amount.toFixed(4)}`
 }
 
 const pad2 = (value: number) => String(value).padStart(2, '0')
@@ -67,9 +67,11 @@ const formatCountdown = (remainingMs: number) => {
   return `${pad2(days)}天 ${pad2(hours)}:${pad2(minutes)}`
 }
 
-const calculateRate = (cost: number, seconds: number) => {
-  if (!Number.isFinite(cost) || !Number.isFinite(seconds) || seconds <= 0) return 0
-  return Math.max(cost, 0) / seconds
+const calculateRate = (cost: string, seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0'
+  const amount = decimalMoney(cost)
+  if (amount.isNegative()) return '0'
+  return amount.div(new Decimal(seconds)).toFixed()
 }
 
 const normalizeForecastMethod = (value: unknown): ForecastMethod => {
@@ -81,10 +83,10 @@ const normalizeForecastMethod = (value: unknown): ForecastMethod => {
 }
 
 const createTrayCard = (platform: Platform, brandName: string, brandIcon: string) => {
-  const used = ref(0)
-  const usedRaw = ref(0)
-  const total = ref(0)
-  const usedAdjustment = ref(0)
+  const used = ref('0')
+  const usedRaw = ref('0')
+  const total = ref('0')
+  const usedAdjustment = ref('0')
   const loading = ref(false)
   const cycleEnabled = ref(false)
   const cycleMode = ref<CycleMode>('daily')
@@ -93,7 +95,7 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
   const showCountdown = ref(false)
   const showForecast = ref(false)
   const forecastMethod = ref<ForecastMethod>('cycle')
-  const forecastRate = ref(0)
+  const forecastRate = ref('0')
   const countdownLabel = ref('')
   const forecastLabel = ref('')
   const hostingEnabled = ref(false)
@@ -101,10 +103,12 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
   let nextReset: Date | null = null
 
   const usedLabel = computed(() => formatCurrency(used.value))
-  const totalLabel = computed(() => (total.value > 0 ? formatCurrency(total.value) : '未设置'))
+  const totalLabel = computed(() => (decimalMoney(total.value).greaterThan(0) ? formatCurrency(total.value) : '未设置'))
   const progressRatio = computed(() => {
-    if (total.value <= 0) return 0
-    return Math.min(Math.max(used.value / total.value, 0), 1)
+    const totalAmount = decimalMoney(total.value)
+    if (!totalAmount.greaterThan(0)) return 0
+    const ratio = decimalMoney(used.value).div(totalAmount).toNumber()
+    return Math.min(Math.max(ratio, 0), 1)
   })
   const progressPercentLabel = computed(() => {
     const percent = Math.round(progressRatio.value * 100)
@@ -113,10 +117,10 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
   const budgetTitle = computed(() => (cycleEnabled.value && cycleMode.value === 'weekly' ? '本周预算' : '今日预算'))
   const hostingLabel = computed(() => (hostingEnabled.value ? '托管中' : '未托管'))
 
-  const applyUsedAdjustment = (rawUsed: number) => {
-    const adjusted = rawUsed + usedAdjustment.value
-    if (!Number.isFinite(adjusted)) return 0
-    return Math.max(adjusted, 0)
+  const applyUsedAdjustment = (rawUsed: string) => {
+    const adjusted = decimalMoney(rawUsed).add(decimalMoney(usedAdjustment.value))
+    if (!adjusted.isFinite() || adjusted.isNegative()) return '0'
+    return adjusted.toFixed()
   }
 
   const clampStartToCycle = (start: Date) => {
@@ -175,14 +179,14 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
     if (method === '10m') {
       const windowStart = new Date(now.getTime() - 10 * 60 * 1000)
       const start = clampStartToCycle(windowStart)
-      const cost = Number(await fetchCostSince(formatLocalDateTime(start), platform))
+      const cost = await fetchCostSince(formatLocalDateTime(start), platform)
       const seconds = (now.getTime() - start.getTime()) / 1000
       return calculateRate(cost, seconds)
     }
     if (method === '1h') {
       const windowStart = new Date(now.getTime() - 60 * 60 * 1000)
       const start = clampStartToCycle(windowStart)
-      const cost = Number(await fetchCostSince(formatLocalDateTime(start), platform))
+      const cost = await fetchCostSince(formatLocalDateTime(start), platform)
       const seconds = (now.getTime() - start.getTime()) / 1000
       return calculateRate(cost, seconds)
     }
@@ -190,13 +194,13 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
       const todayStart = startOfDay(now)
       const yesterdayStart = new Date(todayStart)
       yesterdayStart.setDate(yesterdayStart.getDate() - 1)
-      const costSinceYesterday = Number(await fetchCostSince(formatLocalDateTime(yesterdayStart), platform))
-      const costSinceToday = Number(await fetchCostSince(formatLocalDateTime(todayStart), platform))
-      const yesterdayCost = Math.max(costSinceYesterday - costSinceToday, 0)
-      return calculateRate(yesterdayCost, 24 * 60 * 60)
+      const costSinceYesterday = decimalMoney(await fetchCostSince(formatLocalDateTime(yesterdayStart), platform))
+      const costSinceToday = decimalMoney(await fetchCostSince(formatLocalDateTime(todayStart), platform))
+      const yesterdayCost = costSinceYesterday.sub(costSinceToday)
+      return calculateRate(yesterdayCost.toFixed(), 24 * 60 * 60)
     }
     const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    const cost = Number(await fetchCostSince(formatLocalDateTime(windowStart), platform))
+    const cost = await fetchCostSince(formatLocalDateTime(windowStart), platform)
     const seconds = (now.getTime() - windowStart.getTime()) / 1000
     return calculateRate(cost, seconds)
   }
@@ -209,13 +213,15 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
       countdownLabel.value = ''
     }
 
-    if (showForecast.value && total.value > 0) {
-      const rate = forecastRate.value
-      if (rate > 0 && used.value < total.value) {
-        const secondsToBudget = (total.value - used.value) / rate
+    if (showForecast.value && decimalMoney(total.value).greaterThan(0)) {
+      const rate = decimalMoney(forecastRate.value)
+      const usedAmount = decimalMoney(used.value)
+      const totalAmount = decimalMoney(total.value)
+      if (rate.greaterThan(0) && usedAmount.lessThan(totalAmount)) {
+        const secondsToBudget = totalAmount.sub(usedAmount).div(rate).toNumber()
         const forecastTime = new Date(now.getTime() + secondsToBudget * 1000)
         forecastLabel.value = `预计耗尽 ${formatLocalDateTimeLabel(forecastTime)}`
-      } else if (used.value >= total.value && total.value > 0) {
+      } else if (usedAmount.greaterThanOrEqualTo(totalAmount) && totalAmount.greaterThan(0)) {
         forecastLabel.value = '已达预算'
       } else {
         forecastLabel.value = '预计耗尽 —'
@@ -238,7 +244,7 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
 
   const applySettings = (settings: AppSettings) => {
     if (platform === 'codex') {
-      total.value = Number(settings?.budget_total_codex ?? 0)
+      total.value = moneyString(settings?.budget_total_codex)
       cycleEnabled.value = settings?.budget_cycle_enabled_codex ?? false
       cycleMode.value = settings?.budget_cycle_mode_codex === 'weekly' ? 'weekly' : 'daily'
       refreshTime.value = settings?.budget_refresh_time_codex || '00:00'
@@ -246,11 +252,10 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
       showCountdown.value = settings?.budget_show_countdown_codex ?? false
       showForecast.value = settings?.budget_show_forecast_codex ?? false
       forecastMethod.value = normalizeForecastMethod(settings?.budget_forecast_method_codex ?? 'cycle')
-      const rawAdjustment = Number(settings?.budget_used_adjustment_codex ?? 0)
-      usedAdjustment.value = Number.isFinite(rawAdjustment) ? rawAdjustment : 0
+      usedAdjustment.value = moneyString(settings?.budget_used_adjustment_codex)
       return
     }
-    total.value = Number(settings?.budget_total ?? 0)
+    total.value = moneyString(settings?.budget_total)
     cycleEnabled.value = settings?.budget_cycle_enabled ?? false
     cycleMode.value = settings?.budget_cycle_mode === 'weekly' ? 'weekly' : 'daily'
     refreshTime.value = settings?.budget_refresh_time || '00:00'
@@ -258,8 +263,7 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
     showCountdown.value = settings?.budget_show_countdown ?? false
     showForecast.value = settings?.budget_show_forecast ?? false
     forecastMethod.value = normalizeForecastMethod(settings?.budget_forecast_method ?? 'cycle')
-    const rawAdjustment = Number(settings?.budget_used_adjustment ?? 0)
-    usedAdjustment.value = Number.isFinite(rawAdjustment) ? rawAdjustment : 0
+    usedAdjustment.value = moneyString(settings?.budget_used_adjustment)
   }
 
   const refresh = async (settings: AppSettings) => {
@@ -269,17 +273,17 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
       updateCycleTimes()
       await updateHostingState()
 
-      let rawUsed = 0
+      let rawUsed = '0'
       if (cycleEnabled.value && cycleStart) {
         const startValue = formatLocalDateTime(cycleStart)
-        rawUsed = Number(await fetchCostSince(startValue, platform))
+        rawUsed = await fetchCostSince(startValue, platform)
       } else {
         const stats = await fetchLogStats(platform)
-        rawUsed = Number(stats?.cost_total ?? 0)
+        rawUsed = stats?.cost_total ?? '0'
       }
-      usedRaw.value = Number.isFinite(rawUsed) ? rawUsed : 0
+      usedRaw.value = moneyString(rawUsed)
       used.value = applyUsedAdjustment(usedRaw.value)
-      forecastRate.value = showForecast.value ? await computeForecastRate(new Date()) : 0
+      forecastRate.value = showForecast.value ? await computeForecastRate(new Date()) : '0'
     } catch (error) {
       console.error(`failed to load ${platform} tray stats`, error)
     } finally {

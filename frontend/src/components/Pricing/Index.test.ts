@@ -33,7 +33,7 @@ vi.mock('../../../bindings/codeswitch/services/pricingservice', () => ({
 }))
 vi.mock('../../utils/toast', () => ({ showToast: showToastMock }))
 
-const rates = () => new PricingRates({ input: 1.25, output: 5, reasoning: 0, cache_read: 0.25, cache_write: 1.5 })
+const rates = () => new PricingRates({ input: '1.25', output: '5', reasoning: '0', cache_read: '0.25', cache_write: '1.5' })
 const rule = () => new PricingCustomRule({
   id: 'rule-1', name: 'GPT', pattern: '^gpt-', enabled: true, order: 0, rates: rates(), tiers: [],
   created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
@@ -45,8 +45,8 @@ const overview = () => new PricingOverview({
 })
 const page = () => new PricingBuiltinPage({
   items: [new PricingBuiltinRow({
-    model: 'gpt-test', provider: 'openai', mode: 'chat', input: 1.25, output: 5, reasoning: 0,
-    cache_read: 0.25, cache_write: 1.5, context_window: 128000, max_output_tokens: 16000,
+    model: 'gpt-test', provider: 'openai', mode: 'chat', input: '1.25', output: '5', reasoning: '0',
+    cache_read: '0.25', cache_write: '1.5', context_window: 128000, max_output_tokens: 16000,
     billing_status: 'full', custom_rule_id: 'rule-1', custom_rule_name: 'GPT',
   })],
   page: 1, page_size: 50, total: 1, total_pages: 1,
@@ -60,7 +60,7 @@ const ruleModalStub = {
       <span class="stub-error">{{ error }}</span>
       <button data-testid="stub-save" @click="$emit('save', {
         id: '', name: 'New Rule', pattern: '^new-model$', enabled: true, order: 0,
-        rates: { input: 1, output: 2, reasoning: 0, cache_read: 0, cache_write: 0 },
+        rates: { input: '1', output: '2', reasoning: '0', cache_read: '0', cache_write: '0' },
         tiers: [], created_at: '', updated_at: ''
       })">save</button>
     </div>

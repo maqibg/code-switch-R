@@ -234,7 +234,7 @@ func newPiBuiltinAddTestService(t *testing.T, content string) (*PiSettingsServic
 					ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", API: "openai-completions", Provider: "deepseek",
 					BaseURL: "https://api.deepseek.com", Reasoning: &reasoning,
 					ThinkingLevelMap: map[string]*string{"high": &high}, Input: []string{"text"},
-					Cost: &PiModelCost{Input: 0.435, Output: 0.87}, ContextWindow: &contextWindow, MaxTokens: &maxTokens,
+					Cost: &PiModelCost{Input: "0.435", Output: "0.87"}, ContextWindow: &contextWindow, MaxTokens: &maxTokens,
 					Headers: map[string]string{"X-Source": "deepseek"},
 					Compat:  map[string]any{"thinkingFormat": "deepseek", "supportsStore": false},
 				}},

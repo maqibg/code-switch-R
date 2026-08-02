@@ -3,6 +3,11 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 )
 
 // 数据库 schema 迁移框架。
@@ -96,6 +101,11 @@ var schemaMigrations = []schemaMigration{
 		// Provider、黑名单、请求日志与 attempt 数据。
 		up: migrateRemoveCustomCLI,
 	},
+	{
+		version: 9,
+		name:    "decimal-money-columns",
+		up:      migrateDecimalMoneyColumns,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
@@ -160,6 +170,11 @@ func RunMigrationsOn(db *sql.DB) error {
 		if applied[migration.version] {
 			continue
 		}
+		if migration.version == 9 {
+			if err := backupDatabaseForDecimalMigration(db); err != nil {
+				return fmt.Errorf("迁移 %d(%s) 前备份数据库失败: %w", migration.version, migration.name, err)
+			}
+		}
 		if err := applySchemaMigration(db, migration); err != nil {
 			return err
 		}
@@ -169,6 +184,59 @@ func RunMigrationsOn(db *sql.DB) error {
 
 	if executed == 0 {
 		logDebug("数据库 schema 已是最新", "version", latestSchemaVersion())
+	}
+	return nil
+}
+
+func backupDatabaseForDecimalMigration(db *sql.DB) error {
+	var path string
+	if err := db.QueryRow(`PRAGMA database_list`).Scan(new(int), new(string), &path); err != nil {
+		return err
+	}
+	if path == "" || path == ":memory:" {
+		return nil
+	}
+	target := filepath.Join(filepath.Dir(path), fmt.Sprintf("app.db.decimal-%s.bak", time.Now().UTC().Format("20060102T150405.000000000Z")))
+	quotedTarget := strings.ReplaceAll(target, "'", "''")
+	if _, err := db.Exec("VACUUM INTO '" + quotedTarget + "'"); err != nil {
+		// 某些旧 SQLite 驱动不支持 VACUUM INTO，回退到 checkpoint 后复制主文件。
+		if _, checkpointErr := db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); checkpointErr != nil {
+			return fmt.Errorf("VACUUM INTO 失败: %v；checkpoint 失败: %w", err, checkpointErr)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if writeErr := os.WriteFile(target, data, 0o600); writeErr != nil {
+			return writeErr
+		}
+	}
+	if err := cleanupDecimalMigrationBackups(filepath.Dir(path), 3); err != nil {
+		return fmt.Errorf("清理精确金额迁移备份失败: %w", err)
+	}
+	return nil
+}
+
+func cleanupDecimalMigrationBackups(dir string, keep int) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	paths := make([]string, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "app.db.decimal-") && strings.HasSuffix(entry.Name(), ".bak") {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	sort.Strings(paths)
+	if keep < 0 {
+		keep = 0
+	}
+	for len(paths) > keep {
+		if err := os.Remove(paths[0]); err != nil {
+			return err
+		}
+		paths = paths[1:]
 	}
 	return nil
 }

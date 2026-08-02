@@ -13,6 +13,7 @@ import {
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import type { LogStatsSeries } from '../../services/logs'
+import { moneyNumber } from '../../utils/money'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -78,7 +79,7 @@ const chartData = computed(() => {
       },
       {
         label: t('stats.chart.cost'),
-        data: props.series.map((item) => Number((item.total_cost ?? 0).toFixed(4))),
+        data: props.series.map((item) => Number(moneyNumber(item.total_cost).toFixed(4))),
         borderColor: '#ff9f0a',
         backgroundColor: 'rgba(255, 159, 10, 0.12)',
         yAxisID: 'yCost',

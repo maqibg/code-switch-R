@@ -330,6 +330,7 @@ import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
 import PricingRuleModal from './PricingRuleModal.vue'
+import { decimalMoney, formatMoney } from '../../utils/money'
 
 type PricingTab = 'builtin' | 'custom'
 type RateKey = keyof PricingRates
@@ -384,9 +385,10 @@ let listRequestID = 0
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 const formatInteger = (value?: number) => new Intl.NumberFormat(locale.value).format(Number(value || 0))
-const formatRate = (value: number) => Number.isFinite(value)
-  ? new Intl.NumberFormat(locale.value, { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 6 }).format(value)
-  : '-'
+const formatRate = (value: string | number) => {
+  const amount = decimalMoney(value)
+  return formatMoney(amount.toFixed(), 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US')
+}
 const formatDate = (value: string) => {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(date)

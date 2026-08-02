@@ -9,6 +9,7 @@ import {
   type StatsRange,
 } from '../services/logs'
 import { formatBeijingDateTime } from '../utils/beijingTime'
+import { decimalMoney, formatMoney } from '../utils/money'
 import { useActivePolling } from './useActivePolling'
 
 const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'grok', 'gemini', 'reasonix', 'pi']
@@ -38,11 +39,11 @@ const emptyStats = (): LogStats => ({
   reasoning_tokens: 0,
   cache_create_tokens: 0,
   cache_read_tokens: 0,
-  cost_total: 0,
-  cost_input: 0,
-  cost_output: 0,
-  cost_cache_create: 0,
-  cost_cache_read: 0,
+	 cost_total: '0',
+	 cost_input: '0',
+	 cost_output: '0',
+	 cost_cache_create: '0',
+	 cost_cache_read: '0',
   series: [],
 })
 
@@ -95,11 +96,11 @@ export function useStatsDashboard() {
     return numeric.toLocaleString()
   }
 
-  const formatCurrency = (value?: number) => {
-    const numeric = value ?? 0
-    if (numeric >= 1) return `$${numeric.toFixed(2)}`
-    if (numeric >= 0.01) return `$${numeric.toFixed(3)}`
-    return `$${numeric.toFixed(4)}`
+	const formatCurrency = (value?: string | number) => {
+		const amount = decimalMoney(value)
+		if (amount.gte(1)) return formatMoney(amount.toFixed(2))
+		if (amount.gte(0.01)) return formatMoney(amount.toFixed(3))
+		return formatMoney(amount.toFixed(4))
   }
 
   const formatDuration = (value?: number) => {
@@ -292,18 +293,22 @@ export function useStatsDashboard() {
     trendSeries: computed(() => trendStats.value.series),
   }
 
-  function describeDelta(current: number, previous: number, enabled: boolean) {
-    if (!enabled) return t('stats.cards.noCompare')
-    if (previous === 0 && current === 0) return t('stats.cards.noCompare')
-    if (previous === 0) return t('stats.cards.newValue')
-    const change = ((current - previous) / previous) * 100
+	function describeDelta(current: number | string, previous: number | string, enabled: boolean) {
+		if (!enabled) return t('stats.cards.noCompare')
+		const currentAmount = decimalMoney(current)
+		const previousAmount = decimalMoney(previous)
+		if (previousAmount.isZero() && currentAmount.isZero()) return t('stats.cards.noCompare')
+		if (previousAmount.isZero()) return t('stats.cards.newValue')
+		const change = currentAmount.minus(previousAmount).div(previousAmount).mul(100).toNumber()
     const sign = change > 0 ? '+' : ''
     return t('stats.cards.vsPrevious', { value: `${sign}${change.toFixed(Math.abs(change) >= 10 ? 0 : 1)}%` })
   }
 
-  function toneForDelta(current: number, previous: number, inverse: boolean, enabled: boolean): StatusTone {
-    if (!enabled || previous === 0 || current === previous) return 'neutral'
-    const rising = current > previous
+	function toneForDelta(current: number | string, previous: number | string, inverse: boolean, enabled: boolean): StatusTone {
+		const currentAmount = decimalMoney(current)
+		const previousAmount = decimalMoney(previous)
+		if (!enabled || previousAmount.isZero() || currentAmount.eq(previousAmount)) return 'neutral'
+		const rising = currentAmount.gt(previousAmount)
     if (inverse) return rising ? 'critical' : 'good'
     return rising ? 'good' : 'warn'
   }

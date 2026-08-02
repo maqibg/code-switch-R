@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -29,27 +30,218 @@ var piThinkingLevels = map[string]struct{}{
 }
 
 type PiModelCostTier struct {
-	InputTokensAbove int64   `json:"inputTokensAbove"`
-	Input            float64 `json:"input"`
-	Output           float64 `json:"output"`
-	CacheRead        float64 `json:"cacheRead"`
-	CacheWrite       float64 `json:"cacheWrite"`
+	InputTokensAbove int64  `json:"inputTokensAbove"`
+	Input            string `json:"input"`
+	Output           string `json:"output"`
+	CacheRead        string `json:"cacheRead"`
+	CacheWrite       string `json:"cacheWrite"`
 }
 
 type PiModelCost struct {
-	Input      float64           `json:"input"`
-	Output     float64           `json:"output"`
-	CacheRead  float64           `json:"cacheRead"`
-	CacheWrite float64           `json:"cacheWrite"`
+	Input      string            `json:"input"`
+	Output     string            `json:"output"`
+	CacheRead  string            `json:"cacheRead"`
+	CacheWrite string            `json:"cacheWrite"`
 	Tiers      []PiModelCostTier `json:"tiers,omitempty"`
 }
 
 type PiModelOverrideCost struct {
-	Input      *float64          `json:"input,omitempty"`
-	Output     *float64          `json:"output,omitempty"`
-	CacheRead  *float64          `json:"cacheRead,omitempty"`
-	CacheWrite *float64          `json:"cacheWrite,omitempty"`
+	Input      *string           `json:"input,omitempty"`
+	Output     *string           `json:"output,omitempty"`
+	CacheRead  *string           `json:"cacheRead,omitempty"`
+	CacheWrite *string           `json:"cacheWrite,omitempty"`
 	Tiers      []PiModelCostTier `json:"tiers,omitempty"`
+}
+
+func decodePiMoney(raw json.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "0", nil
+	}
+	var text string
+	if trimmed[0] == '"' {
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			return "", err
+		}
+	} else {
+		text = string(trimmed)
+	}
+	amount, err := parseMoney(text)
+	if err != nil {
+		return "", err
+	}
+	return moneyString(amount), nil
+}
+
+func encodePiMoney(value string) (json.RawMessage, error) {
+	amount, err := parseMoney(value)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(moneyString(amount)), nil
+}
+
+func (cost *PiModelCost) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Input      json.RawMessage   `json:"input"`
+		Output     json.RawMessage   `json:"output"`
+		CacheRead  json.RawMessage   `json:"cacheRead"`
+		CacheWrite json.RawMessage   `json:"cacheWrite"`
+		Tiers      []PiModelCostTier `json:"tiers"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var err error
+	if cost.Input, err = decodePiMoney(raw.Input); err != nil {
+		return err
+	}
+	if cost.Output, err = decodePiMoney(raw.Output); err != nil {
+		return err
+	}
+	if cost.CacheRead, err = decodePiMoney(raw.CacheRead); err != nil {
+		return err
+	}
+	if cost.CacheWrite, err = decodePiMoney(raw.CacheWrite); err != nil {
+		return err
+	}
+	cost.Tiers = raw.Tiers
+	return nil
+}
+
+func (cost PiModelCost) MarshalJSON() ([]byte, error) {
+	input, err := encodePiMoney(cost.Input)
+	if err != nil {
+		return nil, err
+	}
+	output, err := encodePiMoney(cost.Output)
+	if err != nil {
+		return nil, err
+	}
+	cacheRead, err := encodePiMoney(cost.CacheRead)
+	if err != nil {
+		return nil, err
+	}
+	cacheWrite, err := encodePiMoney(cost.CacheWrite)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		Input      json.RawMessage   `json:"input"`
+		Output     json.RawMessage   `json:"output"`
+		CacheRead  json.RawMessage   `json:"cacheRead"`
+		CacheWrite json.RawMessage   `json:"cacheWrite"`
+		Tiers      []PiModelCostTier `json:"tiers,omitempty"`
+	}{input, output, cacheRead, cacheWrite, cost.Tiers})
+}
+
+func (tier *PiModelCostTier) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		InputTokensAbove int64           `json:"inputTokensAbove"`
+		Input            json.RawMessage `json:"input"`
+		Output           json.RawMessage `json:"output"`
+		CacheRead        json.RawMessage `json:"cacheRead"`
+		CacheWrite       json.RawMessage `json:"cacheWrite"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var err error
+	tier.InputTokensAbove = raw.InputTokensAbove
+	if tier.Input, err = decodePiMoney(raw.Input); err != nil {
+		return err
+	}
+	if tier.Output, err = decodePiMoney(raw.Output); err != nil {
+		return err
+	}
+	if tier.CacheRead, err = decodePiMoney(raw.CacheRead); err != nil {
+		return err
+	}
+	if tier.CacheWrite, err = decodePiMoney(raw.CacheWrite); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (tier PiModelCostTier) MarshalJSON() ([]byte, error) {
+	input, err := encodePiMoney(tier.Input)
+	if err != nil {
+		return nil, err
+	}
+	output, err := encodePiMoney(tier.Output)
+	if err != nil {
+		return nil, err
+	}
+	cacheRead, err := encodePiMoney(tier.CacheRead)
+	if err != nil {
+		return nil, err
+	}
+	cacheWrite, err := encodePiMoney(tier.CacheWrite)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		InputTokensAbove int64           `json:"inputTokensAbove"`
+		Input            json.RawMessage `json:"input"`
+		Output           json.RawMessage `json:"output"`
+		CacheRead        json.RawMessage `json:"cacheRead"`
+		CacheWrite       json.RawMessage `json:"cacheWrite"`
+	}{tier.InputTokensAbove, input, output, cacheRead, cacheWrite})
+}
+
+func (cost *PiModelOverrideCost) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	decodeOptional := func(key string) (*string, error) {
+		value, ok := raw[key]
+		if !ok {
+			return nil, nil
+		}
+		text, err := decodePiMoney(value)
+		if err != nil {
+			return nil, err
+		}
+		return &text, nil
+	}
+	var err error
+	if cost.Input, err = decodeOptional("input"); err != nil {
+		return err
+	}
+	if cost.Output, err = decodeOptional("output"); err != nil {
+		return err
+	}
+	if cost.CacheRead, err = decodeOptional("cacheRead"); err != nil {
+		return err
+	}
+	if cost.CacheWrite, err = decodeOptional("cacheWrite"); err != nil {
+		return err
+	}
+	if tiers, ok := raw["tiers"]; ok {
+		if err := json.Unmarshal(tiers, &cost.Tiers); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cost PiModelOverrideCost) MarshalJSON() ([]byte, error) {
+	result := map[string]any{}
+	for key, value := range map[string]*string{"input": cost.Input, "output": cost.Output, "cacheRead": cost.CacheRead, "cacheWrite": cost.CacheWrite} {
+		if value == nil {
+			continue
+		}
+		encoded, err := encodePiMoney(*value)
+		if err != nil {
+			return nil, err
+		}
+		result[key] = encoded
+	}
+	if len(cost.Tiers) > 0 {
+		result["tiers"] = cost.Tiers
+	}
+	return json.Marshal(result)
 }
 
 // PiModelEntry follows Pi 0.80.6 ModelDefinitionSchema. Field declaration order
@@ -217,11 +409,11 @@ func validatePiModelEntry(path string, model PiModelEntry, fallbackAPI string) [
 func validatePiModelOverride(path string, override PiModelOverride) []string {
 	errors := validatePiModelBasics(path, override.Input, override.ContextWindow, override.MaxTokens, override.ThinkingLevelMap, override.Headers)
 	if override.Cost != nil {
-		for name, value := range map[string]*float64{
+		for name, value := range map[string]*string{
 			"input": override.Cost.Input, "output": override.Cost.Output,
 			"cacheRead": override.Cost.CacheRead, "cacheWrite": override.Cost.CacheWrite,
 		} {
-			if value != nil && (!isFiniteNonNegative(*value)) {
+			if value != nil && (!isValidMoney(*value)) {
 				errors = append(errors, fmt.Sprintf("%s.cost.%s 必须是非负有限数值", path, name))
 			}
 		}
@@ -276,10 +468,10 @@ func validatePiModelBasics(path string, input []string, contextWindow, maxTokens
 
 func validatePiModelCost(path string, cost PiModelCost) []string {
 	errors := make([]string, 0)
-	for name, value := range map[string]float64{
+	for name, value := range map[string]string{
 		"input": cost.Input, "output": cost.Output, "cacheRead": cost.CacheRead, "cacheWrite": cost.CacheWrite,
 	} {
-		if !isFiniteNonNegative(value) {
+		if !isValidMoney(value) {
 			errors = append(errors, fmt.Sprintf("%s.%s 必须是非负有限数值", path, name))
 		}
 	}
@@ -294,18 +486,19 @@ func validatePiCostTier(path string, tier PiModelCostTier) []string {
 	if tier.InputTokensAbove <= 0 {
 		errors = append(errors, path+".inputTokensAbove 必须大于 0")
 	}
-	for name, value := range map[string]float64{
+	for name, value := range map[string]string{
 		"input": tier.Input, "output": tier.Output, "cacheRead": tier.CacheRead, "cacheWrite": tier.CacheWrite,
 	} {
-		if !isFiniteNonNegative(value) {
+		if !isValidMoney(value) {
 			errors = append(errors, fmt.Sprintf("%s.%s 必须是非负有限数值", path, name))
 		}
 	}
 	return errors
 }
 
-func isFiniteNonNegative(value float64) bool {
-	return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+func isValidMoney(value string) bool {
+	_, err := parseMoney(value)
+	return err == nil
 }
 
 func validatePiCompat(path, api string, compat map[string]any) []string {

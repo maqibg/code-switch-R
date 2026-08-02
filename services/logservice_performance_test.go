@@ -23,7 +23,7 @@ func BenchmarkQueryLogStats100K(b *testing.B) {
 	stmt, err := tx.Prepare(`
 		INSERT INTO request_log (
 			platform, provider, model, http_code, input_tokens, output_tokens,
-			reasoning_tokens, total_cost, input_cost, output_cost,
+				reasoning_tokens, total_cost, input_cost, output_cost, total_cost_decimal, input_cost_decimal, output_cost_decimal,
 			cost_calculated, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
 	`)
@@ -35,7 +35,7 @@ func BenchmarkQueryLogStats100K(b *testing.B) {
 		createdAt := now.Add(-time.Duration(i%720) * time.Hour)
 		if _, err := stmt.Exec(
 			"claude", "provider-a", "model-a", 200,
-			1000, 200, 50, 0.003, 0.001, 0.002,
+			1000, 200, 50, "0.003", "0.001", "0.002", "0.003", "0.001", "0.002",
 			formatCreatedAtBoundary(createdAt),
 		); err != nil {
 			b.Fatal(err)

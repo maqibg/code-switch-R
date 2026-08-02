@@ -1,4 +1,5 @@
 import type { HeatmapStat } from '../services/logs'
+import { decimalMoney, moneyString } from '../utils/money'
 
 export type UsageHeatmapDay = {
 	label: string
@@ -7,7 +8,7 @@ export type UsageHeatmapDay = {
 	inputTokens: number
 	outputTokens: number
 	reasoningTokens: number
-	cost: number
+	cost: string
 	intensity: number
 }
 
@@ -72,7 +73,7 @@ type StatBucket = {
 	inputTokens: number
 	outputTokens: number
 	reasoningTokens: number
-	cost: number
+	cost: string
 }
 
 const emptyBucket = (): StatBucket => ({
@@ -80,7 +81,7 @@ const emptyBucket = (): StatBucket => ({
 	inputTokens: 0,
 	outputTokens: 0,
 	reasoningTokens: 0,
-	cost: 0,
+	cost: '0',
 })
 
 const buildColumns = (
@@ -144,14 +145,14 @@ export const buildUsageHeatmapMatrix = (
 			inputTokens: Number(stat.input_tokens) || 0,
 			outputTokens: Number(stat.output_tokens) || 0,
 			reasoningTokens: Number(stat.reasoning_tokens) || 0,
-			cost: Number(stat.total_cost) || 0,
+				cost: moneyString(stat.total_cost),
 		}
 		if (bucket) {
 			bucket.requests += update.requests
 			bucket.inputTokens += update.inputTokens
 			bucket.outputTokens += update.outputTokens
 			bucket.reasoningTokens += update.reasoningTokens
-			bucket.cost += update.cost
+				bucket.cost = decimalMoney(bucket.cost).add(decimalMoney(update.cost)).toFixed()
 		} else {
 			statsMap.set(key, { ...update })
 		}

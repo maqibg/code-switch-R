@@ -4,6 +4,7 @@ import (
 	"codeswitch/internal/dbcore"
 	"codeswitch/services"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -36,6 +38,22 @@ type relayTelemetry struct {
 	StartedAt      time.Time
 	Attempts       []services.RelayAttemptLog
 	pricing        *services.RequestPricingSnapshot
+}
+
+type requestPriceSnapshotItem struct {
+	Attempt              int    `json:"attempt"`
+	Provider             string `json:"provider"`
+	Model                string `json:"model"`
+	ServiceTier          string `json:"service_tier,omitempty"`
+	PricingSource        string `json:"pricing_source,omitempty"`
+	PricingVersion       string `json:"pricing_version,omitempty"`
+	PricingRuleID        string `json:"pricing_rule_id,omitempty"`
+	InputUnitPrice       string `json:"input_unit_price"`
+	OutputUnitPrice      string `json:"output_unit_price"`
+	ReasoningUnitPrice   string `json:"reasoning_unit_price"`
+	CacheReadUnitPrice   string `json:"cache_read_unit_price"`
+	CacheCreateUnitPrice string `json:"cache_create_unit_price"`
+	Cost                 string `json:"cost"`
 }
 
 func beginRelayTelemetry(c *gin.Context, platform string, clientProtocol relayprotocol.Protocol, requestedModel string, isStream bool, pricingService *services.PricingService, sourceID string) *relayTelemetry {
@@ -130,6 +148,7 @@ func (t *relayTelemetry) logicalRequest(status int) services.RequestLog {
 		IsStream: t.IsStream, DurationSec: time.Since(t.StartedAt).Seconds(),
 		AttemptCount: len(t.Attempts), HttpCode: status,
 	}
+	snapshots := make([]requestPriceSnapshotItem, 0, len(t.Attempts))
 	var final *services.RelayAttemptLog
 	for i := range t.Attempts {
 		attempt := &t.Attempts[i]
@@ -140,20 +159,21 @@ func (t *relayTelemetry) logicalRequest(status int) services.RequestLog {
 		result.ReasoningTokens += attempt.Usage.ReasoningTokens
 		result.Ephemeral5mTokens += attempt.Usage.Ephemeral5mTokens
 		result.Ephemeral1hTokens += attempt.Usage.Ephemeral1hTokens
-		result.InputCost += attempt.Cost.InputCost
-		result.OutputCost += attempt.Cost.OutputCost
-		result.ReasoningCost += attempt.Cost.ReasoningCost
-		result.CacheCreateCost += attempt.Cost.CacheCreateCost
-		result.CacheReadCost += attempt.Cost.CacheReadCost
-		result.Ephemeral5mCost += attempt.Cost.Ephemeral5mCost
-		result.Ephemeral1hCost += attempt.Cost.Ephemeral1hCost
-		result.TotalCost += attempt.Cost.TotalCost
+		result.InputCost = addMoneyString(result.InputCost, attempt.Cost.InputCost)
+		result.OutputCost = addMoneyString(result.OutputCost, attempt.Cost.OutputCost)
+		result.ReasoningCost = addMoneyString(result.ReasoningCost, attempt.Cost.ReasoningCost)
+		result.CacheCreateCost = addMoneyString(result.CacheCreateCost, attempt.Cost.CacheCreateCost)
+		result.CacheReadCost = addMoneyString(result.CacheReadCost, attempt.Cost.CacheReadCost)
+		result.Ephemeral5mCost = addMoneyString(result.Ephemeral5mCost, attempt.Cost.Ephemeral5mCost)
+		result.Ephemeral1hCost = addMoneyString(result.Ephemeral1hCost, attempt.Cost.Ephemeral1hCost)
+		result.TotalCost = addMoneyString(result.TotalCost, attempt.Cost.TotalCost)
 		result.HasPricing = result.HasPricing || attempt.Cost.HasPricing
 		if result.PricingVersion == "" && attempt.PricingVersion != "" {
 			result.PricingSource = attempt.PricingSource
 			result.PricingVersion = attempt.PricingVersion
 			result.PricingRuleID = attempt.PricingRuleID
 		}
+		snapshots = append(snapshots, buildPriceSnapshotItem(len(snapshots)+1, *attempt))
 		if attempt.Success {
 			final = attempt
 		}
@@ -170,7 +190,39 @@ func (t *relayTelemetry) logicalRequest(status int) services.RequestLog {
 		result.ErrorType = final.ErrorType
 	}
 	result.CostCalculated = true
+	if encoded, err := json.Marshal(snapshots); err == nil {
+		result.PricingSnapshot = string(encoded)
+	}
 	return result
+}
+
+func buildPriceSnapshotItem(index int, attempt services.RelayAttemptLog) requestPriceSnapshotItem {
+	unit := func(cost decimal.Decimal, tokens int) string {
+		if tokens <= 0 {
+			return "0"
+		}
+		return cost.Div(decimal.NewFromInt(int64(tokens))).String()
+	}
+	cacheCreate := attempt.Usage.CacheCreateTokens
+	return requestPriceSnapshotItem{
+		Attempt: index, Provider: attempt.Provider, Model: attempt.Model,
+		ServiceTier: attempt.Usage.ServiceTier, PricingSource: attempt.PricingSource,
+		PricingVersion: attempt.PricingVersion, PricingRuleID: attempt.PricingRuleID,
+		InputUnitPrice:       unit(attempt.Cost.InputCost, attempt.Usage.InputTokens),
+		OutputUnitPrice:      unit(attempt.Cost.OutputCost, attempt.Usage.OutputTokens),
+		ReasoningUnitPrice:   unit(attempt.Cost.ReasoningCost, attempt.Usage.ReasoningTokens),
+		CacheReadUnitPrice:   unit(attempt.Cost.CacheReadCost, attempt.Usage.CacheReadTokens),
+		CacheCreateUnitPrice: unit(attempt.Cost.CacheCreateCost, cacheCreate),
+		Cost:                 attempt.Cost.TotalCost.String(),
+	}
+}
+
+func addMoneyString(current string, value decimal.Decimal) string {
+	base, err := decimal.NewFromString(current)
+	if err != nil {
+		base = decimal.Zero
+	}
+	return base.Add(value).String()
 }
 
 func (t *relayTelemetry) finish(c *gin.Context) {

@@ -53,6 +53,29 @@ func (ls *LogService) StopMaintenance() {
 
 func (ls *LogService) runMaintenance(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
+	for {
+		updated, complete, err := backfillDecimalMoneyBatch(decimalMoneyBackfillBatch)
+		if err != nil {
+			log.Printf("精确金额迁移失败: %v", err)
+			break
+		}
+		if complete {
+			break
+		}
+		select {
+		case <-stop:
+			return
+		case <-time.After(25 * time.Millisecond):
+		}
+		if updated == 0 {
+			// 没有可更新的行时仍让出调度，避免损坏数据库状态导致忙循环。
+			select {
+			case <-stop:
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
 	if ls.pricingService != nil {
 		for {
 			updated, err := ls.backfillStoredRequestCostsBatch(requestCostBackfillBatch)

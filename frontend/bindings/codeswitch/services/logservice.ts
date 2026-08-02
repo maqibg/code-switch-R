@@ -27,7 +27,7 @@ export function ClearStoredRecords(): $CancellablePromise<$models.RecordCleanupR
     });
 }
 
-export function CostSince(start: string, platform: string): $CancellablePromise<number> {
+export function CostSince(start: string, platform: string): $CancellablePromise<string> {
     return $Call.ByID(445919367, start, platform);
 }
 
