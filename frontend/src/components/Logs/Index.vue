@@ -190,7 +190,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { formatBeijingDateTime } from '../../utils/beijingTime'
-import { compareMoney, decimalMoney, formatMoney, moneyNumber } from '../../utils/money'
+import { compareMoney, decimalMoney, formatDisplayMoney, moneyNumber } from '../../utils/money'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import {
@@ -593,10 +593,7 @@ const formatCacheHitRate = (cacheRead?: number, inputTokens?: number) => {
 }
 
 const formatCurrency = (value?: string | number) => {
-  const amount = decimalMoney(value)
-  if (amount.gte(1)) return formatMoney(amount.toFixed(2))
-  if (amount.gte(0.01)) return formatMoney(amount.toFixed(3))
-  return formatMoney(amount.toFixed(4))
+  return formatDisplayMoney(value)
 }
 
 const statsCards = computed(() => {

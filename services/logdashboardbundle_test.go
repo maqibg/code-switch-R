@@ -16,9 +16,9 @@ func TestDashboardSuccessExcludesErroredTwoHundredResponses(t *testing.T) {
 		created_at TEXT, platform TEXT, provider TEXT, model TEXT, http_code INTEGER, error_type TEXT,
 		input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
 		reasoning_tokens INTEGER DEFAULT 0, cache_create_tokens INTEGER DEFAULT 0,
-			cache_read_tokens INTEGER DEFAULT 0, total_cost TEXT DEFAULT '0', total_cost_decimal TEXT DEFAULT '0',
-			input_cost TEXT DEFAULT '0', output_cost TEXT DEFAULT '0', input_cost_decimal TEXT DEFAULT '0', output_cost_decimal TEXT DEFAULT '0',
-			cache_create_cost TEXT DEFAULT '0', cache_read_cost TEXT DEFAULT '0', cache_create_cost_decimal TEXT DEFAULT '0', cache_read_cost_decimal TEXT DEFAULT '0',
+			cache_read_tokens INTEGER DEFAULT 0, total_cost TEXT DEFAULT '0',
+			input_cost TEXT DEFAULT '0', output_cost TEXT DEFAULT '0',
+			cache_create_cost TEXT DEFAULT '0', cache_read_cost TEXT DEFAULT '0',
 		duration_sec REAL DEFAULT 0
 	)`)
 	if err != nil {

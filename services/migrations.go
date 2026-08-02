@@ -106,6 +106,11 @@ var schemaMigrations = []schemaMigration{
 		name:    "decimal-money-columns",
 		up:      migrateDecimalMoneyColumns,
 	},
+	{
+		version: 10,
+		name:    "finalize-decimal-money",
+		up:      finalizeDecimalMoneyColumns,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
@@ -170,7 +175,7 @@ func RunMigrationsOn(db *sql.DB) error {
 		if applied[migration.version] {
 			continue
 		}
-		if migration.version == 9 {
+		if migration.version == 10 {
 			if err := backupDatabaseForDecimalMigration(db); err != nil {
 				return fmt.Errorf("迁移 %d(%s) 前备份数据库失败: %w", migration.version, migration.name, err)
 			}

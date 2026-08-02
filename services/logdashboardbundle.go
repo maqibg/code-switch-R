@@ -92,12 +92,12 @@ func buildBundleOverview(rangeKey string, current, previous aggregateSnapshot, h
 		RangeKey:               rangeKey,
 		CurrentRequests:        current.Requests,
 		CurrentTokens:          current.InputTokens + current.OutputTokens + current.Reasoning,
-		CurrentCost:            moneyString(current.CostTotal),
+		CurrentCost:            moneyLogString(current.CostTotal),
 		CurrentAvgDurationSec:  averageAggregateDuration(current),
 		CurrentSuccessRate:     aggregateSuccessRate(current),
 		PreviousRequests:       previous.Requests,
 		PreviousTokens:         previous.InputTokens + previous.OutputTokens + previous.Reasoning,
-		PreviousCost:           moneyString(previous.CostTotal),
+		PreviousCost:           moneyLogString(previous.CostTotal),
 		PreviousAvgDurationSec: averageAggregateDuration(previous),
 		PreviousSuccessRate:    aggregateSuccessRate(previous),
 		HasPreviousComparison:  hasPrevious,
@@ -118,11 +118,11 @@ func queryAggregateSnapshotFiltered(db *sql.DB, start *time.Time, end time.Time,
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("input_cost_decimal", "input_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("output_cost_decimal", "output_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_create_cost_decimal", "cache_create_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_read_cost_decimal", "cache_read_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(total_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(input_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(output_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(cache_create_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(cache_read_cost, '|'), ''),
 			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN duration_sec ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN 1 ELSE 0 END), 0)
@@ -167,7 +167,7 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
+				COALESCE(GROUP_CONCAT(total_cost, '|'), '')
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		GROUP BY bucket_key
@@ -198,7 +198,7 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 		); err != nil {
 			return LogStats{}, err
 		}
-		item.TotalCost = moneyString(sumMoneyList(item.TotalCost))
+		item.TotalCost = moneyLogString(sumMoneyList(item.TotalCost))
 		seriesMap[item.Day] = item
 	}
 	if err := rows.Err(); err != nil {
@@ -214,11 +214,11 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 		ReasoningTokens:   snapshot.Reasoning,
 		CacheCreateTokens: snapshot.CacheCreate,
 		CacheReadTokens:   snapshot.CacheRead,
-		CostTotal:         moneyString(snapshot.CostTotal),
-		CostInput:         moneyString(snapshot.CostInput),
-		CostOutput:        moneyString(snapshot.CostOutput),
-		CostCacheCreate:   moneyString(snapshot.CostCacheCreate),
-		CostCacheRead:     moneyString(snapshot.CostCacheRead),
+		CostTotal:         moneyLogString(snapshot.CostTotal),
+		CostInput:         moneyLogString(snapshot.CostInput),
+		CostOutput:        moneyLogString(snapshot.CostOutput),
+		CostCacheCreate:   moneyLogString(snapshot.CostCacheCreate),
+		CostCacheRead:     moneyLogString(snapshot.CostCacheRead),
 		Series:            ordered,
 	}, nil
 }
@@ -240,11 +240,11 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("input_cost_decimal", "input_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("output_cost_decimal", "output_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_create_cost_decimal", "cache_create_cost") + `, '|'), ''),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("cache_read_cost_decimal", "cache_read_cost") + `, '|'), ''),
+				COALESCE(GROUP_CONCAT(total_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(input_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(output_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(cache_create_cost, '|'), ''),
+				COALESCE(GROUP_CONCAT(cache_read_cost, '|'), ''),
 			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN duration_sec ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN duration_sec > 0 THEN 1 ELSE 0 END), 0)
@@ -291,22 +291,27 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 		); err != nil {
 			return nil, aggregateSnapshot{}, err
 		}
-		stats.CostTotal = moneyString(sumMoneyList(costTotal))
-		stats.CostInput = moneyString(sumMoneyList(costInput))
-		stats.CostOutput = moneyString(sumMoneyList(costOutput))
-		stats.CostCacheCreate = moneyString(sumMoneyList(costCacheCreate))
-		stats.CostCacheRead = moneyString(sumMoneyList(costCacheRead))
+		costTotalAmount := sumMoneyList(costTotal)
+		costInputAmount := sumMoneyList(costInput)
+		costOutputAmount := sumMoneyList(costOutput)
+		costCacheCreateAmount := sumMoneyList(costCacheCreate)
+		costCacheReadAmount := sumMoneyList(costCacheRead)
+		stats.CostTotal = moneyLogString(costTotalAmount)
+		stats.CostInput = moneyLogString(costInputAmount)
+		stats.CostOutput = moneyLogString(costOutputAmount)
+		stats.CostCacheCreate = moneyLogString(costCacheCreateAmount)
+		stats.CostCacheRead = moneyLogString(costCacheReadAmount)
 		total.Requests += stats.TotalRequests
 		total.InputTokens += stats.InputTokens
 		total.OutputTokens += stats.OutputTokens
 		total.Reasoning += stats.ReasoningTokens
 		total.CacheCreate += stats.CacheCreateTokens
 		total.CacheRead += stats.CacheReadTokens
-		total.CostTotal = total.CostTotal.Add(parseMoneyOrLegacy(stats.CostTotal))
-		total.CostInput = total.CostInput.Add(parseMoneyOrLegacy(stats.CostInput))
-		total.CostOutput = total.CostOutput.Add(parseMoneyOrLegacy(stats.CostOutput))
-		total.CostCacheCreate = total.CostCacheCreate.Add(parseMoneyOrLegacy(stats.CostCacheCreate))
-		total.CostCacheRead = total.CostCacheRead.Add(parseMoneyOrLegacy(stats.CostCacheRead))
+		total.CostTotal = total.CostTotal.Add(costTotalAmount)
+		total.CostInput = total.CostInput.Add(costInputAmount)
+		total.CostOutput = total.CostOutput.Add(costOutputAmount)
+		total.CostCacheCreate = total.CostCacheCreate.Add(costCacheCreateAmount)
+		total.CostCacheRead = total.CostCacheRead.Add(costCacheReadAmount)
 		total.Successes += successes
 		total.DurationSumSec += durationSum
 		total.DurationCount += durationCnt
@@ -333,7 +338,7 @@ func queryProviderRanks(db *sql.DB, window statsWindow, limit int) ([]ProviderDa
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
+				COALESCE(GROUP_CONCAT(total_cost, '|'), '')
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		GROUP BY provider_name
@@ -390,7 +395,7 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
-				COALESCE(GROUP_CONCAT(` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, '|'), '')
+				COALESCE(GROUP_CONCAT(total_cost, '|'), '')
 			FROM request_log
 			WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 			GROUP BY model_name
@@ -434,8 +439,8 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 		if results[i].TotalRequests != results[j].TotalRequests {
 			return results[i].TotalRequests > results[j].TotalRequests
 		}
-		leftCost := parseMoneyOrLegacy(results[i].CostTotal)
-		rightCost := parseMoneyOrLegacy(results[j].CostTotal)
+		leftCost, _ := parseMoney(results[i].CostTotal)
+		rightCost, _ := parseMoney(results[j].CostTotal)
 		if !leftCost.Equal(rightCost) {
 			return leftCost.GreaterThan(rightCost)
 		}
@@ -453,14 +458,14 @@ func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]RequestLog, e
 			id, platform, model, provider, http_code,
 			input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 			reasoning_tokens, is_stream, duration_sec, created_at,
-					` + decimalMoneySQL("input_cost_decimal", "input_cost") + `,
-					` + decimalMoneySQL("output_cost_decimal", "output_cost") + `,
-					` + decimalMoneySQL("reasoning_cost_decimal", "reasoning_cost") + `,
-					` + decimalMoneySQL("cache_create_cost_decimal", "cache_create_cost") + `,
-					` + decimalMoneySQL("cache_read_cost_decimal", "cache_read_cost") + `,
-					` + decimalMoneySQL("ephemeral_5m_cost_decimal", "ephemeral_5m_cost") + `,
-					` + decimalMoneySQL("ephemeral_1h_cost_decimal", "ephemeral_1h_cost") + `,
-					` + decimalMoneySQL("total_cost_decimal", "total_cost") + `, has_pricing
+					input_cost,
+					output_cost,
+						reasoning_cost,
+					cache_create_cost,
+					cache_read_cost,
+						ephemeral_5m_cost,
+						ephemeral_1h_cost,
+					total_cost, has_pricing
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		ORDER BY id DESC
@@ -511,6 +516,14 @@ func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]RequestLog, e
 		}
 		logItem.IsStream = streamFlag == 1
 		logItem.HasPricing = hasPricing == 1
+		logItem.InputCost = formatStoredMoney(logItem.InputCost)
+		logItem.OutputCost = formatStoredMoney(logItem.OutputCost)
+		logItem.ReasoningCost = formatStoredMoney(logItem.ReasoningCost)
+		logItem.CacheCreateCost = formatStoredMoney(logItem.CacheCreateCost)
+		logItem.CacheReadCost = formatStoredMoney(logItem.CacheReadCost)
+		logItem.Ephemeral5mCost = formatStoredMoney(logItem.Ephemeral5mCost)
+		logItem.Ephemeral1hCost = formatStoredMoney(logItem.Ephemeral1hCost)
+		logItem.TotalCost = formatStoredMoney(logItem.TotalCost)
 		results = append(results, logItem)
 	}
 	return results, rows.Err()

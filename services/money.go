@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -46,17 +45,20 @@ func moneyString(value Money) string {
 	return value.String()
 }
 
-func moneyFromLegacyFloat(value float64) Money {
-	if value == 0 {
-		return decimal.Zero
+const moneyDisplayScale int32 = 6
+
+// moneyLogString 是日志和统计的展示格式：只在返回给前端前四舍五入，
+// 数据库和内部计算仍使用 moneyString 的完整精度。
+func moneyLogString(value Money) string {
+	return moneyString(value.Round(moneyDisplayScale))
+}
+
+func formatStoredMoney(value string) string {
+	amount, err := parseMoney(value)
+	if err != nil {
+		return "0"
 	}
-	// 旧 REAL 值只能恢复数据库中可见的十进制文本，不能伪造原始精度。
-	valueText := strconv.FormatFloat(value, 'f', -1, 64)
-	amount, err := decimal.NewFromString(valueText)
-	if err != nil || amount.IsNegative() {
-		return decimal.Zero
-	}
-	return amount
+	return moneyLogString(amount)
 }
 
 func moneyStrings(values ...Money) []string {
@@ -65,14 +67,6 @@ func moneyStrings(values ...Money) []string {
 		result[index] = moneyString(value)
 	}
 	return result
-}
-
-func parseMoneyOrLegacy(value string) Money {
-	amount, err := parseMoney(value)
-	if err == nil {
-		return amount
-	}
-	return decimal.Zero
 }
 
 func sumMoneyList(value string) Money {
@@ -84,24 +78,7 @@ func sumMoneyList(value string) Money {
 		}
 		if amount, err := parseMoney(item); err == nil {
 			total = total.Add(amount)
-		} else {
-			total = total.Add(moneyFromLegacyText(item))
 		}
 	}
 	return total
-}
-
-func moneyFromLegacyText(value string) Money {
-	amount, err := decimal.NewFromString(strings.TrimSpace(value))
-	if err != nil || amount.IsNegative() {
-		return decimal.Zero
-	}
-	return amount
-}
-
-// decimalMoneySQL 返回迁移期间读取金额的 SQL 表达式。
-// 新列尚未回填时使用旧 REAL 列，避免后台迁移进行中统计暂时变成 0。
-// 两个参数只允许传入源码中的固定列名，不能接收用户输入。
-func decimalMoneySQL(exactColumn, legacyColumn string) string {
-	return "CASE WHEN " + exactColumn + " IS NULL OR TRIM(" + exactColumn + ") = '' OR (" + exactColumn + " = '0' AND COALESCE(" + legacyColumn + ", 0) <> 0) THEN printf('%.17g', COALESCE(" + legacyColumn + ", 0)) ELSE " + exactColumn + " END"
 }

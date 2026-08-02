@@ -181,8 +181,7 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 		"created_at", "platform", "source_id", "ephemeral_5m_tokens", "ephemeral_1h_tokens", "service_tier",
 		"input_cost", "output_cost", "reasoning_cost", "cache_create_cost", "cache_read_cost",
 		"ephemeral_5m_cost", "ephemeral_1h_cost", "total_cost", "has_pricing", "cost_calculated",
-		"input_cost_decimal", "output_cost_decimal", "reasoning_cost_decimal", "cache_create_cost_decimal", "cache_read_cost_decimal",
-		"ephemeral_5m_cost_decimal", "ephemeral_1h_cost_decimal", "total_cost_decimal", "pricing_snapshot",
+		"pricing_snapshot",
 		"pricing_version", "pricing_source", "pricing_rule_id",
 	)
 
@@ -311,7 +310,7 @@ func (ls *LogService) CostSince(start string, platform string) (string, error) {
 		return "0", err
 	}
 	cost, err := queryCostSince(db, startTime, platform)
-	return moneyString(cost), err
+	return moneyLogString(cost), err
 }
 
 // buildSnapshotFromRecord 从 request_log 记录构造定价输入,统一处理 ephemeral 拆分 + service_tier。
@@ -785,14 +784,14 @@ func loadStoredCost(logEntry *RequestLog, record xdb.Record) bool {
 	if record.GetInt("cost_calculated") == 0 {
 		return false
 	}
-	logEntry.InputCost = moneyString(moneyFromRecordExact(record, "input_cost_decimal", "input_cost"))
-	logEntry.OutputCost = moneyString(moneyFromRecordExact(record, "output_cost_decimal", "output_cost"))
-	logEntry.ReasoningCost = moneyString(moneyFromRecordExact(record, "reasoning_cost_decimal", "reasoning_cost"))
-	logEntry.CacheCreateCost = moneyString(moneyFromRecordExact(record, "cache_create_cost_decimal", "cache_create_cost"))
-	logEntry.CacheReadCost = moneyString(moneyFromRecordExact(record, "cache_read_cost_decimal", "cache_read_cost"))
-	logEntry.Ephemeral5mCost = moneyString(moneyFromRecordExact(record, "ephemeral_5m_cost_decimal", "ephemeral_5m_cost"))
-	logEntry.Ephemeral1hCost = moneyString(moneyFromRecordExact(record, "ephemeral_1h_cost_decimal", "ephemeral_1h_cost"))
-	logEntry.TotalCost = moneyString(moneyFromRecordExact(record, "total_cost_decimal", "total_cost"))
+	logEntry.InputCost = moneyLogString(moneyFromRecord(record, "input_cost"))
+	logEntry.OutputCost = moneyLogString(moneyFromRecord(record, "output_cost"))
+	logEntry.ReasoningCost = moneyLogString(moneyFromRecord(record, "reasoning_cost"))
+	logEntry.CacheCreateCost = moneyLogString(moneyFromRecord(record, "cache_create_cost"))
+	logEntry.CacheReadCost = moneyLogString(moneyFromRecord(record, "cache_read_cost"))
+	logEntry.Ephemeral5mCost = moneyLogString(moneyFromRecord(record, "ephemeral_5m_cost"))
+	logEntry.Ephemeral1hCost = moneyLogString(moneyFromRecord(record, "ephemeral_1h_cost"))
+	logEntry.TotalCost = moneyLogString(moneyFromRecord(record, "total_cost"))
 	logEntry.HasPricing = record.GetInt("has_pricing") == 1
 	logEntry.CostCalculated = true
 	logEntry.PricingVersion = record.GetString("pricing_version")
@@ -808,16 +807,7 @@ func moneyFromRecord(record xdb.Record, field string) Money {
 			return amount
 		}
 	}
-	return moneyFromLegacyFloat(record.GetFloat64(field))
-}
-
-func moneyFromRecordExact(record xdb.Record, exactField, legacyField string) Money {
-	if value := strings.TrimSpace(record.GetString(exactField)); value != "" {
-		if amount, err := parseMoney(value); err == nil {
-			return amount
-		}
-	}
-	return moneyFromRecord(record, legacyField)
+	return decimal.Zero
 }
 
 func (ls *LogService) backfillStoredRequestCosts(limit int) error {
@@ -893,8 +883,8 @@ func (ls *LogService) backfillStoredRequestCostsBatch(limit int) (int, error) {
 		cost := result.Cost
 		if _, err := tx.Exec(`
 			UPDATE request_log
-				SET input_cost_decimal = ?, output_cost_decimal = ?, reasoning_cost_decimal = ?, cache_create_cost_decimal = ?, cache_read_cost_decimal = ?,
-				    ephemeral_5m_cost_decimal = ?, ephemeral_1h_cost_decimal = ?, total_cost_decimal = ?, has_pricing = ?, cost_calculated = 1,
+				SET input_cost = ?, output_cost = ?, reasoning_cost = ?, cache_create_cost = ?, cache_read_cost = ?,
+				    ephemeral_5m_cost = ?, ephemeral_1h_cost = ?, total_cost = ?, has_pricing = ?, cost_calculated = 1,
 			    pricing_version = ?, pricing_source = ?, pricing_rule_id = ?
 			WHERE id = ?
 		`,
@@ -949,14 +939,14 @@ func (ls *LogService) decorateCost(logEntry *RequestLog) {
 	result := ls.calculateCost(logEntry.Platform, logEntry.SourceID, logEntry.Model, usage)
 	cost := result.Cost
 	logEntry.HasPricing = cost.HasPricing
-	logEntry.InputCost = moneyString(cost.InputCost)
-	logEntry.OutputCost = moneyString(cost.OutputCost)
-	logEntry.ReasoningCost = moneyString(cost.ReasoningCost)
-	logEntry.CacheCreateCost = moneyString(cost.CacheCreateCost)
-	logEntry.CacheReadCost = moneyString(cost.CacheReadCost)
-	logEntry.Ephemeral5mCost = moneyString(cost.Ephemeral5mCost)
-	logEntry.Ephemeral1hCost = moneyString(cost.Ephemeral1hCost)
-	logEntry.TotalCost = moneyString(cost.TotalCost)
+	logEntry.InputCost = moneyLogString(cost.InputCost)
+	logEntry.OutputCost = moneyLogString(cost.OutputCost)
+	logEntry.ReasoningCost = moneyLogString(cost.ReasoningCost)
+	logEntry.CacheCreateCost = moneyLogString(cost.CacheCreateCost)
+	logEntry.CacheReadCost = moneyLogString(cost.CacheReadCost)
+	logEntry.Ephemeral5mCost = moneyLogString(cost.Ephemeral5mCost)
+	logEntry.Ephemeral1hCost = moneyLogString(cost.Ephemeral1hCost)
+	logEntry.TotalCost = moneyLogString(cost.TotalCost)
 	logEntry.PricingVersion = result.Version
 	logEntry.PricingSource = result.Source
 	logEntry.PricingRuleID = result.RuleID
@@ -975,10 +965,10 @@ func (ls *LogService) calculateCost(platform, sourceID, model string, usage mode
 func (ls *LogService) costForRecord(record xdb.Record) modelpricing.CostBreakdown {
 	if record.GetInt("cost_calculated") == 1 {
 		return modelpricing.CostBreakdown{
-			InputCost: moneyFromRecordExact(record, "input_cost_decimal", "input_cost"), OutputCost: moneyFromRecordExact(record, "output_cost_decimal", "output_cost"),
-			ReasoningCost: moneyFromRecordExact(record, "reasoning_cost_decimal", "reasoning_cost"), CacheCreateCost: moneyFromRecordExact(record, "cache_create_cost_decimal", "cache_create_cost"),
-			CacheReadCost: moneyFromRecordExact(record, "cache_read_cost_decimal", "cache_read_cost"), Ephemeral5mCost: moneyFromRecordExact(record, "ephemeral_5m_cost_decimal", "ephemeral_5m_cost"),
-			Ephemeral1hCost: moneyFromRecordExact(record, "ephemeral_1h_cost_decimal", "ephemeral_1h_cost"), TotalCost: moneyFromRecordExact(record, "total_cost_decimal", "total_cost"),
+			InputCost: moneyFromRecord(record, "input_cost"), OutputCost: moneyFromRecord(record, "output_cost"),
+			ReasoningCost: moneyFromRecord(record, "reasoning_cost"), CacheCreateCost: moneyFromRecord(record, "cache_create_cost"),
+			CacheReadCost: moneyFromRecord(record, "cache_read_cost"), Ephemeral5mCost: moneyFromRecord(record, "ephemeral_5m_cost"),
+			Ephemeral1hCost: moneyFromRecord(record, "ephemeral_1h_cost"), TotalCost: moneyFromRecord(record, "total_cost"),
 			HasPricing: record.GetInt("has_pricing") == 1,
 		}
 	}

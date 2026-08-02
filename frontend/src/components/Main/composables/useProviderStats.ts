@@ -6,7 +6,7 @@ import { fetchProviderDailyStats, type ProviderDailyStat } from '../../../servic
 import type { ProviderTab } from '../platformTabs'
 import { tabRecord, type MainState } from '../state'
 import { clamp, formatMetric, formatTokenNumber, normalizeProviderKey } from '../utils'
-import { decimalMoney, formatMoney } from '../../../utils/money'
+import { formatDisplayMoney } from '../../../utils/money'
 
 type Translate = (key: string, values?: Record<string, unknown>) => string
 
@@ -90,7 +90,7 @@ export function useProviderStats(
       state: 'ready',
       requests: `${t('components.main.providers.requests')}: ${formatMetric(stat.total_requests)}`,
       tokens: `${t('components.main.providers.tokens')}: ${formatTokenNumber(totalTokens)}`,
-	      cost: `${t('components.main.providers.cost')}: ${formatMoney(decimalMoney(stat.cost_total).toFixed(), 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US')}`,
+	      cost: `${t('components.main.providers.cost')}: ${formatDisplayMoney(stat.cost_total, 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US')}`,
       successRateLabel,
       successRateClass,
     }

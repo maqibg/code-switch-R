@@ -9,7 +9,7 @@ import {
   type StatsRange,
 } from '../services/logs'
 import { formatBeijingDateTime } from '../utils/beijingTime'
-import { decimalMoney, formatMoney } from '../utils/money'
+import { decimalMoney, formatDisplayMoney } from '../utils/money'
 import { useActivePolling } from './useActivePolling'
 
 const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'grok', 'gemini', 'reasonix', 'pi']
@@ -97,10 +97,7 @@ export function useStatsDashboard() {
   }
 
 	const formatCurrency = (value?: string | number) => {
-		const amount = decimalMoney(value)
-		if (amount.gte(1)) return formatMoney(amount.toFixed(2))
-		if (amount.gte(0.01)) return formatMoney(amount.toFixed(3))
-		return formatMoney(amount.toFixed(4))
+		return formatDisplayMoney(value, 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US')
   }
 
   const formatDuration = (value?: number) => {

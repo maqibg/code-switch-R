@@ -50,8 +50,8 @@ export function useUsageTooltip(deps: {
     new Intl.NumberFormat(locale.value || 'en', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 6,
     }),
   )
 

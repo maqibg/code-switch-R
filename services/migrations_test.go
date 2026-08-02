@@ -2,7 +2,6 @@ package services
 
 import (
 	"database/sql"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,6 +57,27 @@ func TestMigrationsCreateFullSchemaOnFreshDB(t *testing.T) {
 	for _, col := range requestLogColumns {
 		if !columns[col.name] {
 			t.Errorf("request_log 缺少列 %s", col.name)
+		}
+	}
+	for _, col := range []string{
+		"input_cost_decimal", "output_cost_decimal", "reasoning_cost_decimal", "cache_create_cost_decimal",
+		"cache_read_cost_decimal", "ephemeral_5m_cost_decimal", "ephemeral_1h_cost_decimal", "total_cost_decimal",
+	} {
+		if columns[col] {
+			t.Errorf("最终 schema 不应保留临时列 %s", col)
+		}
+	}
+	if tableExists(t, db, "decimal_money_migration") {
+		t.Error("最终 schema 不应保留 decimal_money_migration 状态表")
+	}
+	for _, field := range finalizedRequestMoneyFields {
+		if !hasTextNotNullZeroDefault(t, db, "request_log", field.canonical) {
+			t.Errorf("request_log.%s 应为 TEXT NOT NULL DEFAULT '0'", field.canonical)
+		}
+	}
+	for _, field := range finalizedRelayMoneyFields {
+		if !hasTextNotNullZeroDefault(t, db, "relay_attempt", field.canonical) {
+			t.Errorf("relay_attempt.%s 应为 TEXT NOT NULL DEFAULT '0'", field.canonical)
 		}
 	}
 }
@@ -260,88 +280,123 @@ func TestMigrationsCreateExpectedIndexes(t *testing.T) {
 	}
 }
 
-func TestDecimalMoneyBackfillResumesInBatches(t *testing.T) {
-	db := openMigrationTestDB(t)
-	if err := RunMigrationsOn(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+func hasTextNotNullZeroDefault(t *testing.T, db *sql.DB, table, column string) bool {
+	t.Helper()
+	var (
+		columnType string
+		notNull    int
+		defaultVal sql.NullString
+	)
+	if err := db.QueryRow(`SELECT type, "notnull", dflt_value FROM pragma_table_info(?) WHERE name = ?`, table, column).
+		Scan(&columnType, &notNull, &defaultVal); err != nil {
+		t.Fatalf("读取 %s.%s 定义失败: %v", table, column, err)
 	}
-	for index, value := range []string{"0.1", "0.2", "0.3"} {
-		if _, err := db.Exec(`
-			INSERT INTO request_log (platform, provider, model, input_cost, total_cost, cost_calculated)
-			VALUES ('claude', ?, 'model', ?, ?, 1)
-		`, fmt.Sprintf("provider-%d", index), value, value); err != nil {
-			t.Fatalf("写入历史日志失败: %v", err)
+	return columnType == "TEXT" && notNull == 1 && defaultVal.Valid && defaultVal.String == "'0'"
+}
+
+func applyMigrationsThrough(t *testing.T, db *sql.DB, maxVersion int) {
+	t.Helper()
+	if err := ensureSchemaVersionTable(db); err != nil {
+		t.Fatalf("建版本表失败: %v", err)
+	}
+	for _, migration := range schemaMigrations {
+		if migration.version > maxVersion {
+			break
 		}
-	}
-	if _, err := db.Exec(`
-		INSERT INTO relay_attempt (request_id, attempt_index, provider, total_cost)
-		VALUES ('request-1', 1, 'provider', 0.4), ('request-2', 1, 'provider', 0.5)
-	`); err != nil {
-		t.Fatalf("写入历史尝试失败: %v", err)
-	}
-
-	updated, done, err := backfillDecimalMoneyBatchOn(db, 1)
-	if err != nil {
-		t.Fatalf("第一批金额迁移失败: %v", err)
-	}
-	if updated != 2 || done {
-		t.Fatalf("第一批应各处理一行且未完成: updated=%d done=%v", updated, done)
-	}
-	var firstInput, firstSource string
-	if err := db.QueryRow(`SELECT input_cost_decimal, pricing_source FROM request_log ORDER BY id LIMIT 1`).Scan(&firstInput, &firstSource); err != nil {
-		t.Fatal(err)
-	}
-	if firstInput != "0.1" || firstSource != "legacy" {
-		t.Fatalf("第一批转换结果错误: input=%q source=%q", firstInput, firstSource)
-	}
-
-	for i := 0; i < 5 && !done; i++ {
-		_, done, err = backfillDecimalMoneyBatchOn(db, 1)
-		if err != nil {
-			t.Fatalf("续接金额迁移失败: %v", err)
+		if err := applySchemaMigration(db, migration); err != nil {
+			t.Fatalf("应用迁移 %d 失败: %v", migration.version, err)
 		}
-	}
-	if !done {
-		t.Fatal("有限历史数据应在有限批次内完成迁移")
-	}
-	var migrated int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM request_log WHERE input_cost_decimal IS NOT NULL AND total_cost_decimal IS NOT NULL`).Scan(&migrated); err != nil {
-		t.Fatal(err)
-	}
-	if migrated != 3 {
-		t.Fatalf("请求日志精确金额迁移数量错误: %d", migrated)
-	}
-	var attemptCost string
-	if err := db.QueryRow(`SELECT total_cost_decimal FROM relay_attempt ORDER BY id LIMIT 1`).Scan(&attemptCost); err != nil {
-		t.Fatal(err)
-	}
-	if attemptCost != "0.4" {
-		t.Fatalf("relay_attempt 精确金额错误: %q", attemptCost)
-	}
-
-	updated, done, err = backfillDecimalMoneyBatchOn(db, 1)
-	if err != nil || updated != 0 || !done {
-		t.Fatalf("已完成迁移应幂等: updated=%d done=%v err=%v", updated, done, err)
 	}
 }
 
-func TestDecimalMoneyStatsFallbackBeforeBackfill(t *testing.T) {
+func TestDecimalMoneyFinalizeNormalizesAndDropsLegacyColumns(t *testing.T) {
 	db := openMigrationTestDB(t)
-	if err := RunMigrationsOn(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
+	applyMigrationsThrough(t, db, 9)
+
+	_, err := db.Exec(`
+		INSERT INTO request_log (
+			platform, provider, model, http_code, error_type,
+			input_cost, output_cost, reasoning_cost, total_cost,
+			input_cost_decimal, output_cost_decimal, reasoning_cost_decimal, total_cost_decimal,
+			has_pricing, cost_calculated, pricing_source
+		) VALUES
+			('claude', 'valid', 'model', 200, '', 0.123456789, 0.2, 0, 0.323456789, '', '', '', '', 1, 1, 'legacy'),
+			('claude', 'invalid-field', 'model', 200, '', 1, 2, 'oops', 3, '', '', '', '', 1, 1, 'legacy'),
+			('claude', 'invalid-exact', 'model', 200, '', 4, 0, 0, 4, 'bad', '', '', '', 1, 1, 'legacy'),
+			('claude', 'invalid-total', 'model', 200, '', 1, 2, 0, 'oops', '', '', '', '', 1, 1, 'legacy'),
+			('claude', 'empty-total', 'model', 200, '', 1, 2, 0, NULL, '', '', '', '', 1, 1, 'legacy'),
+			('claude', 'mismatch', 'model', 200, '', 1, 2, 0, 99, '', '', '', '', 1, 1, 'custom')
+	`)
+	if err != nil {
+		t.Fatalf("写入迁移样例失败: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO request_log (platform, provider, model, http_code, input_cost, total_cost, cost_calculated, created_at)
-		VALUES ('claude', 'legacy', 'model', 200, 0.125, 0.375, 1, CURRENT_TIMESTAMP)
-	`); err != nil {
+	if _, err := db.Exec(`INSERT INTO relay_attempt (request_id, attempt_index, provider, total_cost, total_cost_decimal) VALUES ('r1', 1, 'p', 'bad', '')`); err != nil {
+		t.Fatalf("写入 relay_attempt 样例失败: %v", err)
+	}
+
+	if err := applySchemaMigration(db, schemaMigrations[9]); err != nil {
+		t.Fatalf("最终金额迁移失败: %v", err)
+	}
+
+	var input, output, reasoning, total, source string
+	if err := db.QueryRow(`SELECT input_cost, output_cost, reasoning_cost, total_cost, pricing_source FROM request_log WHERE provider = 'valid'`).Scan(&input, &output, &reasoning, &total, &source); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := queryAggregateSnapshot(db, nil, nowInBeijing().AddDate(0, 0, 1), "claude")
-	if err != nil {
-		t.Fatalf("迁移期间统计失败: %v", err)
+	if input != "0.123456789" || output != "0.2" || reasoning != "0" || total != "0.323456789" || source != "legacy" {
+		t.Fatalf("合法金额不应被截断: %q %q %q %q %q", input, output, reasoning, total, source)
 	}
-	if !snapshot.CostInput.Equal(parseMoneyOrLegacy("0.125")) || !snapshot.CostTotal.Equal(parseMoneyOrLegacy("0.375")) {
-		t.Fatalf("迁移未完成时统计不应丢失旧金额: %#v", snapshot)
+
+	var hasPricing int
+	if err := db.QueryRow(`SELECT reasoning_cost, total_cost, has_pricing, pricing_source FROM request_log WHERE provider = 'invalid-field'`).
+		Scan(&reasoning, &total, &hasPricing, &source); err != nil {
+		t.Fatal(err)
+	}
+	if reasoning != "0" || total != "3" || hasPricing != 0 || source != "migration_zero" {
+		t.Fatalf("非法字段处理错误: %q %q %d %q", reasoning, total, hasPricing, source)
+	}
+	if err := db.QueryRow(`SELECT input_cost, total_cost, has_pricing, pricing_source FROM request_log WHERE provider = 'invalid-exact'`).
+		Scan(&input, &total, &hasPricing, &source); err != nil {
+		t.Fatal(err)
+	}
+	if input != "0" || total != "4" || hasPricing != 0 || source != "migration_zero" {
+		t.Fatalf("非法非空精确字段不应回退旧值: %q %q %d %q", input, total, hasPricing, source)
+	}
+	if err := db.QueryRow(`SELECT total_cost, pricing_source FROM request_log WHERE provider = 'invalid-total'`).Scan(&total, &source); err != nil {
+		t.Fatal(err)
+	}
+	if total != "3" || source != "migration_zero" {
+		t.Fatalf("非法总额应按分项重算: %q %q", total, source)
+	}
+	if err := db.QueryRow(`SELECT total_cost, pricing_source FROM request_log WHERE provider = 'empty-total'`).Scan(&total, &source); err != nil {
+		t.Fatal(err)
+	}
+	if total != "3" || source != "legacy" {
+		t.Fatalf("空总额应按分项补齐且不标记失败: %q %q", total, source)
+	}
+	if err := db.QueryRow(`SELECT total_cost, pricing_source FROM request_log WHERE provider = 'mismatch'`).Scan(&total, &source); err != nil {
+		t.Fatal(err)
+	}
+	if total != "99" || source != "custom" {
+		t.Fatalf("合法总额与分项不一致时应保留总额: %q %q", total, source)
+	}
+
+	var attemptCost string
+	if err := db.QueryRow(`SELECT total_cost, has_pricing, pricing_source FROM relay_attempt WHERE request_id = 'r1'`).Scan(&attemptCost, &hasPricing, &source); err != nil {
+		t.Fatal(err)
+	}
+	if attemptCost != "0" || hasPricing != 0 || source != "migration_zero" {
+		t.Fatalf("relay_attempt 非法金额处理错误: %q %d %q", attemptCost, hasPricing, source)
+	}
+
+	for _, col := range []string{"input_cost_decimal", "output_cost_decimal", "reasoning_cost_decimal", "total_cost_decimal"} {
+		if columns, err := tableColumnSet(db, "request_log"); err != nil {
+			t.Fatal(err)
+		} else if columns[col] {
+			t.Errorf("最终迁移不应保留 request_log.%s", col)
+		}
+	}
+	if tableExists(t, db, "decimal_money_migration") {
+		t.Error("最终迁移应删除 decimal_money_migration")
 	}
 }
 
