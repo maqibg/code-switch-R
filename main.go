@@ -3,6 +3,7 @@ package main
 import (
 	"codeswitch/internal/relay"
 	"codeswitch/services"
+	"context"
 	"embed"
 	_ "embed"
 	"fmt"
@@ -155,6 +156,9 @@ func main() {
 	versionService := NewVersionService()
 	updateService := services.NewUpdateService(AppVersion)
 	consoleService := services.NewConsoleService()
+	if err := relay.ReplayPendingTelemetry(context.Background()); err != nil {
+		log.Printf("待处理请求日志重放未完成，应用将继续启动: %v", err)
+	}
 	networkService := services.NewNetworkService(providerRelay, claudeSettings, codexSettings, geminiService)
 	frontendPreferencesService := services.NewFrontendPreferencesService()
 

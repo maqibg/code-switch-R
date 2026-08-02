@@ -35,15 +35,20 @@ const emptyStats = (): LogStats => ({
   range_key: 'today',
   total_requests: 0,
   input_tokens: 0,
+  cache_input_tokens: 0,
   output_tokens: 0,
   reasoning_tokens: 0,
   cache_create_tokens: 0,
   cache_read_tokens: 0,
-	 cost_total: '0',
-	 cost_input: '0',
-	 cost_output: '0',
-	 cost_cache_create: '0',
-	 cost_cache_read: '0',
+   unpriced_requests: 0,
+   partial_billing_requests: 0,
+   unknown_usage_requests: 0,
+   unpriced_tokens: 0,
+   cost_total: '0',
+   cost_input: '0',
+   cost_output: '0',
+   cost_cache_create: '0',
+   cost_cache_read: '0',
   series: [],
 })
 
@@ -96,8 +101,8 @@ export function useStatsDashboard() {
     return numeric.toLocaleString()
   }
 
-	const formatCurrency = (value?: string | number) => {
-		return formatDisplayMoney(value, 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US')
+  const formatCurrency = (value?: string | number) => {
+    return formatDisplayMoney(value, 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US')
   }
 
   const formatDuration = (value?: number) => {
@@ -125,7 +130,7 @@ export function useStatsDashboard() {
     const totalRequests = overview.value?.current_requests ?? 0
     return PLATFORM_ORDER.map((platform) => {
       const stats = platformStats[platform] ?? emptyStats()
-      const tokens = stats.input_tokens + stats.output_tokens + stats.reasoning_tokens
+        const tokens = stats.cache_input_tokens + stats.output_tokens
       return {
         key: platform,
         label: t(`stats.platforms.${platform}`),
@@ -260,10 +265,10 @@ export function useStatsDashboard() {
     }
   }
 
-	useActivePolling(async () => {
-		await loadBundle(selectedRange.value)
-		startTimer()
-	}, stopTimer)
+  useActivePolling(async () => {
+    await loadBundle(selectedRange.value)
+    startTimer()
+  }, stopTimer)
 
   return {
     activeRangeLabel,
@@ -290,22 +295,22 @@ export function useStatsDashboard() {
     trendSeries: computed(() => trendStats.value.series),
   }
 
-	function describeDelta(current: number | string, previous: number | string, enabled: boolean) {
-		if (!enabled) return t('stats.cards.noCompare')
-		const currentAmount = decimalMoney(current)
-		const previousAmount = decimalMoney(previous)
-		if (previousAmount.isZero() && currentAmount.isZero()) return t('stats.cards.noCompare')
-		if (previousAmount.isZero()) return t('stats.cards.newValue')
-		const change = currentAmount.minus(previousAmount).div(previousAmount).mul(100).toNumber()
+  function describeDelta(current: number | string, previous: number | string, enabled: boolean) {
+    if (!enabled) return t('stats.cards.noCompare')
+    const currentAmount = decimalMoney(current)
+    const previousAmount = decimalMoney(previous)
+    if (previousAmount.isZero() && currentAmount.isZero()) return t('stats.cards.noCompare')
+    if (previousAmount.isZero()) return t('stats.cards.newValue')
+    const change = currentAmount.minus(previousAmount).div(previousAmount).mul(100).toNumber()
     const sign = change > 0 ? '+' : ''
     return t('stats.cards.vsPrevious', { value: `${sign}${change.toFixed(Math.abs(change) >= 10 ? 0 : 1)}%` })
   }
 
-	function toneForDelta(current: number | string, previous: number | string, inverse: boolean, enabled: boolean): StatusTone {
-		const currentAmount = decimalMoney(current)
-		const previousAmount = decimalMoney(previous)
-		if (!enabled || previousAmount.isZero() || currentAmount.eq(previousAmount)) return 'neutral'
-		const rising = currentAmount.gt(previousAmount)
+  function toneForDelta(current: number | string, previous: number | string, inverse: boolean, enabled: boolean): StatusTone {
+    const currentAmount = decimalMoney(current)
+    const previousAmount = decimalMoney(previous)
+    if (!enabled || previousAmount.isZero() || currentAmount.eq(previousAmount)) return 'neutral'
+    const rising = currentAmount.gt(previousAmount)
     if (inverse) return rising ? 'critical' : 'good'
     return rising ? 'good' : 'warn'
   }

@@ -1,5 +1,37 @@
 package services
 
+// UsageStatus 描述上游 usage 的可用程度。
+const (
+	UsageStatusUnknown  = "unknown"
+	UsageStatusPartial  = "partial"
+	UsageStatusComplete = "complete"
+	UsageStatusInvalid  = "invalid"
+	UsageStatusLegacy   = "legacy"
+)
+
+// BillingStatus 描述一条日志是否可以进入计费统计。
+const (
+	BillingStatusNotBillable = "not_billable"
+	BillingStatusNoCharge    = "no_charge"
+	BillingStatusBillable    = "billable"
+	BillingStatusPartial     = "partial"
+	BillingStatusUnpriced    = "unpriced"
+	BillingStatusUnsupported = "unsupported"
+	BillingStatusLegacy      = "legacy"
+)
+
+// UsageFieldMask 标记 usage 中明确出现过的字段。未知字段不能与明确的 0 混淆。
+const (
+	UsageFieldInput = 1 << iota
+	UsageFieldOutput
+	UsageFieldCacheCreate
+	UsageFieldCacheRead
+	UsageFieldReasoning
+	UsageFieldServiceTier
+	UsageFieldCacheCreate5m
+	UsageFieldCacheCreate1h
+)
+
 // RequestLog 一条逻辑请求的日志行（request_log 表的行结构，也是 Wails 暴露给
 // 前端日志页的模型）。由 relay 遥测写入、LogService 读取统计。
 //
@@ -27,6 +59,9 @@ type RequestLog struct {
 	Ephemeral1hTokens int     `json:"ephemeral_1h_tokens"`
 	CacheReadTokens   int     `json:"cache_read_tokens"`
 	ReasoningTokens   int     `json:"reasoning_tokens"`
+	UsageStatus       string  `json:"usage_status,omitempty"`
+	UsageKnownMask    int     `json:"usage_known_mask,omitempty"`
+	UsageJSON         string  `json:"usage_json,omitempty"`
 	IsStream          bool    `json:"is_stream"`
 	DurationSec       float64 `json:"duration_sec"`
 	AttemptCount      int     `json:"attempt_count,omitempty"`
@@ -48,4 +83,5 @@ type RequestLog struct {
 	PricingSource   string `json:"pricing_source,omitempty"`
 	PricingRuleID   string `json:"pricing_rule_id,omitempty"`
 	PricingSnapshot string `json:"pricing_snapshot,omitempty"`
+	BillingStatus   string `json:"billing_status,omitempty"`
 }

@@ -227,19 +227,23 @@ func (m matrixChatMetadata) chunk(delta map[string]any, finishReason any, usage 
 }
 
 type anthropicMatrixSSESource struct {
-	eventName     string
-	metadata      matrixChatMetadata
-	inputTokens   int64
-	outputTokens  int64
-	cacheRead     int64
-	cacheCreation int64
-	stopReason    string
-	toolIndexes   map[int]int
-	nextToolIndex int
-	hasTools      bool
-	started       bool
-	stopped       bool
-	err           error
+	eventName          string
+	metadata           matrixChatMetadata
+	inputTokens        int64
+	inputKnown         bool
+	outputTokens       int64
+	outputKnown        bool
+	cacheRead          int64
+	cacheReadKnown     bool
+	cacheCreation      int64
+	cacheCreationKnown bool
+	stopReason         string
+	toolIndexes        map[int]int
+	nextToolIndex      int
+	hasTools           bool
+	started            bool
+	stopped            bool
+	err                error
 }
 
 func newAnthropicMatrixSSESource(model string) *anthropicMatrixSSESource {
@@ -373,17 +377,25 @@ func (s *anthropicMatrixSSESource) captureUsage(raw any) {
 	if usage == nil {
 		return
 	}
-	if value := int64FromAny(usage["input_tokens"]); value > 0 {
-		s.inputTokens = value
+	// Anthropic 的 input_tokens 已经是普通输入，缺少 cache_read 字段时
+	// 可按 Anthropic 语义视为本次没有缓存读取；这与 OpenAI/Gemini 的
+	// prompt_tokens 缺少缓存拆分时不能猜测不同。
+	s.cacheReadKnown = true
+	if value, exists := usage["input_tokens"]; exists {
+		s.inputTokens = int64FromAny(value)
+		s.inputKnown = true
 	}
-	if value := int64FromAny(usage["output_tokens"]); value > 0 {
-		s.outputTokens = value
+	if value, exists := usage["output_tokens"]; exists {
+		s.outputTokens = int64FromAny(value)
+		s.outputKnown = true
 	}
-	if value := int64FromAny(usage["cache_read_input_tokens"]); value > 0 {
-		s.cacheRead = value
+	if value, exists := usage["cache_read_input_tokens"]; exists {
+		s.cacheRead = int64FromAny(value)
+		s.cacheReadKnown = true
 	}
-	if value := int64FromAny(usage["cache_creation_input_tokens"]); value > 0 {
-		s.cacheCreation = value
+	if value, exists := usage["cache_creation_input_tokens"]; exists {
+		s.cacheCreation = int64FromAny(value)
+		s.cacheCreationKnown = true
 	}
 }
 
@@ -398,11 +410,31 @@ func (s *anthropicMatrixSSESource) finish() string {
 	} else if s.stopReason == "tool_use" || s.hasTools {
 		finishReason = "tool_calls"
 	}
-	usage := map[string]any{
-		"prompt_tokens": s.inputTokens, "completion_tokens": s.outputTokens,
-		"total_tokens":                s.inputTokens + s.outputTokens,
-		"prompt_tokens_details":       map[string]any{"cached_tokens": s.cacheRead},
-		"cache_creation_input_tokens": s.cacheCreation,
+	usage := map[string]any{}
+	if s.inputKnown {
+		promptTokens := s.inputTokens
+		if s.cacheReadKnown {
+			// OpenAI prompt_tokens 包含 cache read；Anthropic 的 input_tokens
+			// 不包含它，转换时需要先恢复总 prompt，再由解析器拆回普通输入。
+			promptTokens += s.cacheRead
+		}
+		usage["prompt_tokens"] = promptTokens
+	}
+	if s.outputKnown {
+		usage["completion_tokens"] = s.outputTokens
+	}
+	if s.inputKnown && s.outputKnown {
+		promptTokens := s.inputTokens
+		if s.cacheReadKnown {
+			promptTokens += s.cacheRead
+		}
+		usage["total_tokens"] = promptTokens + s.outputTokens
+	}
+	if s.cacheReadKnown {
+		usage["prompt_tokens_details"] = map[string]any{"cached_tokens": s.cacheRead}
+	}
+	if s.cacheCreationKnown {
+		usage["cache_creation_input_tokens"] = s.cacheCreation
 	}
 	return s.metadata.chunk(map[string]any{}, finishReason, usage) + "data: [DONE]\n\n"
 }
@@ -637,12 +669,17 @@ func responsesUsageToChatUsage(raw any) map[string]any {
 	outputTokens := int64FromAny(usage["output_tokens"])
 	inputDetails, _ := usage["input_tokens_details"].(map[string]any)
 	outputDetails, _ := usage["output_tokens_details"].(map[string]any)
-	return map[string]any{
+	result := map[string]any{
 		"prompt_tokens": inputTokens, "completion_tokens": outputTokens,
-		"total_tokens":              inputTokens + outputTokens,
-		"prompt_tokens_details":     map[string]any{"cached_tokens": int64FromAny(inputDetails["cached_tokens"])},
-		"completion_tokens_details": map[string]any{"reasoning_tokens": int64FromAny(outputDetails["reasoning_tokens"])},
+		"total_tokens": inputTokens + outputTokens,
 	}
+	if _, exists := inputDetails["cached_tokens"]; exists {
+		result["prompt_tokens_details"] = map[string]any{"cached_tokens": int64FromAny(inputDetails["cached_tokens"])}
+	}
+	if _, exists := outputDetails["reasoning_tokens"]; exists {
+		result["completion_tokens_details"] = map[string]any{"reasoning_tokens": int64FromAny(outputDetails["reasoning_tokens"])}
+	}
+	return result
 }
 
 func (s *responsesMatrixSSESource) Err() error { return s.err }
@@ -667,7 +704,11 @@ type anthropicMatrixSSETarget struct {
 	toolOrder      []int
 	finishReason   string
 	inputTokens    int64
+	inputKnown     bool
+	cacheRead      int64
+	cacheReadKnown bool
 	outputTokens   int64
+	outputKnown    bool
 	stopped        bool
 	err            error
 }
@@ -751,7 +792,7 @@ func (t *anthropicMatrixSSETarget) ensureMessageStart() string {
 	message := map[string]any{
 		"id": t.messageID, "type": "message", "role": "assistant", "model": t.model,
 		"content": []any{}, "stop_reason": nil, "stop_sequence": nil,
-		"usage": map[string]any{"input_tokens": 0, "output_tokens": 0},
+		"usage": map[string]any{},
 	}
 	return string(encodeNamedSSE("message_start", map[string]any{"type": "message_start", "message": message}))
 }
@@ -826,11 +867,30 @@ func (t *anthropicMatrixSSETarget) captureChatUsage(raw any) {
 	if usage == nil {
 		return
 	}
-	if value := int64FromAny(usage["prompt_tokens"]); value > 0 {
-		t.inputTokens = value
+	inputRaw, inputExists := usage["prompt_tokens"]
+	inputTokens := int64FromAny(inputRaw)
+	inputDetails, _ := usage["prompt_tokens_details"].(map[string]any)
+	if cachedRaw, cacheExists := inputDetails["cached_tokens"]; cacheExists {
+		cachedTokens := int64FromAny(cachedRaw)
+		if inputExists && inputTokens >= cachedTokens && inputTokens >= 0 && cachedTokens >= 0 {
+			t.inputTokens = inputTokens - cachedTokens
+			t.inputKnown = true
+			t.cacheRead = cachedTokens
+			t.cacheReadKnown = true
+		} else {
+			// 缓存拆分矛盾时不截断，也不把原始总输入当普通输入计价。
+			t.inputKnown = false
+			t.cacheReadKnown = false
+		}
+	} else {
+		// OpenAI prompt_tokens 包含缓存；没有 cached_tokens 时不能直接
+		// 当作 Anthropic 的普通 input_tokens。
+		t.inputKnown = false
+		t.cacheReadKnown = false
 	}
-	if value := int64FromAny(usage["completion_tokens"]); value > 0 {
-		t.outputTokens = value
+	if value, exists := usage["completion_tokens"]; exists {
+		t.outputTokens = int64FromAny(value)
+		t.outputKnown = true
 	}
 }
 
@@ -865,7 +925,19 @@ func (t *anthropicMatrixSSETarget) finish() string {
 	out.Write(encodeNamedSSE("message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nil},
-		"usage": map[string]any{"input_tokens": t.inputTokens, "output_tokens": t.outputTokens},
+		"usage": func() map[string]any {
+			usage := map[string]any{}
+			if t.inputKnown {
+				usage["input_tokens"] = t.inputTokens
+			}
+			if t.cacheReadKnown {
+				usage["cache_read_input_tokens"] = t.cacheRead
+			}
+			if t.outputKnown {
+				usage["output_tokens"] = t.outputTokens
+			}
+			return usage
+		}(),
 	}))
 	out.Write(encodeNamedSSE("message_stop", map[string]any{"type": "message_stop"}))
 	return out.String()

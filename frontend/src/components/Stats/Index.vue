@@ -143,7 +143,7 @@ const lastUpdatedLabel = computed(() => {
             <div v-for="item in providerRanks" :key="item.provider" class="rank-row">
               <div>
                 <strong>{{ item.provider }}</strong>
-                <span>{{ formatPercent(item.success_rate) }} · {{ formatTokenNumber(item.input_tokens + item.output_tokens + item.reasoning_tokens) }}</span>
+                <span>{{ formatPercent(item.success_rate) }} · {{ formatTokenNumber(item.cache_input_tokens + item.output_tokens) }}</span>
               </div>
               <div class="rank-row__meta">
                 <strong>{{ formatCurrency(item.cost_total) }}</strong>
@@ -165,7 +165,7 @@ const lastUpdatedLabel = computed(() => {
             <div v-for="item in modelRanks" :key="item.model" class="rank-row">
               <div>
                 <strong>{{ item.model }}</strong>
-                <span>{{ formatPercent(item.success_rate) }} · {{ formatTokenNumber(item.input_tokens + item.output_tokens + item.reasoning_tokens) }}</span>
+                <span>{{ formatPercent(item.success_rate) }} · {{ formatTokenNumber(item.cache_input_tokens + item.output_tokens) }}</span>
               </div>
               <div class="rank-row__meta">
                 <strong>{{ formatCurrency(item.cost_total) }}</strong>

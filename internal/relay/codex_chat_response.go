@@ -115,17 +115,22 @@ func chatUsageToResponsesUsage(value any) map[string]any {
 	if totalTokens == 0 {
 		totalTokens = inputTokens + outputTokens
 	}
-	return map[string]any{
+	result := map[string]any{
 		"input_tokens":  inputTokens,
 		"output_tokens": outputTokens,
 		"total_tokens":  totalTokens,
-		"input_tokens_details": map[string]any{
-			"cached_tokens": chatUsageNestedInt(usage, "prompt_tokens_details", "cached_tokens"),
-		},
-		"output_tokens_details": map[string]any{
-			"reasoning_tokens": chatUsageNestedInt(usage, "completion_tokens_details", "reasoning_tokens"),
-		},
 	}
+	if details, ok := usage["prompt_tokens_details"].(map[string]any); ok {
+		if _, exists := details["cached_tokens"]; exists {
+			result["input_tokens_details"] = map[string]any{"cached_tokens": chatUsageNestedInt(usage, "prompt_tokens_details", "cached_tokens")}
+		}
+	}
+	if details, ok := usage["completion_tokens_details"].(map[string]any); ok {
+		if _, exists := details["reasoning_tokens"]; exists {
+			result["output_tokens_details"] = map[string]any{"reasoning_tokens": chatUsageNestedInt(usage, "completion_tokens_details", "reasoning_tokens")}
+		}
+	}
+	return result
 }
 
 func chatUsageNestedInt(usage map[string]any, objectKey string, valueKey string) int64 {

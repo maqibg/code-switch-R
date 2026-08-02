@@ -82,7 +82,6 @@
             <th class="col-provider">{{ t('components.logs.table.provider') }}</th>
             <th class="col-model">{{ t('components.logs.table.model') }}</th>
             <th class="col-http">{{ t('components.logs.table.httpCode') }}</th>
-            <th class="col-stream">{{ t('components.logs.table.stream') }}</th>
             <th class="col-duration">{{ t('components.logs.table.duration') }}</th>
             <th class="col-cost">{{ t('components.logs.table.cost') }}</th>
             <th class="col-tokens">{{ t('components.logs.table.tokens') }}</th>
@@ -95,9 +94,8 @@
             <td>{{ item.provider || '—' }}</td>
             <td>{{ item.model || '—' }}</td>
             <td :class="['code', httpCodeClass(item.http_code)]">{{ item.http_code }}</td>
-            <td><span :class="['stream-tag', item.is_stream ? 'on' : 'off']">{{ formatStream(item.is_stream) }}</span></td>
             <td><span :class="['duration-tag', durationColor(item.duration_sec)]">{{ formatDuration(item.duration_sec) }}</span></td>
-            <td class="cost-cell">{{ formatCurrency(item.total_cost) }}</td>
+            <td class="cost-cell">{{ formatLogCost(item) }}</td>
             <td class="token-cell">
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.input') }}</span>
@@ -122,7 +120,7 @@
             </td>
           </tr>
           <tr v-if="!logs.length && !loading">
-            <td colspan="9" class="empty">{{ t('components.logs.empty') }}</td>
+            <td colspan="8" class="empty">{{ t('components.logs.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -524,11 +522,6 @@ const formatTime = (value?: string) => {
   return formatBeijingDateTime(value, locale.value === 'zh' ? 'zh' : 'en')
 }
 
-const formatStream = (value?: boolean | number) => {
-  const isOn = value === true || value === 1
-  return isOn ? t('components.logs.streamOn') : t('components.logs.streamOff')
-}
-
 const formatDuration = (value?: number) => {
   if (!value || Number.isNaN(value)) return '—'
   return `${value.toFixed(2)}s`
@@ -577,16 +570,15 @@ const formatTokenNumber = (value?: number) => {
 /**
  * 计算缓存命中率
  * @param cacheRead 缓存读取 token 数
- * @param inputTokens 输入 token 数
+ * @param totalInputTokens 统计口径下的总输入 token 数（包含缓存读取/写入）
  * @returns 命中率百分比字符串
  * @author sm
  */
-const formatCacheHitRate = (cacheRead?: number, inputTokens?: number) => {
+const formatCacheHitRate = (cacheRead?: number, totalInputTokens?: number) => {
   const read = cacheRead ?? 0
-  const input = inputTokens ?? 0
-  const total = read + input
+  const total = totalInputTokens ?? 0
 
-  if (total === 0) return '0%'
+  if (total <= 0) return '—'
 
   const rate = (read / total) * 100
   return `${rate.toFixed(1)}%`
@@ -596,11 +588,29 @@ const formatCurrency = (value?: string | number) => {
   return formatDisplayMoney(value)
 }
 
+const formatLogCost = (item: RequestLog) => {
+  const status = item.billing_status?.trim().toLowerCase()
+  if (status === 'unpriced' || status === 'unsupported') return t('components.logs.billing.unpriced')
+  if (status === 'partial') return t('components.logs.billing.partial')
+  if (status === 'not_billable') return t('components.logs.billing.notBillable')
+  if (!item.has_pricing && decimalMoney(item.total_cost).isZero() && status !== 'no_charge') {
+    return t('components.logs.billing.unpriced')
+  }
+  return formatCurrency(item.total_cost)
+}
+
+const formatSummaryCurrency = (value?: string | number) => {
+  return formatDisplayMoney(value, 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US', 2)
+}
+
 const statsCards = computed(() => {
   const data = stats.value
   const summaryLabel = rangeLabel.value
   const totalTokens =
-    (data?.input_tokens ?? 0) + (data?.output_tokens ?? 0) + (data?.reasoning_tokens ?? 0)
+    (data?.input_tokens ?? 0) +
+    (data?.cache_create_tokens ?? 0) +
+    (data?.cache_read_tokens ?? 0) +
+    (data?.output_tokens ?? 0)
   return [
     {
       key: 'requests',
@@ -619,13 +629,13 @@ const statsCards = computed(() => {
       label: t('components.logs.summary.cache'),
       hint: t('components.logs.summary.cacheHint'),
       value: data ? formatTokenNumber(data.cache_read_tokens) : '—',
-      subValue: data ? formatCacheHitRate(data.cache_read_tokens, data.input_tokens) : '',
+      subValue: data ? formatCacheHitRate(data.cache_read_tokens, data.cache_input_tokens) : '',
     },
     {
       key: 'cost',
       label: t('components.logs.tokenLabels.cost'),
       hint: summaryLabel ? t('components.logs.summary.rangeScope', { range: summaryLabel }) : '',
-      value: formatCurrency(data?.cost_total ?? 0),
+      value: formatSummaryCurrency(data?.cost_total ?? 0),
     },
   ]
 })

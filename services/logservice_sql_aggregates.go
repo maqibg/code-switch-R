@@ -17,6 +17,7 @@ func queryLogStats(db *sql.DB, window statsWindow, platform, provider string) (L
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
+			COALESCE(SUM(` + cacheInputTokensSQL + `), 0),
 				COALESCE(GROUP_CONCAT(total_cost, '|'), ''),
 				COALESCE(GROUP_CONCAT(input_cost, '|'), ''),
 				COALESCE(GROUP_CONCAT(output_cost, '|'), ''),
@@ -48,6 +49,7 @@ func queryLogStats(db *sql.DB, window statsWindow, platform, provider string) (L
 			&item.ReasoningTokens,
 			&item.CacheCreateTokens,
 			&item.CacheReadTokens,
+			&item.CacheInputTokens,
 			&item.TotalCost,
 			&costInput,
 			&costOutput,
@@ -60,6 +62,7 @@ func queryLogStats(db *sql.DB, window statsWindow, platform, provider string) (L
 		snapshot.Requests += item.TotalRequests
 		snapshot.InputTokens += item.InputTokens
 		snapshot.OutputTokens += item.OutputTokens
+		snapshot.CacheInputTokens += item.CacheInputTokens
 		snapshot.Reasoning += item.ReasoningTokens
 		snapshot.CacheCreate += item.CacheCreateTokens
 		snapshot.CacheRead += item.CacheReadTokens
@@ -72,24 +75,40 @@ func queryLogStats(db *sql.DB, window statsWindow, platform, provider string) (L
 	if err := rows.Err(); err != nil {
 		return LogStats{}, err
 	}
+	if err := rows.Close(); err != nil {
+		return LogStats{}, err
+	}
+	state, err := queryBillingStateSnapshot(db, window.currentStart, window.currentEnd, platform, provider, "")
+	if err != nil {
+		return LogStats{}, err
+	}
+	snapshot.UnpricedRequests = state.UnpricedRequests
+	snapshot.PartialBillingRequests = state.PartialBillingRequests
+	snapshot.UnknownUsageRequests = state.UnknownUsageRequests
+	snapshot.UnpricedTokens = state.UnpricedTokens
 	return logStatsFromSnapshot(window, snapshot, buildPrefilledSeries(window, existing)), nil
 }
 
 func logStatsFromSnapshot(window statsWindow, snapshot aggregateSnapshot, series []LogStatsSeries) LogStats {
 	return LogStats{
-		RangeKey:          window.key,
-		TotalRequests:     snapshot.Requests,
-		InputTokens:       snapshot.InputTokens,
-		OutputTokens:      snapshot.OutputTokens,
-		ReasoningTokens:   snapshot.Reasoning,
-		CacheCreateTokens: snapshot.CacheCreate,
-		CacheReadTokens:   snapshot.CacheRead,
-		CostTotal:         moneyLogString(snapshot.CostTotal),
-		CostInput:         moneyLogString(snapshot.CostInput),
-		CostOutput:        moneyLogString(snapshot.CostOutput),
-		CostCacheCreate:   moneyLogString(snapshot.CostCacheCreate),
-		CostCacheRead:     moneyLogString(snapshot.CostCacheRead),
-		Series:            series,
+		RangeKey:               window.key,
+		TotalRequests:          snapshot.Requests,
+		InputTokens:            snapshot.InputTokens,
+		CacheInputTokens:       snapshot.CacheInputTokens,
+		OutputTokens:           snapshot.OutputTokens,
+		ReasoningTokens:        snapshot.Reasoning,
+		CacheCreateTokens:      snapshot.CacheCreate,
+		CacheReadTokens:        snapshot.CacheRead,
+		UnpricedRequests:       snapshot.UnpricedRequests,
+		PartialBillingRequests: snapshot.PartialBillingRequests,
+		UnknownUsageRequests:   snapshot.UnknownUsageRequests,
+		UnpricedTokens:         snapshot.UnpricedTokens,
+		CostTotal:              moneyLogString(snapshot.CostTotal),
+		CostInput:              moneyLogString(snapshot.CostInput),
+		CostOutput:             moneyLogString(snapshot.CostOutput),
+		CostCacheCreate:        moneyLogString(snapshot.CostCacheCreate),
+		CostCacheRead:          moneyLogString(snapshot.CostCacheRead),
+		Series:                 series,
 	}
 }
 

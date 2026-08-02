@@ -605,6 +605,7 @@ func anthropicResponseToChat(body []byte, fallbackModel string) (map[string]any,
 	usage, _ := source["usage"].(map[string]any)
 	inputTokens := int64FromAny(usage["input_tokens"])
 	outputTokens := int64FromAny(usage["output_tokens"])
+	cacheReadTokens := int64FromAny(usage["cache_read_input_tokens"])
 	finish := "stop"
 	if stringFromMap(source, "stop_reason") == "max_tokens" {
 		finish = "length"
@@ -615,13 +616,17 @@ func anthropicResponseToChat(body []byte, fallbackModel string) (map[string]any,
 	if model == "" {
 		model = fallbackModel
 	}
+	chatUsage := map[string]any{
+		"prompt_tokens": inputTokens + cacheReadTokens, "completion_tokens": outputTokens,
+		"total_tokens": inputTokens + cacheReadTokens + outputTokens,
+	}
+	if usage != nil {
+		chatUsage["prompt_tokens_details"] = map[string]any{"cached_tokens": cacheReadTokens}
+	}
 	return map[string]any{
 		"id": source["id"], "object": "chat.completion", "created": time.Now().Unix(), "model": model,
 		"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finish}},
-		"usage": map[string]any{
-			"prompt_tokens": inputTokens, "completion_tokens": outputTokens, "total_tokens": inputTokens + outputTokens,
-			"prompt_tokens_details": map[string]any{"cached_tokens": int64FromAny(usage["cache_read_input_tokens"])},
-		},
+		"usage":   chatUsage,
 	}, nil
 }
 

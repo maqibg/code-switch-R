@@ -150,6 +150,21 @@ func nestedInt64(root map[string]any, path ...string) int64 {
 	}
 }
 
+func nestedExists(root map[string]any, path ...string) bool {
+	var current any = root
+	for _, key := range path {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return false
+		}
+		current, ok = object[key]
+		if !ok {
+			return false
+		}
+	}
+	return current != nil
+}
+
 func decodeJSONMap(data []byte) (map[string]any, error) {
 	var body map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(data))

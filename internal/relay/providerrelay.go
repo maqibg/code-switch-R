@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -45,7 +46,7 @@ func warnUnknownTier(tier string) {
 	if _, loaded := warnedServiceTiers.LoadOrStore(tier, struct{}{}); loaded {
 		return
 	}
-	fmt.Printf("⚠️  unknown service_tier=%q,保留原值入库,按 default 档计费\n", tier)
+	fmt.Printf("⚠️  unknown service_tier=%q,保留原值入库,该次价格状态为未知\n", tier)
 }
 
 // LastUsedProvider 最后使用的供应商信息
@@ -765,14 +766,10 @@ func (prs *ProviderRelayService) forwardRequest(
 		return false, fmt.Errorf("upstream status %d", status)
 	}
 
-	// 状态码为 0 且无错误：当作成功处理
+	// 状态码为 0 不是合法的 HTTP 成功响应，按失败处理并允许降级。
+	// 只有上面的客户端中断分支才会绕过供应商失败计数。
 	if status == 0 {
-		infra.LogWarn(fmt.Sprintf("Provider %s 返回状态码 0，但无错误，当作成功处理", provider.Name))
-		copyErr := prs.copyRelayExecutionResponse(c, resp, execution, &requestLog)
-		if copyErr != nil {
-			return prs.judgeResponseCopyFailure(c, provider, execution, copyErr)
-		}
-		return true, nil
+		return false, fmt.Errorf("upstream status %d", status)
 	}
 
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
@@ -918,7 +915,8 @@ func ClaudeCodeParseTokenUsageFromResponse(data string, usage *services.RequestL
 	}
 	collectAnthropicUsage(data, "message.usage", usage)
 	collectAnthropicUsage(data, "usage", usage)
-	clampCacheEphemerals(usage)
+	validateAnthropicCacheSplit(usage)
+	finalizeUsageStatus(usage)
 }
 
 func waitForRetry(ctx context.Context, delay time.Duration) bool {
@@ -932,55 +930,167 @@ func waitForRetry(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
-// collectAnthropicUsage 从指定前缀(message.usage 或 usage)提取 Anthropic 字段,取 max 避免 += 累计导致的翻倍。
+// collectAnthropicUsage 从指定前缀(message.usage 或 usage)提取 Anthropic 字段。
+// Anthropic 的 input_tokens 本身不包含 cache read/write，因此可以直接作为普通输入。
 func collectAnthropicUsage(data, prefix string, usage *services.RequestLog) {
-	maxIntInto(&usage.InputTokens, int(gjson.Get(data, prefix+".input_tokens").Int()))
-	maxIntInto(&usage.OutputTokens, int(gjson.Get(data, prefix+".output_tokens").Int()))
-	maxIntInto(&usage.CacheCreateTokens, int(gjson.Get(data, prefix+".cache_creation_input_tokens").Int()))
-	maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, prefix+".cache_read_input_tokens").Int()))
-	maxIntInto(&usage.Ephemeral5mTokens, int(gjson.Get(data, prefix+".cache_creation.ephemeral_5m_input_tokens").Int()))
-	maxIntInto(&usage.Ephemeral1hTokens, int(gjson.Get(data, prefix+".cache_creation.ephemeral_1h_input_tokens").Int()))
-	if rawTier := gjson.Get(data, prefix+".service_tier").String(); strings.TrimSpace(rawTier) != "" {
-		usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier, warnUnknownTier))
+	node := gjson.Get(data, prefix)
+	if !node.Exists() || usage == nil {
+		return
+	}
+	markUsageNode(usage, node)
+	setKnownMax(usage, gjson.Get(data, prefix+".input_tokens"), &usage.InputTokens, services.UsageFieldInput)
+	setKnownMax(usage, gjson.Get(data, prefix+".output_tokens"), &usage.OutputTokens, services.UsageFieldOutput)
+	setKnownMax(usage, gjson.Get(data, prefix+".cache_creation_input_tokens"), &usage.CacheCreateTokens, services.UsageFieldCacheCreate)
+	setKnownMax(usage, gjson.Get(data, prefix+".cache_read_input_tokens"), &usage.CacheReadTokens, services.UsageFieldCacheRead)
+	setKnownMax(usage, gjson.Get(data, prefix+".cache_creation.ephemeral_5m_input_tokens"), &usage.Ephemeral5mTokens, services.UsageFieldCacheCreate5m)
+	setKnownMax(usage, gjson.Get(data, prefix+".cache_creation.ephemeral_1h_input_tokens"), &usage.Ephemeral1hTokens, services.UsageFieldCacheCreate1h)
+	if rawTier := gjson.Get(data, prefix+".service_tier"); rawTier.Exists() {
+		usage.UsageKnownMask |= services.UsageFieldServiceTier
+		usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier.String(), warnUnknownTier))
 	}
 }
 
 // maxIntInto 把 candidate 大于 *dst 时写回,用于流式 cumulative 字段合并。
 func maxIntInto(dst *int, candidate int) {
+	if candidate < 0 {
+		return
+	}
 	if candidate > *dst {
 		*dst = candidate
+	}
+}
+
+func setKnownMax(usage *services.RequestLog, value gjson.Result, dst *int, mask int) {
+	if usage == nil || !value.Exists() {
+		return
+	}
+	if value.Type != gjson.Number || value.Int() < 0 || math.Trunc(value.Float()) != value.Float() {
+		markUsageInvalid(usage)
+		return
+	}
+	usage.UsageKnownMask |= mask
+	maxIntInto(dst, int(value.Int()))
+}
+
+func invalidTokenValue(value gjson.Result) bool {
+	return value.Exists() && (value.Type != gjson.Number || value.Int() < 0 || math.Trunc(value.Float()) != value.Float())
+}
+
+func markUsageNode(usage *services.RequestLog, node gjson.Result) {
+	if usage == nil || !node.Exists() {
+		return
+	}
+	if usage.UsageJSON == "" {
+		raw := strings.TrimSpace(node.Raw)
+		if len(raw) > 32768 {
+			raw = raw[:32768]
+		}
+		usage.UsageJSON = raw
+	}
+	if usage.UsageStatus == "" || usage.UsageStatus == services.UsageStatusUnknown {
+		usage.UsageStatus = services.UsageStatusPartial
+	}
+}
+
+func finalizeUsageStatus(usage *services.RequestLog) {
+	if usage == nil {
+		return
+	}
+	if usage.UsageKnownMask == 0 {
+		usage.UsageStatus = services.UsageStatusUnknown
+		return
+	}
+	if usage.UsageStatus == services.UsageStatusInvalid {
+		return
+	}
+	if usage.UsageKnownMask&services.UsageFieldInput != 0 && usage.UsageKnownMask&services.UsageFieldOutput != 0 {
+		usage.UsageStatus = services.UsageStatusComplete
+		return
+	}
+	usage.UsageStatus = services.UsageStatusPartial
+}
+
+func markUsageInvalid(usage *services.RequestLog) {
+	if usage != nil {
+		usage.UsageStatus = services.UsageStatusInvalid
 	}
 }
 
 // codex usage parser(OpenAI Responses API)
 func CodexParseTokenUsageFromResponse(data string, usage *services.RequestLog) {
 	for _, prefix := range []string{"response.usage", "usage"} {
-		maxIntInto(&usage.InputTokens, int(gjson.Get(data, prefix+".input_tokens").Int()))
-		maxIntInto(&usage.OutputTokens, int(gjson.Get(data, prefix+".output_tokens").Int()))
-		maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, prefix+".input_tokens_details.cached_tokens").Int()))
-		maxIntInto(&usage.ReasoningTokens, int(gjson.Get(data, prefix+".output_tokens_details.reasoning_tokens").Int()))
+		node := gjson.Get(data, prefix)
+		if !node.Exists() || usage == nil {
+			continue
+		}
+		markUsageNode(usage, node)
+		rawInput := gjson.Get(data, prefix+".input_tokens")
+		cacheRead := gjson.Get(data, prefix+".input_tokens_details.cached_tokens")
+		if rawInput.Exists() && cacheRead.Exists() {
+			if invalidTokenValue(rawInput) || invalidTokenValue(cacheRead) {
+				markUsageInvalid(usage)
+				continue
+			}
+			input := int(rawInput.Int())
+			cached := int(cacheRead.Int())
+			if input < 0 || cached < 0 || cached > input {
+				markUsageInvalid(usage)
+				continue
+			}
+			maxIntInto(&usage.InputTokens, input-cached)
+			usage.UsageKnownMask |= services.UsageFieldInput | services.UsageFieldCacheRead
+			maxIntInto(&usage.CacheReadTokens, cached)
+		}
+		setKnownMax(usage, gjson.Get(data, prefix+".output_tokens"), &usage.OutputTokens, services.UsageFieldOutput)
+		setKnownMax(usage, gjson.Get(data, prefix+".output_tokens_details.reasoning_tokens"), &usage.ReasoningTokens, services.UsageFieldReasoning)
 	}
 	// service_tier 可能在 response.service_tier 或 response.usage.service_tier,两路径都尝试
 	for _, path := range []string{"response.service_tier", "response.usage.service_tier", "service_tier", "usage.service_tier"} {
-		if rawTier := gjson.Get(data, path).String(); strings.TrimSpace(rawTier) != "" {
-			usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier, warnUnknownTier))
+		if rawTier := gjson.Get(data, path); rawTier.Exists() && strings.TrimSpace(rawTier.String()) != "" {
+			usage.UsageKnownMask |= services.UsageFieldServiceTier
+			usage.ServiceTier = string(modelpricing.NormalizeObservedServiceTier(rawTier.String(), warnUnknownTier))
 			break
 		}
 	}
+	finalizeUsageStatus(usage)
 }
 
 // reasonix usage parser(DeepSeek OpenAI-compatible Chat Completions API)
 func ReasonixParseTokenUsageFromResponse(data string, usage *services.RequestLog) {
-	maxIntInto(&usage.InputTokens, int(gjson.Get(data, "usage.prompt_tokens").Int()))
-	maxIntInto(&usage.OutputTokens, int(gjson.Get(data, "usage.completion_tokens").Int()))
-	maxIntInto(&usage.CacheReadTokens, int(gjson.Get(data, "usage.prompt_cache_hit_tokens").Int()))
-	maxIntInto(&usage.ReasoningTokens, int(gjson.Get(data, "usage.completion_tokens_details.reasoning_tokens").Int()))
+	node := gjson.Get(data, "usage")
+	if !node.Exists() || usage == nil {
+		return
+	}
+	markUsageNode(usage, node)
+	rawInput := gjson.Get(data, "usage.prompt_tokens")
+	cacheRead := gjson.Get(data, "usage.prompt_cache_hit_tokens")
+	if !cacheRead.Exists() {
+		cacheRead = gjson.Get(data, "usage.prompt_tokens_details.cached_tokens")
+	}
+	if rawInput.Exists() && cacheRead.Exists() {
+		if invalidTokenValue(rawInput) || invalidTokenValue(cacheRead) {
+			markUsageInvalid(usage)
+			finalizeUsageStatus(usage)
+			return
+		}
+		input := int(rawInput.Int())
+		cached := int(cacheRead.Int())
+		if input < 0 || cached < 0 || cached > input {
+			markUsageInvalid(usage)
+		} else {
+			maxIntInto(&usage.InputTokens, input-cached)
+			maxIntInto(&usage.CacheReadTokens, cached)
+			usage.UsageKnownMask |= services.UsageFieldInput | services.UsageFieldCacheRead
+		}
+	}
+	setKnownMax(usage, gjson.Get(data, "usage.completion_tokens"), &usage.OutputTokens, services.UsageFieldOutput)
+	setKnownMax(usage, gjson.Get(data, "usage.completion_tokens_details.reasoning_tokens"), &usage.ReasoningTokens, services.UsageFieldReasoning)
+	finalizeUsageStatus(usage)
 }
 
-// clampCacheEphemerals 兜底 Anthropic ephemeral 拆分的异常情况:
-// 若 5m+1h > total,打印一次警告并截断到 total(保留 5m 优先级,1h 截掉超出部分)。
-// 若 split 非零但 total 为 0,把 total 回填为 split 之和,避免 total 被漏传导致 create cost 计 0。
-func clampCacheEphemerals(usage *services.RequestLog) {
+// validateAnthropicCacheSplit 只校验 Anthropic 的缓存生命周期拆分。
+// 数据矛盾时保留原始 usage 并标记 invalid，不为了计费而截断任何字段。
+func validateAnthropicCacheSplit(usage *services.RequestLog) {
 	if usage == nil {
 		return
 	}
@@ -988,26 +1098,13 @@ func clampCacheEphemerals(usage *services.RequestLog) {
 	if split == 0 {
 		return
 	}
-	if usage.CacheCreateTokens == 0 {
+	if usage.UsageKnownMask&services.UsageFieldCacheCreate == 0 {
 		usage.CacheCreateTokens = split
+		usage.UsageKnownMask |= services.UsageFieldCacheCreate
 		return
 	}
 	if split > usage.CacheCreateTokens {
-		fmt.Printf("⚠️  ephemeral split(%d)>total(%d),截断 1h=%d 到可用额度\n",
-			split, usage.CacheCreateTokens, usage.Ephemeral1hTokens)
-		overflow := split - usage.CacheCreateTokens
-		if usage.Ephemeral1hTokens >= overflow {
-			usage.Ephemeral1hTokens -= overflow
-			return
-		}
-		// 1h 截到 0 还不够,再从 5m 截剩余
-		remaining := overflow - usage.Ephemeral1hTokens
-		usage.Ephemeral1hTokens = 0
-		if usage.Ephemeral5mTokens >= remaining {
-			usage.Ephemeral5mTokens -= remaining
-		} else {
-			usage.Ephemeral5mTokens = 0
-		}
+		markUsageInvalid(usage)
 	}
 }
 
@@ -1027,28 +1124,37 @@ func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *services.RequestLog) {
 	if !usage.Exists() || reqLog == nil {
 		return
 	}
+	markUsageNode(reqLog, usage)
 
-	// 取最大值（流式响应中后续 chunk 包含前面的累计值）
-	if v := int(usage.Get("promptTokenCount").Int()); v > reqLog.InputTokens {
-		reqLog.InputTokens = v
+	// Gemini 的 promptTokenCount 包含 cachedContentTokenCount。只有缓存拆分明确时，
+	// 才能得到普通输入；否则整组输入保持未知，不能重复计价。
+	rawInput := usage.Get("promptTokenCount")
+	cached := usage.Get("cachedContentTokenCount")
+	if rawInput.Exists() && cached.Exists() {
+		if invalidTokenValue(rawInput) || invalidTokenValue(cached) {
+			markUsageInvalid(reqLog)
+			finalizeUsageStatus(reqLog)
+			return
+		}
+		input := int(rawInput.Int())
+		cache := int(cached.Int())
+		if input < 0 || cache < 0 || cache > input {
+			markUsageInvalid(reqLog)
+		} else {
+			if input-cache > reqLog.InputTokens {
+				reqLog.InputTokens = input - cache
+			}
+			if cache > reqLog.CacheReadTokens {
+				reqLog.CacheReadTokens = cache
+			}
+			reqLog.UsageKnownMask |= services.UsageFieldInput | services.UsageFieldCacheRead
+		}
 	}
-	if v := int(usage.Get("candidatesTokenCount").Int()); v > reqLog.OutputTokens {
-		reqLog.OutputTokens = v
-	}
-	if v := int(usage.Get("cachedContentTokenCount").Int()); v > reqLog.CacheReadTokens {
-		reqLog.CacheReadTokens = v
-	}
+	setKnownMax(reqLog, usage.Get("candidatesTokenCount"), &reqLog.OutputTokens, services.UsageFieldOutput)
 	// Gemini thinking/reasoning tokens (thoughtsTokenCount)
 	// 参考: https://ai.google.dev/gemini-api/docs/thinking
-	if v := int(usage.Get("thoughtsTokenCount").Int()); v > reqLog.ReasoningTokens {
-		reqLog.ReasoningTokens = v
-	}
-
-	// 若仅提供 totalTokenCount，按 total - input 估算输出 token
-	total := usage.Get("totalTokenCount").Int()
-	if total > 0 && reqLog.OutputTokens == 0 && reqLog.InputTokens > 0 && reqLog.InputTokens < int(total) {
-		reqLog.OutputTokens = int(total) - reqLog.InputTokens
-	}
+	setKnownMax(reqLog, usage.Get("thoughtsTokenCount"), &reqLog.ReasoningTokens, services.UsageFieldReasoning)
+	finalizeUsageStatus(reqLog)
 }
 
 // streamGeminiResponseWithHook 流式传输 Gemini 响应并通过 Hook 提取 token 用量

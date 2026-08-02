@@ -280,7 +280,7 @@ func TestCodexParseTokenUsageFromResponseReadsRootUsage(t *testing.T) {
 		}
 	}`, &usage)
 
-	if usage.InputTokens != 10 || usage.OutputTokens != 3 || usage.CacheReadTokens != 2 || usage.ReasoningTokens != 1 {
+	if usage.InputTokens != 8 || usage.OutputTokens != 3 || usage.CacheReadTokens != 2 || usage.ReasoningTokens != 1 {
 		raw, _ := json.Marshal(usage)
 		t.Fatalf("usage 解析不符合预期: %s", raw)
 	}
@@ -322,8 +322,8 @@ func TestCodexChatSSEConverter(t *testing.T) {
 
 	var usage services.RequestLog
 	parseEventPayload(out, CodexParseTokenUsageFromResponse, &usage)
-	if usage.InputTokens != 2 || usage.OutputTokens != 1 {
-		t.Fatalf("SSE usage 期望 input=2 output=1，实际 input=%d output=%d", usage.InputTokens, usage.OutputTokens)
+	if usage.InputTokens != 0 || usage.OutputTokens != 1 || usage.UsageStatus != services.UsageStatusPartial {
+		t.Fatalf("SSE usage 缺少缓存拆分时应为 partial 且普通输入未知，实际 input=%d output=%d status=%q", usage.InputTokens, usage.OutputTokens, usage.UsageStatus)
 	}
 }
 
@@ -348,8 +348,8 @@ func TestCodexChatSSEConverterUsageOnlyFinalChunk(t *testing.T) {
 	}
 	var usage services.RequestLog
 	parseEventPayload(out, CodexParseTokenUsageFromResponse, &usage)
-	if usage.InputTokens != 2 || usage.OutputTokens != 1 {
-		t.Fatalf("usage-only final chunk 期望 input=2 output=1，实际 input=%d output=%d", usage.InputTokens, usage.OutputTokens)
+	if usage.InputTokens != 0 || usage.OutputTokens != 1 || usage.UsageStatus != services.UsageStatusPartial {
+		t.Fatalf("usage-only final chunk 缺少缓存拆分时应为 partial 且普通输入未知，实际 input=%d output=%d status=%q", usage.InputTokens, usage.OutputTokens, usage.UsageStatus)
 	}
 }
 

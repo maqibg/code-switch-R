@@ -41,8 +41,11 @@ func TestTierBoundaryUsesExactDecimal(t *testing.T) {
 	if got := pickTier(bands, 255999).InputCostPerToken; !got.Equal(price("0.0000001")) {
 		t.Fatalf("低档单价错误: %s", got)
 	}
-	if got := pickTier(bands, 256000).InputCostPerToken; !got.Equal(price("0.0000005")) {
-		t.Fatalf("边界应进入高档: %s", got)
+	if got := pickTier(bands, 256000).InputCostPerToken; !got.Equal(price("0.0000001")) {
+		t.Fatalf("右边界应留在低档: %s", got)
+	}
+	if got := pickTier(bands, 256001).InputCostPerToken; !got.Equal(price("0.0000005")) {
+		t.Fatalf("超过右边界后才应进入高档: %s", got)
 	}
 }
 

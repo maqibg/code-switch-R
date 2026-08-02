@@ -1226,7 +1226,7 @@
         "errors": "失败次数",
         "errorHint": "数量与失败率",
         "tokens": "Token 流量",
-        "tokenHint": "输入 + 输出 Tokens",
+        "tokenHint": "普通输入 + 缓存 + 输出 Tokens",
         "cache": "缓存命中",
         "cacheHint": "响应中的读取命中数",
         "costHint": "近 24 小时总花费",
@@ -1245,12 +1245,17 @@
         "tokens": "Token 汇总"
       },
       "tokenLabels": {
-        "input": "输入",
+        "input": "普通输入",
         "output": "输出",
         "reasoning": "推理",
         "cacheWrite": "缓存写入",
         "cacheRead": "缓存读取",
         "cost": "金额"
+      },
+      "billing": {
+        "unpriced": "未计价",
+        "partial": "部分计价",
+        "notBillable": "未产生费用"
       },
       "streamOn": "流式",
       "streamOff": "非流",

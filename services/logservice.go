@@ -39,6 +39,22 @@ const (
 	requestLogFailureSQL = "NOT (" + requestLogSuccessSQL + ")"
 )
 
+// cacheInputTokensSQL 统一统计缓存命中率的分母。
+// 新日志的 input_tokens 已经是普通输入，分母统一加上 cache read/write；
+// v2.6.60 之前的 legacy 行仍按协议保留旧字段语义，避免历史统计被重算。
+const cacheInputTokensSQL = `CASE
+	WHEN (
+		(LOWER(TRIM(COALESCE(usage_status, ''))) IN ('legacy', '')
+			AND LOWER(TRIM(COALESCE(upstream_protocol, ''))) IN ('openai_chat', 'openai_responses', 'gemini_native'))
+		OR (
+			LOWER(TRIM(COALESCE(usage_status, ''))) IN ('legacy', '')
+			AND LOWER(TRIM(COALESCE(upstream_protocol, ''))) = ''
+			AND LOWER(TRIM(COALESCE(platform, ''))) IN ('codex', 'reasonix', 'gemini', 'grok'))
+	)
+		THEN COALESCE(input_tokens, 0)
+	ELSE COALESCE(input_tokens, 0) + COALESCE(cache_create_tokens, 0) + COALESCE(cache_read_tokens, 0)
+END`
+
 type LogService struct {
 	// pricingService 是唯一的定价来源。
 	//
@@ -74,9 +90,8 @@ type dashboardAccumulator struct {
 func (acc *dashboardAccumulator) add(record xdb.Record, cost modelpricing.CostBreakdown) {
 	input := record.GetInt("input_tokens")
 	output := record.GetInt("output_tokens")
-	reasoning := record.GetInt("reasoning_tokens")
 	acc.requests++
-	acc.totalTokens += int64(input + output + reasoning)
+	acc.totalTokens += int64(input + output + record.GetInt("cache_create_tokens") + record.GetInt("cache_read_tokens"))
 	if requestLogRecordSucceeded(record) {
 		acc.successes++
 	}
@@ -179,6 +194,7 @@ func selectRequestLogRecordsByFilter(filter requestLogRecordFilter, fields ...st
 	selectFields := append([]string{}, fields...)
 	selectFields = appendUniqueLogFields(selectFields,
 		"created_at", "platform", "source_id", "ephemeral_5m_tokens", "ephemeral_1h_tokens", "service_tier",
+		"usage_status", "usage_known_mask", "usage_json", "billing_status",
 		"input_cost", "output_cost", "reasoning_cost", "cache_create_cost", "cache_read_cost",
 		"ephemeral_5m_cost", "ephemeral_1h_cost", "total_cost", "has_pricing", "cost_calculated",
 		"pricing_snapshot",
@@ -462,10 +478,15 @@ func (ls *LogService) ListRequestLogsPage(platform string, provider string, rang
 func (ls *LogService) requestLogFromRecord(record xdb.Record) RequestLog {
 	logEntry := RequestLog{
 		ID:                record.GetInt64("id"),
+		RequestID:         record.GetString("request_id"),
 		Platform:          record.GetString("platform"),
 		SourceID:          record.GetString("source_id"),
+		ClientProtocol:    record.GetString("client_protocol"),
+		UpstreamProtocol:  record.GetString("upstream_protocol"),
+		RequestedModel:    record.GetString("requested_model"),
 		Model:             record.GetString("model"),
 		Provider:          record.GetString("provider"),
+		ProviderID:        record.GetInt64("provider_id"),
 		HttpCode:          record.GetInt("http_code"),
 		InputTokens:       record.GetInt("input_tokens"),
 		OutputTokens:      record.GetInt("output_tokens"),
@@ -474,10 +495,16 @@ func (ls *LogService) requestLogFromRecord(record xdb.Record) RequestLog {
 		Ephemeral1hTokens: record.GetInt("ephemeral_1h_tokens"),
 		CacheReadTokens:   record.GetInt("cache_read_tokens"),
 		ReasoningTokens:   record.GetInt("reasoning_tokens"),
+		UsageStatus:       record.GetString("usage_status"),
+		UsageKnownMask:    record.GetInt("usage_known_mask"),
+		UsageJSON:         record.GetString("usage_json"),
 		CreatedAt:         record.GetString("created_at"),
 		IsStream:          record.GetBool("is_stream"),
 		DurationSec:       record.GetFloat64("duration_sec"),
 		ServiceTier:       record.GetString("service_tier"),
+		AttemptCount:      record.GetInt("attempt_count"),
+		ErrorType:         record.GetString("error_type"),
+		BillingStatus:     record.GetString("billing_status"),
 	}
 	if !loadStoredCost(&logEntry, record) {
 		ls.decorateCost(&logEntry)
@@ -797,7 +824,38 @@ func loadStoredCost(logEntry *RequestLog, record xdb.Record) bool {
 	logEntry.PricingVersion = record.GetString("pricing_version")
 	logEntry.PricingSource = record.GetString("pricing_source")
 	logEntry.PricingRuleID = record.GetString("pricing_rule_id")
+	logEntry.UsageStatus = record.GetString("usage_status")
+	logEntry.UsageKnownMask = record.GetInt("usage_known_mask")
+	logEntry.UsageJSON = record.GetString("usage_json")
+	logEntry.BillingStatus = record.GetString("billing_status")
+	if strings.TrimSpace(logEntry.BillingStatus) == "" {
+		logEntry.BillingStatus = inferBillingStatus(*logEntry)
+	}
 	return true
+}
+
+func inferBillingStatus(logEntry RequestLog) string {
+	if !logEntry.HasPricing {
+		if logEntry.InputTokens == 0 && logEntry.OutputTokens == 0 && logEntry.CacheCreateTokens == 0 && logEntry.CacheReadTokens == 0 {
+			return BillingStatusNotBillable
+		}
+		return BillingStatusUnpriced
+	}
+	if strings.TrimSpace(logEntry.TotalCost) == "" || moneyFromString(logEntry.TotalCost).IsZero() {
+		return BillingStatusNoCharge
+	}
+	if logEntry.UsageStatus == UsageStatusPartial || logEntry.UsageStatus == UsageStatusInvalid {
+		return BillingStatusPartial
+	}
+	return BillingStatusBillable
+}
+
+func moneyFromString(value string) Money {
+	amount, err := parseMoney(strings.TrimSpace(value))
+	if err != nil {
+		return decimal.Zero
+	}
+	return amount
 }
 
 func moneyFromRecord(record xdb.Record, field string) Money {
@@ -950,6 +1008,7 @@ func (ls *LogService) decorateCost(logEntry *RequestLog) {
 	logEntry.PricingVersion = result.Version
 	logEntry.PricingSource = result.Source
 	logEntry.PricingRuleID = result.RuleID
+	logEntry.BillingStatus = inferBillingStatus(*logEntry)
 }
 
 func (ls *LogService) calculateCost(platform, sourceID, model string, usage modelpricing.UsageSnapshot) PricingResult {
@@ -1130,19 +1189,24 @@ type DashboardOverview struct {
 }
 
 type LogStats struct {
-	RangeKey          string           `json:"range_key"`
-	TotalRequests     int64            `json:"total_requests"`
-	InputTokens       int64            `json:"input_tokens"`
-	OutputTokens      int64            `json:"output_tokens"`
-	ReasoningTokens   int64            `json:"reasoning_tokens"`
-	CacheCreateTokens int64            `json:"cache_create_tokens"`
-	CacheReadTokens   int64            `json:"cache_read_tokens"`
-	CostTotal         string           `json:"cost_total"`
-	CostInput         string           `json:"cost_input"`
-	CostOutput        string           `json:"cost_output"`
-	CostCacheCreate   string           `json:"cost_cache_create"`
-	CostCacheRead     string           `json:"cost_cache_read"`
-	Series            []LogStatsSeries `json:"series"`
+	RangeKey               string           `json:"range_key"`
+	TotalRequests          int64            `json:"total_requests"`
+	InputTokens            int64            `json:"input_tokens"`
+	CacheInputTokens       int64            `json:"cache_input_tokens"` // 按上游协议归一化的总输入 token
+	OutputTokens           int64            `json:"output_tokens"`
+	ReasoningTokens        int64            `json:"reasoning_tokens"`
+	CacheCreateTokens      int64            `json:"cache_create_tokens"`
+	CacheReadTokens        int64            `json:"cache_read_tokens"`
+	UnpricedRequests       int64            `json:"unpriced_requests"`
+	PartialBillingRequests int64            `json:"partial_billing_requests"`
+	UnknownUsageRequests   int64            `json:"unknown_usage_requests"`
+	UnpricedTokens         int64            `json:"unpriced_tokens"`
+	CostTotal              string           `json:"cost_total"`
+	CostInput              string           `json:"cost_input"`
+	CostOutput             string           `json:"cost_output"`
+	CostCacheCreate        string           `json:"cost_cache_create"`
+	CostCacheRead          string           `json:"cost_cache_read"`
+	Series                 []LogStatsSeries `json:"series"`
 }
 
 type ProviderDailyStat struct {
@@ -1152,6 +1216,7 @@ type ProviderDailyStat struct {
 	FailedRequests     int64   `json:"failed_requests"`
 	SuccessRate        float64 `json:"success_rate"`
 	InputTokens        int64   `json:"input_tokens"`
+	CacheInputTokens   int64   `json:"cache_input_tokens"` // 按上游协议归一化的总输入 token
 	OutputTokens       int64   `json:"output_tokens"`
 	ReasoningTokens    int64   `json:"reasoning_tokens"`
 	CacheCreateTokens  int64   `json:"cache_create_tokens"`
@@ -1166,6 +1231,7 @@ type ModelDailyStat struct {
 	FailedRequests     int64   `json:"failed_requests"`
 	SuccessRate        float64 `json:"success_rate"`
 	InputTokens        int64   `json:"input_tokens"`
+	CacheInputTokens   int64   `json:"cache_input_tokens"` // 按上游协议归一化的总输入 token
 	OutputTokens       int64   `json:"output_tokens"`
 	ReasoningTokens    int64   `json:"reasoning_tokens"`
 	CacheCreateTokens  int64   `json:"cache_create_tokens"`
@@ -1177,6 +1243,7 @@ type LogStatsSeries struct {
 	Day               string `json:"day"`
 	TotalRequests     int64  `json:"total_requests"`
 	InputTokens       int64  `json:"input_tokens"`
+	CacheInputTokens  int64  `json:"cache_input_tokens"`
 	OutputTokens      int64  `json:"output_tokens"`
 	ReasoningTokens   int64  `json:"reasoning_tokens"`
 	CacheCreateTokens int64  `json:"cache_create_tokens"`

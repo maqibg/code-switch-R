@@ -151,14 +151,16 @@ func NormalizeObservedServiceTier(raw string, onUnknown func(string)) ServiceTie
 }
 
 // normalizeServiceTier 把 tier 折叠为 pricing 能消费的三档(default/priority/flex)。
-// standard 与 observed-default 均归到 default;未知值按 default 计费。
-func normalizeServiceTier(tier ServiceTier) ServiceTier {
+// standard 与 observed-default 均归到 default；未知非空值返回 false，禁止猜价。
+func normalizeServiceTier(tier ServiceTier) (ServiceTier, bool) {
 	normalized := NormalizeObservedServiceTier(string(tier), nil)
 	switch normalized {
 	case ServiceTierPriority, ServiceTierFlex:
-		return normalized
+		return normalized, true
+	case ServiceTierDefault, ServiceTierObservedDefault, ServiceTierStandard:
+		return ServiceTierDefault, true
 	default:
-		return ServiceTierDefault
+		return "", false
 	}
 }
 
@@ -174,8 +176,8 @@ func scaleLongRate(longDefault, tierBase, defaultBase decimal.Decimal) decimal.D
 	return longDefault.Mul(tierBase).Div(defaultBase)
 }
 
-// TieredPricingBand 表示 tiered_pricing 中的单段。range 语义为 [lo, hi),
-// 上界值本身归入下一档(实现见 pickTier)。
+// TieredPricingBand 表示 tiered_pricing 中的单段。range 语义为 (lo, hi]，
+// 上界值归入当前档，下一档从严格大于 lo 的位置开始(实现见 pickTier)。
 type TieredPricingBand struct {
 	Range                   [2]float64      `json:"range"`
 	InputCostPerToken       decimal.Decimal `json:"input_cost_per_token"`
@@ -345,7 +347,13 @@ func (s *Service) calculateCostWithEntry(model string, usage UsageSnapshot, entr
 	}
 
 	totalPromptTokens := usage.InputTokens + usage.CacheCreateTokens + usage.CacheReadTokens
-	tier := normalizeServiceTier(usage.ServiceTier)
+	tier, tierKnown := normalizeServiceTier(usage.ServiceTier)
+	if !tierKnown {
+		// 未知的非空 service tier 不能静默按 default 计价；保留 usage，
+		// 由上层把这次尝试标记为未定价并告警。
+		breakdown.HasPricing = false
+		return breakdown
+	}
 
 	// 长上下文档位只解析一次,tiered 场景跳过(tiered 优先级更高)。
 	var longBand longContextBand
@@ -421,15 +429,18 @@ func (s *Service) calculateCostWithEntry(model string, usage UsageSnapshot, entr
 	return breakdown
 }
 
-// pickTier 根据 prompt tokens 总数选择分段价,range 语义为 [lo, hi),
-// 上界值归入下一档;超过最大 band 时返回最后一段。
+// pickTier 根据 prompt tokens 总数选择分段价，range 语义为 (lo, hi]。
+// 零 token 没有实际费用，按首档处理；超过最大 band 时返回最后一段。
 func pickTier(bands []TieredPricingBand, totalTokens int) *TieredPricingBand {
 	for i := range bands {
 		b := &bands[i]
 		lo, hi := int(b.Range[0]), int(b.Range[1])
-		if totalTokens >= lo && totalTokens < hi {
+		if totalTokens > lo && totalTokens <= hi {
 			return b
 		}
+	}
+	if totalTokens <= int(bands[0].Range[0]) {
+		return &bands[0]
 	}
 	return &bands[len(bands)-1]
 }

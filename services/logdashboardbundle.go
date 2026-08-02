@@ -21,20 +21,25 @@ type DashboardBundle struct {
 }
 
 type aggregateSnapshot struct {
-	Requests        int64
-	InputTokens     int64
-	OutputTokens    int64
-	Reasoning       int64
-	CacheCreate     int64
-	CacheRead       int64
-	CostTotal       decimal.Decimal
-	CostInput       decimal.Decimal
-	CostOutput      decimal.Decimal
-	CostCacheCreate decimal.Decimal
-	CostCacheRead   decimal.Decimal
-	Successes       int64
-	DurationSumSec  float64
-	DurationCount   int64
+	Requests               int64
+	InputTokens            int64
+	CacheInputTokens       int64
+	OutputTokens           int64
+	Reasoning              int64
+	CacheCreate            int64
+	CacheRead              int64
+	UnpricedRequests       int64
+	PartialBillingRequests int64
+	UnknownUsageRequests   int64
+	UnpricedTokens         int64
+	CostTotal              decimal.Decimal
+	CostInput              decimal.Decimal
+	CostOutput             decimal.Decimal
+	CostCacheCreate        decimal.Decimal
+	CostCacheRead          decimal.Decimal
+	Successes              int64
+	DurationSumSec         float64
+	DurationCount          int64
 }
 
 func (ls *LogService) GetDashboardBundle(rangeKey string, recentLimit int) (DashboardBundle, error) {
@@ -89,14 +94,16 @@ func (ls *LogService) GetDashboardBundle(rangeKey string, recentLimit int) (Dash
 
 func buildBundleOverview(rangeKey string, current, previous aggregateSnapshot, hasPrevious bool) DashboardOverview {
 	return DashboardOverview{
-		RangeKey:               rangeKey,
-		CurrentRequests:        current.Requests,
-		CurrentTokens:          current.InputTokens + current.OutputTokens + current.Reasoning,
+		RangeKey:        rangeKey,
+		CurrentRequests: current.Requests,
+		// CacheInputTokens 已是按协议归一化后的总输入（普通输入 + 缓存读写），
+		// 不能再叠加 InputTokens，否则会把输入重复计算。
+		CurrentTokens:          current.CacheInputTokens + current.OutputTokens,
 		CurrentCost:            moneyLogString(current.CostTotal),
 		CurrentAvgDurationSec:  averageAggregateDuration(current),
 		CurrentSuccessRate:     aggregateSuccessRate(current),
 		PreviousRequests:       previous.Requests,
-		PreviousTokens:         previous.InputTokens + previous.OutputTokens + previous.Reasoning,
+		PreviousTokens:         previous.CacheInputTokens + previous.OutputTokens,
 		PreviousCost:           moneyLogString(previous.CostTotal),
 		PreviousAvgDurationSec: averageAggregateDuration(previous),
 		PreviousSuccessRate:    aggregateSuccessRate(previous),
@@ -118,6 +125,7 @@ func queryAggregateSnapshotFiltered(db *sql.DB, start *time.Time, end time.Time,
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
+			COALESCE(SUM(` + cacheInputTokensSQL + `), 0),
 				COALESCE(GROUP_CONCAT(total_cost, '|'), ''),
 				COALESCE(GROUP_CONCAT(input_cost, '|'), ''),
 				COALESCE(GROUP_CONCAT(output_cost, '|'), ''),
@@ -133,6 +141,7 @@ func queryAggregateSnapshotFiltered(db *sql.DB, start *time.Time, end time.Time,
 	err := db.QueryRow(query, args...).Scan(
 		&snapshot.Requests,
 		&snapshot.InputTokens,
+		&snapshot.CacheInputTokens,
 		&snapshot.OutputTokens,
 		&snapshot.Reasoning,
 		&snapshot.CacheCreate,
@@ -151,6 +160,14 @@ func queryAggregateSnapshotFiltered(db *sql.DB, start *time.Time, end time.Time,
 	snapshot.CostOutput = sumMoneyList(costOutput)
 	snapshot.CostCacheCreate = sumMoneyList(costCacheCreate)
 	snapshot.CostCacheRead = sumMoneyList(costCacheRead)
+	state, stateErr := queryBillingStateSnapshot(db, start, end, platform, provider, sourceID)
+	if stateErr != nil {
+		return aggregateSnapshot{}, stateErr
+	}
+	snapshot.UnpricedRequests = state.UnpricedRequests
+	snapshot.PartialBillingRequests = state.PartialBillingRequests
+	snapshot.UnknownUsageRequests = state.UnknownUsageRequests
+	snapshot.UnpricedTokens = state.UnpricedTokens
 	if err != nil && isNoSuchTableErr(err) {
 		return aggregateSnapshot{}, nil
 	}
@@ -167,6 +184,7 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
+			COALESCE(SUM(` + cacheInputTokensSQL + `), 0),
 				COALESCE(GROUP_CONCAT(total_cost, '|'), '')
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
@@ -194,6 +212,7 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 			&item.ReasoningTokens,
 			&item.CacheCreateTokens,
 			&item.CacheReadTokens,
+			&item.CacheInputTokens,
 			&item.TotalCost,
 		); err != nil {
 			return LogStats{}, err
@@ -207,19 +226,24 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 
 	ordered := buildPrefilledSeries(window, seriesMap)
 	return LogStats{
-		RangeKey:          window.key,
-		TotalRequests:     snapshot.Requests,
-		InputTokens:       snapshot.InputTokens,
-		OutputTokens:      snapshot.OutputTokens,
-		ReasoningTokens:   snapshot.Reasoning,
-		CacheCreateTokens: snapshot.CacheCreate,
-		CacheReadTokens:   snapshot.CacheRead,
-		CostTotal:         moneyLogString(snapshot.CostTotal),
-		CostInput:         moneyLogString(snapshot.CostInput),
-		CostOutput:        moneyLogString(snapshot.CostOutput),
-		CostCacheCreate:   moneyLogString(snapshot.CostCacheCreate),
-		CostCacheRead:     moneyLogString(snapshot.CostCacheRead),
-		Series:            ordered,
+		RangeKey:               window.key,
+		TotalRequests:          snapshot.Requests,
+		InputTokens:            snapshot.InputTokens,
+		CacheInputTokens:       snapshot.CacheInputTokens,
+		OutputTokens:           snapshot.OutputTokens,
+		ReasoningTokens:        snapshot.Reasoning,
+		CacheCreateTokens:      snapshot.CacheCreate,
+		CacheReadTokens:        snapshot.CacheRead,
+		UnpricedRequests:       snapshot.UnpricedRequests,
+		PartialBillingRequests: snapshot.PartialBillingRequests,
+		UnknownUsageRequests:   snapshot.UnknownUsageRequests,
+		UnpricedTokens:         snapshot.UnpricedTokens,
+		CostTotal:              moneyLogString(snapshot.CostTotal),
+		CostInput:              moneyLogString(snapshot.CostInput),
+		CostOutput:             moneyLogString(snapshot.CostOutput),
+		CostCacheCreate:        moneyLogString(snapshot.CostCacheCreate),
+		CostCacheRead:          moneyLogString(snapshot.CostCacheRead),
+		Series:                 ordered,
 	}, nil
 }
 
@@ -240,6 +264,7 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 			COALESCE(SUM(reasoning_tokens), 0),
 			COALESCE(SUM(cache_create_tokens), 0),
 			COALESCE(SUM(cache_read_tokens), 0),
+			COALESCE(SUM(` + cacheInputTokensSQL + `), 0),
 				COALESCE(GROUP_CONCAT(total_cost, '|'), ''),
 				COALESCE(GROUP_CONCAT(input_cost, '|'), ''),
 				COALESCE(GROUP_CONCAT(output_cost, '|'), ''),
@@ -280,6 +305,7 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 			&stats.ReasoningTokens,
 			&stats.CacheCreateTokens,
 			&stats.CacheReadTokens,
+			&stats.CacheInputTokens,
 			&costTotal,
 			&costInput,
 			&costOutput,
@@ -303,6 +329,7 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 		stats.CostCacheRead = moneyLogString(costCacheReadAmount)
 		total.Requests += stats.TotalRequests
 		total.InputTokens += stats.InputTokens
+		total.CacheInputTokens += stats.CacheInputTokens
 		total.OutputTokens += stats.OutputTokens
 		total.Reasoning += stats.ReasoningTokens
 		total.CacheCreate += stats.CacheCreateTokens
@@ -323,6 +350,26 @@ func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, ag
 	if err := rows.Err(); err != nil {
 		return nil, aggregateSnapshot{}, err
 	}
+	if err := rows.Close(); err != nil {
+		return nil, aggregateSnapshot{}, err
+	}
+	stateByPlatform, err := queryBillingStateByPlatform(db, window.currentStart, &window.currentEnd)
+	if err != nil {
+		return nil, aggregateSnapshot{}, err
+	}
+	for platformKey, state := range stateByPlatform {
+		total.UnpricedRequests += state.UnpricedRequests
+		total.PartialBillingRequests += state.PartialBillingRequests
+		total.UnknownUsageRequests += state.UnknownUsageRequests
+		total.UnpricedTokens += state.UnpricedTokens
+		if stats, ok := result[platformKey]; ok {
+			stats.UnpricedRequests = state.UnpricedRequests
+			stats.PartialBillingRequests = state.PartialBillingRequests
+			stats.UnknownUsageRequests = state.UnknownUsageRequests
+			stats.UnpricedTokens = state.UnpricedTokens
+			result[platformKey] = stats
+		}
+	}
 	return result, total, nil
 }
 
@@ -333,12 +380,13 @@ func queryProviderRanks(db *sql.DB, window statsWindow, limit int) ([]ProviderDa
 			COUNT(*) AS total_requests,
 			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN ` + requestLogFailureSQL + ` THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(input_tokens), 0),
-			COALESCE(SUM(output_tokens), 0),
-			COALESCE(SUM(reasoning_tokens), 0),
-			COALESCE(SUM(cache_create_tokens), 0),
-			COALESCE(SUM(cache_read_tokens), 0),
-				COALESCE(GROUP_CONCAT(total_cost, '|'), '')
+				COALESCE(SUM(input_tokens), 0),
+				COALESCE(SUM(output_tokens), 0),
+				COALESCE(SUM(reasoning_tokens), 0),
+				COALESCE(SUM(cache_create_tokens), 0),
+				COALESCE(SUM(cache_read_tokens), 0),
+				COALESCE(SUM(` + cacheInputTokensSQL + `), 0),
+					COALESCE(GROUP_CONCAT(total_cost, '|'), '')
 		FROM request_log
 		WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 		GROUP BY provider_name
@@ -368,6 +416,7 @@ func queryProviderRanks(db *sql.DB, window statsWindow, limit int) ([]ProviderDa
 			&stat.ReasoningTokens,
 			&stat.CacheCreateTokens,
 			&stat.CacheReadTokens,
+			&stat.CacheInputTokens,
 			&stat.CostTotal,
 		); err != nil {
 			return nil, err
@@ -390,12 +439,13 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 			COUNT(*) AS total_requests,
 			COALESCE(SUM(CASE WHEN ` + requestLogSuccessSQL + ` THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN ` + requestLogFailureSQL + ` THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(input_tokens), 0),
-			COALESCE(SUM(output_tokens), 0),
-			COALESCE(SUM(reasoning_tokens), 0),
-			COALESCE(SUM(cache_create_tokens), 0),
-			COALESCE(SUM(cache_read_tokens), 0),
-				COALESCE(GROUP_CONCAT(total_cost, '|'), '')
+				COALESCE(SUM(input_tokens), 0),
+				COALESCE(SUM(output_tokens), 0),
+				COALESCE(SUM(reasoning_tokens), 0),
+				COALESCE(SUM(cache_create_tokens), 0),
+				COALESCE(SUM(cache_read_tokens), 0),
+				COALESCE(SUM(` + cacheInputTokensSQL + `), 0),
+					COALESCE(GROUP_CONCAT(total_cost, '|'), '')
 			FROM request_log
 			WHERE ` + buildRangeWhereOnly(window.currentStart, window.currentEnd) + `
 			GROUP BY model_name
@@ -423,6 +473,7 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 			&stat.ReasoningTokens,
 			&stat.CacheCreateTokens,
 			&stat.CacheReadTokens,
+			&stat.CacheInputTokens,
 			&stat.CostTotal,
 		); err != nil {
 			return nil, err

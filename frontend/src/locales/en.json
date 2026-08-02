@@ -1225,7 +1225,7 @@
         "errors": "Failures",
         "errorHint": "Count & failure rate",
         "tokens": "Tokens moved",
-        "tokenHint": "Input + output tokens",
+        "tokenHint": "Uncached input + cache + output tokens",
         "cache": "Cache reads",
         "cacheHint": "Read hits across responses",
         "costHint": "24h total cost",
@@ -1244,12 +1244,17 @@
         "tokens": "Tokens"
       },
       "tokenLabels": {
-        "input": "Input",
+        "input": "Uncached input",
         "output": "Output",
         "reasoning": "Reasoning",
         "cacheWrite": "Cache write",
         "cacheRead": "Cache read",
         "cost": "Cost"
+      },
+      "billing": {
+        "unpriced": "Unpriced",
+        "partial": "Partially priced",
+        "notBillable": "No charge"
       },
       "streamOn": "Streaming",
       "streamOff": "Single response",

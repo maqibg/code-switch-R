@@ -25,16 +25,19 @@ export type RequestLog = {
   cache_create_tokens: number
   cache_read_tokens: number
   reasoning_tokens: number
+  usage_status?: string
+  usage_known_mask?: number
+  billing_status?: string
   is_stream?: boolean | number
   duration_sec?: number
   created_at: string
-	 total_cost?: string
-	 input_cost?: string
-	 output_cost?: string
-	 cache_create_cost?: string
-	 cache_read_cost?: string
-	 ephemeral_5m_cost?: string
-	 ephemeral_1h_cost?: string
+  total_cost?: string
+  input_cost?: string
+  output_cost?: string
+  cache_create_cost?: string
+  cache_read_cost?: string
+  ephemeral_5m_cost?: string
+  ephemeral_1h_cost?: string
   has_pricing?: boolean
 }
 
@@ -82,26 +85,32 @@ export type LogStatsSeries = {
   day: string
   total_requests: number
   input_tokens: number
+  cache_input_tokens: number
   output_tokens: number
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-	 total_cost: string
+  total_cost: string
 }
 
 export type LogStats = {
   range_key?: StatsRange
   total_requests: number
   input_tokens: number
+  cache_input_tokens: number
   output_tokens: number
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-	 cost_total: string
-	 cost_input: string
-	 cost_output: string
-	 cost_cache_create: string
-	 cost_cache_read: string
+  unpriced_requests: number
+  partial_billing_requests: number
+  unknown_usage_requests: number
+  unpriced_tokens: number
+  cost_total: string
+  cost_input: string
+  cost_output: string
+  cost_cache_create: string
+  cost_cache_read: string
   series: LogStatsSeries[]
 }
 
@@ -123,12 +132,12 @@ export type DashboardOverview = {
   range_key: StatsRange
   current_requests: number
   current_tokens: number
-	 current_cost: string
+  current_cost: string
   current_avg_duration_sec: number
   current_success_rate: number
   previous_requests: number
   previous_tokens: number
-	 previous_cost: string
+  previous_cost: string
   previous_avg_duration_sec: number
   previous_success_rate: number
   has_previous_comparison: boolean
@@ -155,11 +164,12 @@ export type ProviderDailyStat = {
   failed_requests: number
   success_rate: number
   input_tokens: number
+  cache_input_tokens: number
   output_tokens: number
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-	 cost_total: string
+  cost_total: string
 }
 
 export const fetchProviderDailyStats = async (
@@ -187,11 +197,12 @@ export type ModelDailyStat = {
   failed_requests: number
   success_rate: number
   input_tokens: number
+  cache_input_tokens: number
   output_tokens: number
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-	 cost_total: string
+   cost_total: string
 }
 
 export const fetchModelDailyStats = async (
@@ -255,7 +266,7 @@ export type HeatmapStat = {
   input_tokens: number
   output_tokens: number
   reasoning_tokens: number
-	 total_cost: string
+   total_cost: string
 }
 
 export const fetchHeatmapStats = async (days: number): Promise<HeatmapStat[]> => {

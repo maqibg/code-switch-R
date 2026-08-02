@@ -13,8 +13,9 @@ func TestDashboardSuccessExcludesErroredTwoHundredResponses(t *testing.T) {
 	}
 	defer db.Close()
 	_, err = db.Exec(`CREATE TABLE request_log (
-		created_at TEXT, platform TEXT, provider TEXT, model TEXT, http_code INTEGER, error_type TEXT,
+		created_at TEXT, platform TEXT, provider TEXT, model TEXT, upstream_protocol TEXT, http_code INTEGER, error_type TEXT,
 		input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
+		usage_status TEXT DEFAULT 'complete',
 		reasoning_tokens INTEGER DEFAULT 0, cache_create_tokens INTEGER DEFAULT 0,
 			cache_read_tokens INTEGER DEFAULT 0, total_cost TEXT DEFAULT '0',
 			input_cost TEXT DEFAULT '0', output_cost TEXT DEFAULT '0',
@@ -50,5 +51,21 @@ func TestDashboardSuccessExcludesErroredTwoHundredResponses(t *testing.T) {
 	}
 	if len(modelRanks) != 1 || modelRanks[0].SuccessfulRequests != 1 || modelRanks[0].FailedRequests != 2 {
 		t.Fatalf("Model 排名成功/失败口径错误: %#v", modelRanks)
+	}
+}
+
+func TestBuildBundleOverviewDoesNotDoubleCountNormalizedInput(t *testing.T) {
+	overview := buildBundleOverview("today", aggregateSnapshot{
+		Requests:         1,
+		InputTokens:      10,
+		CacheInputTokens: 20,
+		OutputTokens:     5,
+	}, aggregateSnapshot{
+		InputTokens:      3,
+		CacheInputTokens: 7,
+		OutputTokens:     2,
+	}, true)
+	if overview.CurrentTokens != 25 || overview.PreviousTokens != 9 {
+		t.Fatalf("归一化总输入不应重复计算: current=%d previous=%d", overview.CurrentTokens, overview.PreviousTokens)
 	}
 }

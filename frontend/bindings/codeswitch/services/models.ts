@@ -1905,10 +1905,19 @@ export class LogStats {
     "range_key": string;
     "total_requests": number;
     "input_tokens": number;
+
+    /**
+     * 按上游协议归一化的总输入 token
+     */
+    "cache_input_tokens": number;
     "output_tokens": number;
     "reasoning_tokens": number;
     "cache_create_tokens": number;
     "cache_read_tokens": number;
+    "unpriced_requests": number;
+    "partial_billing_requests": number;
+    "unknown_usage_requests": number;
+    "unpriced_tokens": number;
     "cost_total": string;
     "cost_input": string;
     "cost_output": string;
@@ -1927,6 +1936,9 @@ export class LogStats {
         if (!("input_tokens" in $$source)) {
             this["input_tokens"] = 0;
         }
+        if (!("cache_input_tokens" in $$source)) {
+            this["cache_input_tokens"] = 0;
+        }
         if (!("output_tokens" in $$source)) {
             this["output_tokens"] = 0;
         }
@@ -1938,6 +1950,18 @@ export class LogStats {
         }
         if (!("cache_read_tokens" in $$source)) {
             this["cache_read_tokens"] = 0;
+        }
+        if (!("unpriced_requests" in $$source)) {
+            this["unpriced_requests"] = 0;
+        }
+        if (!("partial_billing_requests" in $$source)) {
+            this["partial_billing_requests"] = 0;
+        }
+        if (!("unknown_usage_requests" in $$source)) {
+            this["unknown_usage_requests"] = 0;
+        }
+        if (!("unpriced_tokens" in $$source)) {
+            this["unpriced_tokens"] = 0;
         }
         if (!("cost_total" in $$source)) {
             this["cost_total"] = "";
@@ -1965,10 +1989,10 @@ export class LogStats {
      * Creates a new LogStats instance from a string or object.
      */
     static createFrom($$source: any = {}): LogStats {
-        const $$createField12_0 = $$createType23;
+        const $$createField17_0 = $$createType23;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("series" in $$parsedSource) {
-            $$parsedSource["series"] = $$createField12_0($$parsedSource["series"]);
+            $$parsedSource["series"] = $$createField17_0($$parsedSource["series"]);
         }
         return new LogStats($$parsedSource as Partial<LogStats>);
     }
@@ -1978,6 +2002,7 @@ export class LogStatsSeries {
     "day": string;
     "total_requests": number;
     "input_tokens": number;
+    "cache_input_tokens": number;
     "output_tokens": number;
     "reasoning_tokens": number;
     "cache_create_tokens": number;
@@ -1994,6 +2019,9 @@ export class LogStatsSeries {
         }
         if (!("input_tokens" in $$source)) {
             this["input_tokens"] = 0;
+        }
+        if (!("cache_input_tokens" in $$source)) {
+            this["cache_input_tokens"] = 0;
         }
         if (!("output_tokens" in $$source)) {
             this["output_tokens"] = 0;
@@ -2181,6 +2209,11 @@ export class ModelDailyStat {
     "failed_requests": number;
     "success_rate": number;
     "input_tokens": number;
+
+    /**
+     * 按上游协议归一化的总输入 token
+     */
+    "cache_input_tokens": number;
     "output_tokens": number;
     "reasoning_tokens": number;
     "cache_create_tokens": number;
@@ -2206,6 +2239,9 @@ export class ModelDailyStat {
         }
         if (!("input_tokens" in $$source)) {
             this["input_tokens"] = 0;
+        }
+        if (!("cache_input_tokens" in $$source)) {
+            this["cache_input_tokens"] = 0;
         }
         if (!("output_tokens" in $$source)) {
             this["output_tokens"] = 0;
@@ -4021,6 +4057,11 @@ export class ProviderDailyStat {
     "failed_requests": number;
     "success_rate": number;
     "input_tokens": number;
+
+    /**
+     * 按上游协议归一化的总输入 token
+     */
+    "cache_input_tokens": number;
     "output_tokens": number;
     "reasoning_tokens": number;
     "cache_create_tokens": number;
@@ -4046,6 +4087,9 @@ export class ProviderDailyStat {
         }
         if (!("input_tokens" in $$source)) {
             this["input_tokens"] = 0;
+        }
+        if (!("cache_input_tokens" in $$source)) {
+            this["cache_input_tokens"] = 0;
         }
         if (!("output_tokens" in $$source)) {
             this["output_tokens"] = 0;
@@ -4411,6 +4455,9 @@ export class RequestLog {
     "ephemeral_1h_tokens": number;
     "cache_read_tokens": number;
     "reasoning_tokens": number;
+    "usage_status"?: string;
+    "usage_known_mask"?: number;
+    "usage_json"?: string;
     "is_stream": boolean;
     "duration_sec": number;
     "attempt_count"?: number;
@@ -4435,6 +4482,7 @@ export class RequestLog {
     "pricing_source"?: string;
     "pricing_rule_id"?: string;
     "pricing_snapshot"?: string;
+    "billing_status"?: string;
 
     /** Creates a new RequestLog instance. */
     constructor($$source: Partial<RequestLog> = {}) {

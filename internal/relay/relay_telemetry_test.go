@@ -33,6 +33,9 @@ func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
 	if logical.AttemptCount != 2 || logical.Provider != "second" || logical.InputTokens != 10 || logical.OutputTokens != 5 {
 		t.Fatalf("逻辑请求聚合错误: %#v", logical)
 	}
+	if logical.RequestedModel != "" || logical.Model != "gpt-5" {
+		t.Fatalf("新日志应只保留映射后实际模型名: requested=%q model=%q", logical.RequestedModel, logical.Model)
+	}
 	if !logical.CostCalculated || !logical.HasPricing || logical.TotalCost != "0.3" || logical.PricingSource != services.PricingSourceCustom || logical.PricingVersion != "custom:abc" || logical.PricingRuleID != "rule-1" {
 		t.Fatalf("逻辑请求未保留请求开始时捕获的价格元数据: %#v", logical)
 	}

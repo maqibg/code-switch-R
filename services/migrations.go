@@ -111,6 +111,11 @@ var schemaMigrations = []schemaMigration{
 		name:    "finalize-decimal-money",
 		up:      finalizeDecimalMoneyColumns,
 	},
+	{
+		version: 11,
+		name:    "usage-billing-state",
+		up:      migrateUsageBillingColumns,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
