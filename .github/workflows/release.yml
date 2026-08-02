@@ -130,7 +130,11 @@ jobs:
       - name: Generate release body
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          tr -d '\r' < RELEASE_NOTES.md | awk "/^# Code Switch v$VERSION/,/^# Code Switch v[0-9]/" | head -n -1 > /tmp/version_notes.md
+          tr -d '\r' < RELEASE_NOTES.md | awk -v version="$VERSION" '
+            $0 == "# Code Switch v" version { in_section=1; next }
+            in_section && /^# Code Switch v[0-9]/ { exit }
+            in_section && $0 != "---" { print }
+          ' > /tmp/version_notes.md
           if [ ! -s /tmp/version_notes.md ]; then
             printf '## 更新亮点\n- 请查看提交历史了解详细更新\n' > /tmp/version_notes.md
           fi
