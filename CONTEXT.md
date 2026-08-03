@@ -65,3 +65,33 @@ _Avoid_: 配置备份、当前 Provider
 **外部修改冲突**:
 受管字段的当前值不再等于 code-switch-R 最后注入值，说明其他主体在接管期间修改了同一所有权范围。
 _Avoid_: TOML 解析错误、无关字段变化
+
+## Gemini 领域
+
+**Gemini CLI 账号**:
+Gemini CLI / Code Assist 的 OAuth 身份及其可刷新生命周期，负责账号切换、令牌刷新和官方配额快照。它不是 Gemini Native Provider，也不参与 Native Relay 路由。
+_Avoid_: Native Credential、Provider、模型目录
+
+**Gemini Native Provider**:
+可被 Native Relay 选择的上游连接定义，包含协议、完整端点、模型能力策略和路由属性。它必须显式关联认证凭据，不根据名称或 Key 前缀猜认证类型。
+_Avoid_: Gemini CLI 账号、OAuth 账号、模型条目
+
+**Credential**:
+与 Provider 显式关联的认证对象，类型由配置声明，可为 API Key、Native Bearer OAuth、Vertex 凭据或第三方网关凭据。Credential 不承载模型目录和路由规则。
+_Avoid_: selectedType、Key 前缀、Provider 名称
+
+**Gemini 模型目录**:
+按 Provider 管理的模型能力快照，区分远程发现、内置回退和用户覆盖，并记录来源与刷新时间。它描述模型能力，不代表账号额度。
+_Avoid_: 全局猜测模型表、账号配额
+
+**Gemini 路由**:
+把入站协议和模型匹配规则映射到有序 Provider 候选集的规则。候选集才执行优先级、轮询、重试、降级、黑名单和冷却；未知模型不静默遍历所有 Provider。
+_Avoid_: 按供应商名称匹配、按 Key 前缀选认证
+
+**Gemini Native Relay**:
+对 Gemini 原生 API 提供模型目录、模型详情、生成、流式生成和 `countTokens` 等端点，并统一执行认证、模型路由、上游转发、用量记录和故障处理的本地服务。
+_Avoid_: 只有 `/generateContent` 的透明 HTTP 转发
+
+**协议转换**:
+在 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 和 Gemini Native 之间，通过统一中间表示转换请求、响应、工具调用、多模态内容、推理状态、usage 和流式事件。不能保持语义时必须显式拒绝。
+_Avoid_: 静默丢弃工具参数、图片、文档、推理签名或流式事件

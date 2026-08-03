@@ -38,13 +38,18 @@ func (p Provider) GeminiDefaultModel() string {
 // 已存在的记录必须传入其 int64 主键，否则会被当成新行插入。
 func (g GeminiProvider) toProvider(numericID int64) Provider {
 	return Provider{
-		ID:           numericID,
-		Name:         g.Name,
-		APIURL:       g.BaseURL,
-		APIKey:       g.APIKey,
-		Enabled:      g.Enabled,
-		ProxyEnabled: g.ProxyEnabled,
-		Level:        g.Level,
+		ID:               numericID,
+		Name:             g.Name,
+		APIURL:           g.BaseURL,
+		APIKey:           g.APIKey,
+		Enabled:          g.Enabled,
+		ProxyEnabled:     g.ProxyEnabled,
+		Level:            g.Level,
+		UpstreamProtocol: string(UpstreamProtocolGoogle),
+		AuthScheme:       g.AuthScheme,
+		AuthHeader:       g.AuthHeader,
+		Headers:          cloneProviderStringMap(g.Headers),
+		ModelsEndpoint:   g.ModelsEndpoint,
 		gemini: &geminiConfigPayload{
 			LegacyID:            g.ID,
 			WebsiteURL:          g.WebsiteURL,
@@ -55,6 +60,19 @@ func (g GeminiProvider) toProvider(numericID int64) Provider {
 			PartnerPromotionKey: g.PartnerPromotionKey,
 			EnvConfig:           g.EnvConfig,
 			SettingsConfig:      g.SettingsConfig,
+			CredentialType:      g.CredentialType,
+			EndpointKind:        g.EndpointKind,
+			APIVersion:          g.APIVersion,
+			Project:             g.Project,
+			Location:            g.Location,
+			AuthScheme:          g.AuthScheme,
+			AuthHeader:          g.AuthHeader,
+			Headers:             cloneProviderStringMap(g.Headers),
+			ModelsEndpoint:      g.ModelsEndpoint,
+			Catalog:             cloneGeminiModels(g.Catalog),
+			CatalogSource:       g.CatalogSource,
+			CatalogFetchedAt:    g.CatalogFetchedAt,
+			CatalogExpiresAt:    g.CatalogExpiresAt,
 		},
 	}
 }
@@ -83,6 +101,19 @@ func (p Provider) toGeminiProvider() GeminiProvider {
 		result.PartnerPromotionKey = p.gemini.PartnerPromotionKey
 		result.EnvConfig = p.gemini.EnvConfig
 		result.SettingsConfig = p.gemini.SettingsConfig
+		result.CredentialType = p.gemini.CredentialType
+		result.EndpointKind = p.gemini.EndpointKind
+		result.APIVersion = p.gemini.APIVersion
+		result.Project = p.gemini.Project
+		result.Location = p.gemini.Location
+		result.AuthScheme = p.AuthScheme
+		result.AuthHeader = p.AuthHeader
+		result.Headers = cloneProviderStringMap(p.Headers)
+		result.ModelsEndpoint = p.gemini.ModelsEndpoint
+		result.Catalog = cloneGeminiModels(p.gemini.Catalog)
+		result.CatalogSource = p.gemini.CatalogSource
+		result.CatalogFetchedAt = p.gemini.CatalogFetchedAt
+		result.CatalogExpiresAt = p.gemini.CatalogExpiresAt
 	}
 	if strings.TrimSpace(result.ID) == "" {
 		result.ID = fmt.Sprintf("gemini-%d", p.ID)

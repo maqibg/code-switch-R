@@ -121,10 +121,14 @@ func (t *relayTelemetry) appendAttempt(
 	err error,
 ) {
 	usage.Provider = provider.Name
+	credentialID, authMode, credentialStatus := relayCredentialLogContext(provider, t.Platform, err)
+	usage.CredentialID = credentialID
+	usage.AuthMode = authMode
+	usage.CredentialStatus = credentialStatus
 	attempt := services.RelayAttemptLog{
 		RequestID: t.RequestID, AttemptIndex: len(t.Attempts) + 1, Provider: usage.Provider,
-		ProviderID: provider.ID,
-		Model:      usage.Model, UpstreamProtocol: upstreamProtocol, HTTPCode: usage.HttpCode,
+		ProviderID: provider.ID, CredentialID: credentialID, AuthMode: authMode, CredentialStatus: credentialStatus,
+		Model: usage.Model, UpstreamProtocol: upstreamProtocol, HTTPCode: usage.HttpCode,
 		DurationSec: time.Since(started).Seconds(), Success: success, Usage: usage,
 	}
 	if err != nil {
@@ -189,6 +193,9 @@ func (t *relayTelemetry) logicalRequest(status int) services.RequestLog {
 	if final != nil {
 		result.Provider = final.Provider
 		result.ProviderID = final.ProviderID
+		result.CredentialID = final.CredentialID
+		result.AuthMode = final.AuthMode
+		result.CredentialStatus = final.CredentialStatus
 		result.Model = final.Model
 		result.UpstreamProtocol = final.UpstreamProtocol
 		result.ServiceTier = final.Usage.ServiceTier
@@ -201,6 +208,24 @@ func (t *relayTelemetry) logicalRequest(status int) services.RequestLog {
 		result.PricingSnapshot = string(encoded)
 	}
 	return result
+}
+
+func relayCredentialLogContext(provider services.Provider, platform string, err error) (string, string, string) {
+	credentialType := strings.ToLower(strings.TrimSpace(provider.CredentialType))
+	switch credentialType {
+	case "oauth":
+		status := "resolved"
+		if err != nil {
+			status = "resolve_failed"
+		}
+		return services.OAuthCredentialLogID(provider.CredentialRef), services.OAuthCredentialLogMode(platform), status
+	case "none":
+		return "", "none", "resolved"
+	case "", "api_key", "apikey":
+		return "", "api_key", "resolved"
+	default:
+		return "", credentialType, "resolved"
+	}
 }
 
 func hasObservedUsage(usage services.RequestLog) bool {

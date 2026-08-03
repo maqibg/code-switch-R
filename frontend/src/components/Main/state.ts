@@ -18,11 +18,14 @@ import {
 // （见 doc/refactor-plan.md 的 A1 第 5 步）。
 export interface GeminiProvider {
   id: string
+  numericId?: number
   name: string
   websiteUrl?: string
   apiKeyUrl?: string
   baseUrl?: string
   apiKey?: string
+  apiKeyMasked?: string
+  hasApiKey?: boolean
   model?: string
   description?: string
   category?: string
@@ -32,6 +35,17 @@ export interface GeminiProvider {
   level?: number // 优先级分组 (1-10, 默认 1)
   envConfig?: Record<string, string | undefined>
   settingsConfig?: Record<string, any>
+  credentialType?: string
+  endpointKind?: string
+  apiVersion?: string
+  project?: string
+  location?: string
+  authScheme?: string
+  authHeader?: string
+  headers?: Record<string, string>
+  modelsEndpoint?: string
+  catalog?: any[]
+  catalogSource?: string
 }
 
 // 生成一份「每个 Provider Tab 一个初值」的记录，避免手写重复字面量。
@@ -70,7 +84,7 @@ export function createMainState() {
     tabRecord(() => null as string | number | null),
   )
 
-  // Gemini 原始数据缓存：卡片 ID 是前端序号（300+index），真实 string ID 按下标从这里取
+  // Gemini 原始数据缓存：卡片通过 providerId 与后端稳定 ID 关联
   const geminiProvidersCache = ref<GeminiProvider[]>([])
 
   // 轮询门控：useActivePolling 在页面激活且可见时打开，各定时器读它决定是否发请求

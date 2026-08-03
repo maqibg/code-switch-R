@@ -110,6 +110,26 @@ func bridgeFor(clientProtocol Protocol, upstreamProtocol Protocol) Bridge {
 	if clientProtocol == OpenAIResponses && upstreamProtocol == AnthropicMessages {
 		return BridgeOpenAIResponsesToAnthropic
 	}
+	if upstreamProtocol == GeminiNative {
+		switch clientProtocol {
+		case AnthropicMessages:
+			return BridgeAnthropicMessagesToGemini
+		case OpenAIChat:
+			return BridgeOpenAIChatToGemini
+		case OpenAIResponses:
+			return BridgeOpenAIResponsesToGemini
+		}
+	}
+	if clientProtocol == GeminiNative {
+		switch upstreamProtocol {
+		case AnthropicMessages:
+			return BridgeGeminiToAnthropicMessages
+		case OpenAIChat:
+			return BridgeGeminiToOpenAIChat
+		case OpenAIResponses:
+			return BridgeGeminiToOpenAIResponses
+		}
+	}
 	return BridgeNone
 }
 

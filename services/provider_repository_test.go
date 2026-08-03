@@ -27,6 +27,7 @@ func TestScopeForKindResolvesAllForms(t *testing.T) {
 		"reasonix":    {platform: "reasonix"},
 		"pi":          {platform: "pi"},
 		"gemini":      {platform: "gemini"},
+		"opencode":    {platform: "opencode"},
 	}
 	for kind, want := range cases {
 		got, err := scopeForKind(kind)

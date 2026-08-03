@@ -914,8 +914,9 @@ exit 1
 
 // configureWSLGemini 在 WSL 中配置 Gemini CLI（字段级合并）
 func (ns *NetworkService) configureWSLGemini(distro, proxyURL string) error {
-	// Gemini CLI 配置路径: ~/.gemini/.env
-	// 注意：Gemini 代理路由带 /gemini 前缀
+	// Gemini CLI 配置根目录遵循 WSL 内的 GEMINI_CLI_HOME；未设置时为
+	// ~/.gemini。GEMINI_CLI_HOME 既可以是父目录，也可以直接指向 .gemini。
+	// 注意：Gemini 代理路由带 /gemini 前缀。
 	geminiURL := strings.TrimRight(proxyURL, "/") + "/gemini"
 
 	// 字段级合并：仅更新 GOOGLE_GEMINI_BASE_URL / GEMINI_API_KEY；更新首次出现并删除后续重复项
@@ -926,8 +927,22 @@ set -euo pipefail
 HOME="$(getent passwd "$(whoami)" | cut -d: -f6)"
 export HOME
 
-mkdir -p "$HOME/.gemini"
-env_path="$HOME/.gemini/.env"
+gemini_cli_home="${GEMINI_CLI_HOME:-}"
+if [ -z "$gemini_cli_home" ]; then
+  gemini_root="$HOME/.gemini"
+else
+  case "$gemini_cli_home" in
+    /*) ;;
+    *) gemini_cli_home="$HOME/$gemini_cli_home" ;;
+  esac
+  case "${gemini_cli_home##*/}" in
+    .gemini) gemini_root="$gemini_cli_home" ;;
+    *) gemini_root="$gemini_cli_home/.gemini" ;;
+  esac
+fi
+
+mkdir -p "$gemini_root"
+env_path="$gemini_root/.env"
 
 # Symlink protection: refuse to modify symlinks to avoid breaking dotfiles management
 if [ -L "$env_path" ]; then
@@ -1126,7 +1141,24 @@ func (ns *NetworkService) checkWSLCodexConfigured(distro string) bool {
 
 // checkWSLGeminiConfigured 检查 WSL 中 Gemini CLI 是否已配置
 func (ns *NetworkService) checkWSLGeminiConfigured(distro string) bool {
-	cmd := hideWindowCmd("wsl", "-d", distro, "bash", "-lc", "test -f ~/.gemini/.env")
+	cmd := hideWindowCmd("wsl", "-d", distro, "bash", "-lc", `
+set -e
+HOME="$(getent passwd "$(whoami)" | cut -d: -f6)"
+export HOME
+gemini_cli_home="${GEMINI_CLI_HOME:-}"
+if [ -z "$gemini_cli_home" ]; then
+  gemini_root="$HOME/.gemini"
+else
+  case "$gemini_cli_home" in
+    /*) ;;
+    *) gemini_cli_home="$HOME/$gemini_cli_home" ;;
+  esac
+  case "${gemini_cli_home##*/}" in
+    .gemini) gemini_root="$gemini_cli_home" ;;
+    *) gemini_root="$gemini_cli_home/.gemini" ;;
+  esac
+fi
+test -f "$gemini_root/.env"`)
 	return cmd.Run() == nil
 }
 

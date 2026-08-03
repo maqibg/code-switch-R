@@ -1143,11 +1143,7 @@ func codexConfigPath() (string, error) {
 }
 
 func geminiConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(home, geminiDirName)
+	dir := geminiCLIRoot()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

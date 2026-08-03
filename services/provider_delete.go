@@ -130,10 +130,13 @@ func deleteDeletedProviderNameRows(tx *sql.Tx, platform, name string) error {
 	if err := deleteRelayAttemptProviderNameRows(tx, scope, name); err != nil {
 		return fmt.Errorf("删除 relay_attempt 失败: %w", err)
 	}
-	if _, err := tx.Exec(
-		`DELETE FROM provider_blacklist WHERE platform = ? AND provider_name = ?`,
-		platform, name,
-	); err != nil {
+	blacklistQuery := `DELETE FROM provider_blacklist WHERE platform = ? AND provider_name = ?`
+	blacklistArgs := []any{platform, name}
+	if platform == openCodePlatform {
+		blacklistQuery = `DELETE FROM provider_blacklist WHERE provider_name = ? AND (platform = ? OR platform LIKE ?)`
+		blacklistArgs = []any{name, platform, platform + ":%"}
+	}
+	if _, err := tx.Exec(blacklistQuery, blacklistArgs...); err != nil {
 		return fmt.Errorf("删除 provider_blacklist 失败: %w", err)
 	}
 	return nil

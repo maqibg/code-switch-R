@@ -347,6 +347,9 @@ func resolvePlatform(kind string) (string, error) {
 	if normalized == "gemini" {
 		return "gemini", nil
 	}
+	if normalized == openCodePlatform {
+		return openCodePlatform, nil
+	}
 	return "", fmt.Errorf("不支持的 provider kind: %s", kind)
 }
 

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,7 @@ type ProviderRelayService struct {
 	notificationService *services.NotificationService
 	appSettings         *services.AppSettingsService // 应用设置服务（用于获取轮询开关状态）
 	pricingService      *services.PricingService
+	oauthAccountService *services.OAuthAccountService
 	server              *http.Server
 	addr                string
 	lifecycleMu         sync.Mutex
@@ -71,6 +73,8 @@ type ProviderRelayService struct {
 	rrMu                sync.Mutex                   // 轮询状态锁
 	rrLastStart         map[string]string            // 轮询状态：key="platform:level" → value=上次起始 Provider Name
 	codexChatHistory    *CodexChatBridgeHistoryStore
+	geminiCooldownMu    sync.Mutex
+	geminiCooldownUntil map[string]time.Time
 }
 
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
@@ -114,9 +118,16 @@ func NewProviderRelayService(
 			"codex":  nil,
 			"gemini": nil,
 		},
-		rrLastStart:      make(map[string]string),
-		codexChatHistory: NewCodexChatBridgeHistoryStore(128),
+		rrLastStart:         make(map[string]string),
+		codexChatHistory:    NewCodexChatBridgeHistoryStore(128),
+		geminiCooldownUntil: make(map[string]time.Time),
 	}
+}
+
+// SetOAuthAccountService wires the account resolver after construction so existing
+// relay test fixtures and constructor call sites keep their current signature.
+func (prs *ProviderRelayService) SetOAuthAccountService(service *services.OAuthAccountService) {
+	prs.oauthAccountService = service
 }
 
 // setLastUsedProvider 记录最后使用的供应商
@@ -423,6 +434,8 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.GET("/grok/v1/models", prs.grokModelsHandler)
 
 	// Gemini API 端点（使用专门的路径前缀避免与 Claude 冲突）
+	router.GET("/gemini/v1beta/*any", prs.geminiProxyHandler("/v1beta"))
+	router.GET("/gemini/v1/*any", prs.geminiProxyHandler("/v1"))
 	router.POST("/gemini/v1beta/*any", prs.geminiProxyHandler("/v1beta"))
 	router.POST("/gemini/v1/*any", prs.geminiProxyHandler("/v1"))
 
@@ -433,6 +446,125 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	// Pi 的每个 models.json Provider 使用独立路由，避免跨平台模型 ID 冲突。
 	router.POST("/pi/providers/:provider/*any", prs.piPlatformProxyHandler())
 
+	// OpenCode 每个 provider key 使用独立 gateway，避免不同配置条目的模型、
+	// 日志和黑名单相互污染。路径协议由客户端 SDK 的 endpoint 固定，不从请求体猜测。
+	router.POST("/opencode/providers/:gateway/v1/messages", prs.opencodeProxyHandler("/v1/messages", relayprotocol.AnthropicMessages))
+	router.GET("/opencode/providers/:gateway/v1/models", prs.opencodeModelsHandler)
+	router.POST("/opencode/providers/:gateway/v1/chat/completions", prs.opencodeProxyHandler("/v1/chat/completions", relayprotocol.OpenAIChat))
+	router.POST("/opencode/providers/:gateway/v1/responses", prs.opencodeProxyHandler("/v1/responses", relayprotocol.OpenAIResponses))
+	router.GET("/opencode/providers/:gateway/v1beta/models", prs.opencodeGeminiModelsHandler)
+	router.GET("/opencode/providers/:gateway/v1beta/models/*any", prs.opencodeProxyHandler("", relayprotocol.GeminiNative))
+	router.POST("/opencode/providers/:gateway/v1beta/models/*any", prs.opencodeProxyHandler("", relayprotocol.GeminiNative))
+
+}
+
+func (prs *ProviderRelayService) opencodeProxyHandler(endpoint string, clientProtocol relayprotocol.Protocol) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		gateway := strings.TrimSpace(c.Param("gateway"))
+		if err := services.ValidateOpenCodeGatewayKey(gateway); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.Set(services.OpenCodeGatewayContextKey, gateway)
+		c.Set(services.OpenCodeClientProtocolContextKey, string(clientProtocol))
+		effectiveEndpoint := endpoint
+		if clientProtocol == relayprotocol.GeminiNative {
+			// @ai-sdk/google 将 action 放在路径中，例如
+			// /v1beta/models/gemini-2.5-flash:generateContent。不能丢掉
+			// *any，否则模型筛选和上游端点构造都会失去关键信息。
+			effectiveEndpoint = "/v1beta/models" + c.Param("any")
+		}
+		prs.proxyHandler("opencode", effectiveEndpoint)(c)
+	}
+}
+
+func (prs *ProviderRelayService) opencodeGeminiModelsHandler(c *gin.Context) {
+	gateway := strings.TrimSpace(c.Param("gateway"))
+	if err := services.ValidateOpenCodeGatewayKey(gateway); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	providers, err := prs.providerService.LoadProviders("opencode")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load OpenCode providers"})
+		return
+	}
+	type modelEntry struct {
+		Name                       string   `json:"name"`
+		DisplayName                string   `json:"displayName,omitempty"`
+		InputTokenLimit            int64    `json:"inputTokenLimit,omitempty"`
+		OutputTokenLimit           int64    `json:"outputTokenLimit,omitempty"`
+		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+	}
+	seen := make(map[string]struct{})
+	data := make([]modelEntry, 0)
+	for _, provider := range providers {
+		if provider.OpenCodeGatewayKey() != gateway ||
+			provider.OpenCodeClientProtocol() != string(relayprotocol.GeminiNative) ||
+			!services.ProviderEligibleForRelay(provider, "opencode") {
+			continue
+		}
+		if blocked, _ := services.BlacklistedFor(prs.blacklistService, services.BlacklistTargetFor("opencode:"+gateway, provider)); blocked {
+			continue
+		}
+		for model := range provider.SupportedModels {
+			model = services.NormalizeGeminiModelID(model)
+			if model == "" {
+				continue
+			}
+			if _, exists := seen[model]; exists {
+				continue
+			}
+			seen[model] = struct{}{}
+			data = append(data, modelEntry{
+				Name:                       "models/" + model,
+				SupportedGenerationMethods: []string{"generateContent", "streamGenerateContent", "countTokens"},
+			})
+		}
+	}
+	sort.Slice(data, func(i, j int) bool { return data[i].Name < data[j].Name })
+	c.JSON(http.StatusOK, gin.H{"models": data})
+}
+
+func (prs *ProviderRelayService) opencodeModelsHandler(c *gin.Context) {
+	gateway := strings.TrimSpace(c.Param("gateway"))
+	if err := services.ValidateOpenCodeGatewayKey(gateway); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	providers, err := prs.providerService.LoadProviders("opencode")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load OpenCode providers"})
+		return
+	}
+	type modelEntry struct {
+		ID      string `json:"id"`
+		Object  string `json:"object"`
+		OwnedBy string `json:"owned_by"`
+	}
+	seen := make(map[string]struct{})
+	data := make([]modelEntry, 0)
+	for _, provider := range providers {
+		if provider.OpenCodeGatewayKey() != gateway || !services.ProviderEligibleForRelay(provider, "opencode") {
+			continue
+		}
+		if blocked, _ := services.BlacklistedFor(prs.blacklistService, services.BlacklistTargetFor("opencode:"+gateway, provider)); blocked {
+			continue
+		}
+		for model := range provider.SupportedModels {
+			if _, exists := seen[model]; exists {
+				continue
+			}
+			seen[model] = struct{}{}
+			data = append(data, modelEntry{ID: model, Object: "model", OwnedBy: "code-switch-r"})
+		}
+	}
+	if len(data) == 0 {
+		c.JSON(http.StatusOK, gin.H{"object": "list", "data": []modelEntry{}})
+		return
+	}
+	sort.Slice(data, func(i, j int) bool { return data[i].ID < data[j].ID })
+	c.JSON(http.StatusOK, gin.H{"object": "list", "data": data})
 }
 
 func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.HandlerFunc {
@@ -447,12 +579,28 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			bodyBytes = data
 			c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
+		clientProtocol := relayprotocol.ClientProtocolForPlatform(kind, endpoint)
+		if protocolName, exists := c.Get(services.PiClientProtocolContextKey); exists {
+			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
+		}
+		if protocolName, exists := c.Get(services.OpenCodeClientProtocolContextKey); exists {
+			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
+		}
 		if kind == "pi" {
 			services.LogPiDebugInbound(c.GetString(services.PiPlatformContextKey), endpoint, flattenQuery(c.Request.URL.Query()), cloneHeaders(c.Request.Header), bodyBytes)
 		}
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
+		if kind == "opencode" && clientProtocol == relayprotocol.GeminiNative {
+			parsed, parseErr := services.ParseGeminiEndpointPath(endpoint)
+			if parseErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": parseErr.Error()})
+				return
+			}
+			requestedModel = parsed.Model
+			isStream = parsed.IsStream()
+		}
 		telemetryModel := requestedModel
 		piPlatform := ""
 		if kind == "pi" {
@@ -467,18 +615,24 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			telemetryModel = bareModel
 			isStream = isStream || strings.Contains(strings.ToLower(endpoint), "streamgeneratecontent")
 		}
-		clientProtocol := relayprotocol.ClientProtocolForPlatform(kind, endpoint)
-		if protocolName, exists := c.Get(services.PiClientProtocolContextKey); exists {
-			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
+		opencodeGateway := ""
+		if kind == "opencode" {
+			opencodeGateway = c.GetString(services.OpenCodeGatewayContextKey)
 		}
 		telemetry := beginRelayTelemetry(c, kind, clientProtocol, telemetryModel, isStream, prs.pricingService, piPlatform)
 		if piPlatform != "" {
 			telemetry.SourceID = piPlatform
 		}
+		if opencodeGateway != "" {
+			telemetry.SourceID = opencodeGateway
+		}
 		defer telemetry.finish(c)
 		relayScope := kind
 		if piPlatform != "" {
 			relayScope = "pi:" + piPlatform
+		}
+		if opencodeGateway != "" {
+			relayScope = "opencode:" + opencodeGateway
 		}
 
 		// 如果未指定模型，记录警告但不拦截
@@ -496,6 +650,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		skippedCount := 0
 		for _, provider := range providers {
 			if piPlatform != "" && provider.PiPlatformKey() != piPlatform {
+				continue
+			}
+			if opencodeGateway != "" && (provider.OpenCodeGatewayKey() != opencodeGateway || provider.OpenCodeClientProtocol() != string(clientProtocol)) {
 				continue
 			}
 			// 无认证上游允许空 API Key，其余认证方式必须提供凭据。
@@ -558,6 +715,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		query := flattenQuery(c.Request.URL.Query())
 		if piPlatform != "" {
 			services.DropPiClientCredentialQuery(query)
+		}
+		if kind == "opencode" && clientProtocol == relayprotocol.GeminiNative {
+			delete(query, "key")
 		}
 		clientHeaders := cloneHeaders(c.Request.Header)
 
@@ -664,10 +824,16 @@ func (prs *ProviderRelayService) forwardRequest(
 	if telemetry := relayTelemetryFromContext(c); telemetry != nil {
 		clientProtocol = telemetry.ClientProtocol
 	}
+	var credentialHeaders map[string]string
+	provider, credentialHeaders, forwardErr = prs.resolveProviderCredential(provider, kind)
+	if forwardErr != nil {
+		return false, forwardErr
+	}
 	execution, forwardErr = prs.newRelayForwardExecution(kind, clientProtocol, provider, endpoint, bodyBytes, isStream, model)
 	if forwardErr != nil {
 		return false, forwardErr
 	}
+	execution.CredentialHeaders = credentialHeaders
 	execution.BodyBytes, forwardErr = services.ApplyProviderRequestBodyPolicyForModel(execution.BodyBytes, provider, model, execution.UpstreamProtocol)
 	if forwardErr != nil {
 		return false, forwardErr
@@ -679,11 +845,17 @@ func (prs *ProviderRelayService) forwardRequest(
 	if forwardErr != nil {
 		return false, forwardErr
 	}
+	if forwardErr = services.ApplyOAuthCredentialHeaders(headers, credentialHeaders); forwardErr != nil {
+		return false, forwardErr
+	}
 	bodyBytes = execution.BodyBytes
 	if forwardErr = services.ApplyBodyAwareRequestIdentityHeaders(headers, provider, model, bodyBytes, execution.UpstreamProtocol); forwardErr != nil {
 		return false, forwardErr
 	}
-	targetURL := joinURL(provider.APIURL, execution.TargetEndpoint)
+	targetURL := execution.TargetURL
+	if targetURL == "" {
+		targetURL = joinURL(provider.APIURL, execution.TargetEndpoint)
+	}
 	if kind == "pi" {
 		services.LogPiDebugUpstream(provider.PiPlatformKey(), provider, targetURL, query, headers, bodyBytes)
 	}
@@ -715,7 +887,18 @@ func (prs *ProviderRelayService) forwardRequest(
 	reqBody := bytes.NewReader(bodyBytes)
 	req = req.SetBody(reqBody)
 
-	resp, err := req.Post(targetURL)
+	var (
+		resp *xrequest.Response
+		err  error
+	)
+	switch strings.ToUpper(c.Request.Method) {
+	case http.MethodGet:
+		resp, err = req.Get(targetURL)
+	case http.MethodPost:
+		resp, err = req.Post(targetURL)
+	default:
+		return false, fmt.Errorf("不支持的 Relay HTTP 方法: %s", c.Request.Method)
+	}
 
 	// 无论成功失败，先尝试记录 HttpCode
 	if resp != nil {
@@ -1277,9 +1460,15 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 			c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 
-		// 判断是否为流式请求
-		isStream := strings.Contains(endpoint, ":streamGenerateContent") || strings.Contains(query, "alt=sse")
-		requestedModel := extractGeminiModelFromEndpoint(endpoint)
+		// 解析动作、模型和版本，拒绝未声明的 Gemini 路径。
+		geminiRequest, parseErr := services.ParseGeminiEndpointPath(endpoint)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": parseErr.Error()})
+			return
+		}
+		geminiRequest.Query = c.Request.URL.Query()
+		isStream := geminiRequest.IsStream() || strings.EqualFold(geminiRequest.Query.Get("alt"), "sse")
+		requestedModel := geminiRequest.Model
 		telemetry := beginRelayTelemetry(c, "gemini", relayprotocol.GeminiNative, requestedModel, isStream, prs.pricingService, "")
 		defer telemetry.finish(c)
 
@@ -1297,7 +1486,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		// 1. 过滤可用的 providers（启用 + BaseURL 配置 + 未被拉黑）
 		var activeProviders []services.Provider
 		for _, p := range providers {
-			if !p.Enabled || p.APIURL == "" {
+			if !services.GeminiProviderEligibleForNative(p) {
 				continue
 			}
 			// 检查黑名单
@@ -1317,17 +1506,67 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 			return
 		}
 
+		if geminiRequest.Action == services.GeminiActionModels || geminiRequest.Action == services.GeminiActionModel {
+			prs.handleGeminiNativeCatalog(c, geminiRequest, activeProviders)
+			return
+		}
+
+		// Route first by explicit model policy and the provider-scoped catalog.
+		// An unknown model must not silently fan out to every Gemini provider.
+		var capabilityErrors []string
+		var cooldownUntil time.Time
+		modelCandidates := make(map[int64]string, len(activeProviders))
+		capabilityAction := geminiRequest.Action
+		if isStream {
+			capabilityAction = services.GeminiActionStreamGenerate
+		}
+		filteredProviders := make([]services.Provider, 0, len(activeProviders))
+		for _, provider := range activeProviders {
+			model, effectiveModel, ok := services.GeminiProviderModelCandidate(provider, requestedModel)
+			if !ok {
+				continue
+			}
+			if until, cooling := prs.geminiCredentialCooling(provider, effectiveModel); cooling {
+				if until.After(cooldownUntil) {
+					cooldownUntil = until
+				}
+				continue
+			}
+			if capabilityErr := services.ValidateGeminiNativeBody(model, capabilityAction, bodyBytes); capabilityErr != nil {
+				capabilityErrors = append(capabilityErrors, fmt.Sprintf("%s: %v", provider.Name, capabilityErr))
+				continue
+			}
+			modelCandidates[provider.ID] = effectiveModel
+			filteredProviders = append(filteredProviders, provider)
+		}
+		if len(filteredProviders) == 0 {
+			if len(capabilityErrors) > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Gemini 模型能力不匹配", "details": capabilityErrors})
+			} else if !cooldownUntil.IsZero() {
+				seconds := int(time.Until(cooldownUntil).Round(time.Second) / time.Second)
+				if seconds < 1 {
+					seconds = 1
+				}
+				c.Header("Retry-After", strconv.Itoa(seconds))
+				c.JSON(http.StatusTooManyRequests, gin.H{"error": "Gemini Credential 正在冷却", "retryAfterSeconds": seconds})
+			} else {
+				c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("没有可用的 Gemini Provider 支持模型 %q", requestedModel)})
+			}
+			return
+		}
+
 		result := prs.dispatchWithFailover(c, dispatchRequest{
 			Scope:     "gemini",
-			Providers: activeProviders,
+			Providers: filteredProviders,
 			LogPrefix: "Gemini",
 			// Gemini 原先没有切换通知，保持不变
 			Notify: false,
 			Forward: func(provider services.Provider) (bool, error) {
-				// Gemini 不做模型映射：模型名在 endpoint 里，不在请求体
+				effectiveModel := modelCandidates[provider.ID]
 				ok, errMsg, responseWritten := prs.forwardGeminiAttempt(
-					c, provider, endpoint, bodyBytes, isStream)
+					c, provider, endpoint, effectiveModel, bodyBytes, isStream)
 				if ok {
+					prs.clearGeminiCredentialCooldown(provider, effectiveModel)
 					return true, nil
 				}
 				// 把 (errMsg, responseWritten) 适配成统一错误语义：
@@ -1402,42 +1641,63 @@ func (prs *ProviderRelayService) forwardGeminiRequest(
 	c *gin.Context,
 	provider services.Provider,
 	endpoint string,
+	effectiveModel string,
 	bodyBytes []byte,
 	isStream bool,
 	requestLog *services.RequestLog,
 ) (success bool, errMsg string, responseWritten bool) {
 	providerStart := time.Now()
 
-	// 构建目标 URL
-	targetURL := strings.TrimSuffix(provider.APIURL, "/") + endpoint
+	parsedEndpoint, parseErr := services.ParseGeminiEndpointPath(endpoint)
+	if parseErr != nil {
+		return false, parseErr.Error(), false
+	}
+	parsedEndpoint.Query = c.Request.URL.Query()
+	if strings.TrimSpace(effectiveModel) != "" {
+		parsedEndpoint.Model = services.NormalizeGeminiModelID(effectiveModel)
+	}
+	targetURL, err := services.BuildGeminiEndpoint(provider, parsedEndpoint)
+	if err != nil {
+		return false, fmt.Sprintf("构建 Gemini 上游端点失败: %v", err), false
+	}
 
 	// 预先填充日志，保证失败也能记录 provider 和模型
 	requestLog.Provider = provider.Name
 	// 【修复】每次尝试开始前重置 HttpCode，避免重试时沿用上一次的状态码
 	requestLog.HttpCode = 0
 	// 优先从 endpoint 提取模型名（如 gemini-2.5-pro），否则回退到 provider 配置的默认模型
-	if extractedModel := extractGeminiModelFromEndpoint(endpoint); extractedModel != "" {
+	if strings.TrimSpace(effectiveModel) != "" {
+		requestLog.Model = effectiveModel
+	} else if extractedModel := extractGeminiModelFromEndpoint(endpoint); extractedModel != "" {
 		requestLog.Model = extractedModel
 	} else {
 		requestLog.Model = provider.GeminiDefaultModel()
 	}
 
+	method := c.Request.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+	var requestBody io.Reader
+	if method != http.MethodGet && method != http.MethodHead {
+		requestBody = bytes.NewReader(bodyBytes)
+	}
 	// 创建 HTTP 请求
-	req, err := http.NewRequest("POST", targetURL, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(c.Request.Context(), method, targetURL, requestBody)
 	if err != nil {
 		return false, fmt.Sprintf("创建请求失败: %v", err), false
 	}
 
-	// 复制请求头
-	for key, values := range c.Request.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
+	clientHeaders := cloneHeaders(c.Request.Header)
+	headers, headerErr := services.BuildGeminiUpstreamHeaders(provider, clientHeaders)
+	if headerErr != nil {
+		return false, fmt.Sprintf("构建 Gemini 上游认证失败: %v", headerErr), false
 	}
-
-	// 设置 API Key
-	if provider.APIKey != "" {
-		req.Header.Set("x-goog-api-key", provider.APIKey)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	if method != http.MethodGet && req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
 	}
 
 	// 发送请求
@@ -1520,12 +1780,16 @@ func (prs *ProviderRelayService) forwardGeminiAttempt(
 	c *gin.Context,
 	provider services.Provider,
 	endpoint string,
+	effectiveModel string,
 	bodyBytes []byte,
 	isStream bool,
 ) (success bool, errMsg string, responseWritten bool) {
 	requestLog := &services.RequestLog{Platform: "gemini", IsStream: isStream}
 	started := time.Now()
-	success, errMsg, responseWritten = prs.forwardGeminiRequest(c, provider, endpoint, bodyBytes, isStream, requestLog)
+	success, errMsg, responseWritten = prs.forwardGeminiRequest(c, provider, endpoint, effectiveModel, bodyBytes, isStream, requestLog)
+	if !success && requestLog.HttpCode == http.StatusTooManyRequests {
+		prs.markGeminiCredentialCooldown(provider, effectiveModel, requestLog.HttpCode, "")
+	}
 	var attemptErr error
 	if !success {
 		attemptErr = errors.New(errMsg)
@@ -1616,6 +1880,12 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 		c.JSON(http.StatusNotFound, gin.H{"error": "no providers available"})
 		return fmt.Errorf("no providers available after filtering")
 	}
+	resolvedProvider, credentialHeaders, resolveErr := prs.resolveProviderCredential(*selectedProvider, kind)
+	if resolveErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": resolveErr.Error()})
+		return resolveErr
+	}
+	*selectedProvider = resolvedProvider
 
 	fmt.Printf("[%s] 使用 Provider: %s | URL: %s\n", logPrefix, selectedProvider.Name, selectedProvider.APIURL)
 
@@ -1631,6 +1901,10 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 
 	headers, err := services.BuildUpstreamHeaders(*selectedProvider, kind, cloneHeaders(c.Request.Header), services.ResolveProviderUpstreamProtocol(kind, *selectedProvider, "/v1/models"))
 	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return err
+	}
+	if err := services.ApplyOAuthCredentialHeaders(headers, credentialHeaders); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return err
 	}

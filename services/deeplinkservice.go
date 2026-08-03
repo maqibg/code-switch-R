@@ -28,6 +28,7 @@ type DeepLinkImportRequest struct {
 	Config       *string `json:"config,omitempty"`       // Base64 编码的配置
 	ConfigFormat *string `json:"configFormat,omitempty"` // 配置格式 (json/toml)
 	ConfigURL    *string `json:"configUrl,omitempty"`    // 远程配置 URL
+	CredentialType string `json:"credentialType,omitempty"`
 }
 
 // DeepLinkService 深度链接服务
@@ -143,9 +144,10 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if v := params.Get("configFormat"); v != "" {
 		configFormat = &v
 	}
-	if v := params.Get("configUrl"); v != "" {
-		configURL = &v
-	}
+		if v := params.Get("configUrl"); v != "" {
+			configURL = &v
+		}
+		credentialType := strings.TrimSpace(params.Get("credentialType"))
 
 	return &DeepLinkImportRequest{
 		Version:      version,
@@ -162,7 +164,8 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 		OpusModel:    opusModel,
 		Config:       config,
 		ConfigFormat: configFormat,
-		ConfigURL:    configURL,
+			ConfigURL:    configURL,
+			CredentialType: credentialType,
 	}, nil
 }
 
@@ -175,6 +178,9 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 	}
 
 	// 2. 验证必需字段（合并后）
+	if merged.App == "gemini" && strings.EqualFold(strings.TrimSpace(merged.CredentialType), string(GeminiCredentialCLIOAuth)) {
+		return "", fmt.Errorf("Gemini CLI OAuth 账号不能通过 Native Provider 导入，请使用 CLI Account 入口")
+	}
 	if merged.APIKey == "" {
 		return "", fmt.Errorf("API key 是必需的（在 URL 或配置文件中）")
 	}
@@ -198,9 +204,8 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 		kind = "claude"
 	case "codex":
 		kind = "codex"
-	case "gemini":
-		// Gemini 暂不支持通过 ProviderService 添加，返回友好提示
-		return "", fmt.Errorf("Gemini 供应商导入暂不支持，请使用 Gemini 页面手动添加")
+		case "gemini":
+			kind = "gemini"
 	case "reasonix":
 		kind = "reasonix"
 	case "pi":
@@ -240,6 +245,25 @@ func (s *DeepLinkService) buildProviderFromRequest(request *DeepLinkImportReques
 		Enabled: false, // 默认禁用，用户需手动启用
 		Level:   1,     // 默认最高优先级
 	}
+	if request.App == "gemini" {
+		credentialType := strings.TrimSpace(request.CredentialType)
+		if credentialType == "" {
+			credentialType = string(GeminiCredentialAPIKey)
+		}
+		endpointKind := string(GeminiEndpointOfficial)
+		if credentialType == string(GeminiCredentialGateway) {
+			endpointKind = string(GeminiEndpointGateway)
+		}
+		provider.UpstreamProtocol = string(UpstreamProtocolGoogle)
+		provider.AuthScheme = "x-api-key"
+		provider.gemini = &geminiConfigPayload{
+			LegacyID:       fmt.Sprintf("gemini-import-%d", id),
+			WebsiteURL:     request.Homepage,
+			Model:          pointerStringValue(request.Model),
+			CredentialType: credentialType,
+			EndpointKind:   endpointKind,
+		}
+	}
 
 	// 如果提供了模型信息，可以设置到 SupportedModels
 	if request.Model != nil && *request.Model != "" {
@@ -249,6 +273,13 @@ func (s *DeepLinkService) buildProviderFromRequest(request *DeepLinkImportReques
 	}
 
 	return provider, nil
+}
+
+func pointerStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 // parseAndMergeConfig 解析并合并配置

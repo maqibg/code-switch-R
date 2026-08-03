@@ -12,6 +12,8 @@ import { lobeIconKeys } from '../../../icons/lobeIconMap'
 import { saveCLIConfig, type CLIPlatform } from '../../../services/cliConfig'
 import { showToast } from '../../../utils/toast'
 import { extractErrorMessage } from '../../../utils/error'
+import { listOAuthAccounts, type OAuthPlatform } from '../../../services/oauthAccounts'
+import type { OAuthAccountSummary } from '../../../../bindings/codeswitch/services/models'
 import type { ProviderTab } from '../platformTabs'
 import type { MainState } from '../state'
 import { normalizeLevel, sortProvidersByLevel } from '../utils'
@@ -38,6 +40,12 @@ type VendorForm = {
   userAgentPreset?: string
   customUserAgent?: string
   modelsEndpoint?: string
+  credentialType?: string
+  credentialRef?: string
+  endpointKind?: string
+  apiVersion?: string
+  project?: string
+  location?: string
   upstreamProtocol?: string
   grokUpstreamModel: string
   codexReasoningContinueEnabled?: boolean
@@ -98,6 +106,12 @@ export function useVendorModal(
     userAgentPreset: 'inherit',
     customUserAgent: '',
     modelsEndpoint: '',
+    credentialType: 'api_key',
+    credentialRef: '',
+    endpointKind: 'official',
+    apiVersion: 'v1beta',
+    project: '',
+    location: '',
     grokUpstreamModel: '',
   })
 
@@ -111,6 +125,7 @@ export function useVendorModal(
     },
   })
   const editingCard = ref<AutomationCard | null>(null)
+  const oauthAccounts = ref<OAuthAccountSummary[]>([])
 
   // Level 描述文本映射（1-10）
   const getLevelDescription = (level: number) => {
@@ -161,6 +176,46 @@ export function useVendorModal(
   const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'grok'])
   const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
   const isGrokProviderModal = computed(() => modalState.tabId === 'grok')
+  const isGeminiProviderModal = computed(() => modalState.tabId === 'gemini')
+  const isOAuthPlatformModal = computed(() => modalState.tabId === 'claude' || modalState.tabId === 'codex')
+  const isOAuthCredential = computed(() => isOAuthPlatformModal.value && modalState.form.credentialType === 'oauth')
+  const oauthCredentialOptions = [
+    { value: 'api_key', label: 'API Key' },
+    { value: 'oauth', label: 'OAuth 账号' },
+    { value: 'none', label: '无认证' },
+  ]
+  const oauthAccountOptions = computed(() => oauthAccounts.value.map((account) => ({
+    value: account.id,
+    label: account.email || account.displayName || account.accountId || account.id,
+    status: account.status,
+  })))
+
+  const loadOAuthAccounts = async (tabId: ProviderTab) => {
+    if (tabId !== 'claude' && tabId !== 'codex') {
+      oauthAccounts.value = []
+      return
+    }
+    try {
+      oauthAccounts.value = await listOAuthAccounts(tabId as OAuthPlatform)
+    } catch (error) {
+      oauthAccounts.value = []
+      console.warn('加载 OAuth 账号失败:', error)
+    }
+  }
+  const geminiCredentialOptions = [
+    { value: 'gemini_api_key', label: 'Gemini API Key' },
+    { value: 'gemini_native_oauth', label: 'Gemini Native OAuth' },
+    { value: 'vertex_api_key', label: 'Vertex API Key' },
+    { value: 'vertex_adc', label: 'Vertex ADC' },
+    { value: 'vertex_service_account', label: 'Vertex Service Account' },
+    { value: 'gemini_gateway', label: 'Gemini Gateway' },
+    { value: 'gemini_cli_oauth', label: 'Gemini CLI OAuth' },
+  ]
+  const geminiEndpointOptions = [
+    { value: 'official', label: 'Google Gemini API' },
+    { value: 'gateway', label: '第三方 Gemini 网关' },
+    { value: 'vertex', label: 'Vertex AI' },
+  ]
   const isCodexChatProtocol = computed(
     () => modalState.tabId === 'codex' && modalState.form.upstreamProtocol === 'openai_chat',
   )
@@ -282,6 +337,7 @@ export function useVendorModal(
     modalState.editingId = null
     editingCard.value = null
     Object.assign(modalState.form, defaultFormValues())
+    if (tabId === 'gemini') modalState.form.credentialType = 'gemini_api_key'
     if (state.activeProviderTab.value === 'grok') {
       modalState.form.upstreamProtocol = 'openai_responses'
     }
@@ -290,6 +346,7 @@ export function useVendorModal(
     connectivityTestResult.value = null
     modalState.errors.apiUrl = ''
     modalState.open = true
+    void loadOAuthAccounts(tabId)
   }
 
   const openEditModal = (card: AutomationCard) => {
@@ -321,6 +378,12 @@ export function useVendorModal(
       userAgentPreset: card.userAgentPreset || 'inherit',
       customUserAgent: card.customUserAgent || '',
       modelsEndpoint: card.modelsEndpoint || '',
+      credentialType: card.credentialType || (tabId === 'gemini' ? 'gemini_api_key' : 'api_key'),
+      credentialRef: card.credentialRef || '',
+      endpointKind: card.endpointKind || 'official',
+      apiVersion: card.apiVersion || 'v1beta',
+      project: card.project || '',
+      location: card.location || '',
       grokUpstreamModel: card.modelMapping?.['grok-build'] || '',
     })
     // 初始化认证方式状态：存储值可能是预设名、'custom' 标记或自定义 Header 名
@@ -342,6 +405,7 @@ export function useVendorModal(
     connectivityTestResult.value = null
     modalState.errors.apiUrl = ''
     modalState.open = true
+    void loadOAuthAccounts(tabId)
   }
 
   const configure = (card: AutomationCard) => {
@@ -382,6 +446,14 @@ export function useVendorModal(
     const submittedModelMapping = isGrokProviderModal.value
       ? { 'grok-build': grokUpstreamModel }
       : modalState.form.modelMapping || {}
+    const submittedCredentialType = isGeminiProviderModal.value
+      ? modalState.form.credentialType || 'gemini_api_key'
+      : modalState.form.credentialType || 'api_key'
+    const submittedCredentialRef = isOAuthCredential.value ? (modalState.form.credentialRef || '').trim() : ''
+    if (isOAuthCredential.value && !submittedCredentialRef) {
+      showToast('请选择 OAuth 账号', 'error')
+      return false
+    }
 
     if (editingCard.value) {
       // 若 name 发生变化，先走独立 RenameProvider RPC（后端事务改名日志与黑名单行）。
@@ -429,6 +501,12 @@ export function useVendorModal(
         userAgentPreset: modalState.form.userAgentPreset || 'inherit',
         customUserAgent: modalState.form.customUserAgent || '',
         modelsEndpoint: modalState.form.modelsEndpoint || '',
+        credentialType: submittedCredentialType,
+        credentialRef: submittedCredentialRef,
+        endpointKind: isGeminiProviderModal.value ? modalState.form.endpointKind || 'official' : undefined,
+        apiVersion: isGeminiProviderModal.value ? modalState.form.apiVersion || 'v1beta' : undefined,
+        project: isGeminiProviderModal.value ? modalState.form.project || '' : undefined,
+        location: isGeminiProviderModal.value ? modalState.form.location || '' : undefined,
       })
       if (prevLevel !== nextLevel) {
         sortProvidersByLevel(list)
@@ -471,6 +549,12 @@ export function useVendorModal(
         userAgentPreset: modalState.form.userAgentPreset || 'inherit',
         customUserAgent: modalState.form.customUserAgent || '',
         modelsEndpoint: modalState.form.modelsEndpoint || '',
+        credentialType: submittedCredentialType,
+        credentialRef: submittedCredentialRef,
+        endpointKind: modalState.tabId === 'gemini' ? modalState.form.endpointKind || 'official' : undefined,
+        apiVersion: modalState.tabId === 'gemini' ? modalState.form.apiVersion || 'v1beta' : undefined,
+        project: modalState.tabId === 'gemini' ? modalState.form.project || '' : undefined,
+        location: modalState.tabId === 'gemini' ? modalState.form.location || '' : undefined,
       }
       list.push(newCard)
       sortProvidersByLevel(list)
@@ -536,6 +620,13 @@ export function useVendorModal(
     userAgentOptions,
     showUpstreamProtocolField,
     isGrokProviderModal,
+    isGeminiProviderModal,
+    isOAuthPlatformModal,
+    isOAuthCredential,
+    oauthCredentialOptions,
+    oauthAccountOptions,
+    geminiCredentialOptions,
+    geminiEndpointOptions,
     isCodexChatProtocol,
     effectiveUpstreamProtocolOptions,
     upstreamProtocolHint,

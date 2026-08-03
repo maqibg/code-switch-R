@@ -11,12 +11,16 @@ import * as ConsoleService from "./consoleservice.js";
 import * as DeepLinkService from "./deeplinkservice.js";
 import * as EnvCheckService from "./envcheckservice.js";
 import * as FrontendPreferencesService from "./frontendpreferencesservice.js";
+import * as GeminiCatalogService from "./geminicatalogservice.js";
+import * as GeminiCliAccountService from "./geminicliaccountservice.js";
 import * as GeminiService from "./geminiservice.js";
 import * as GrokBuildService from "./grokbuildservice.js";
 import * as ImportService from "./importservice.js";
 import * as LogService from "./logservice.js";
 import * as MCPService from "./mcpservice.js";
 import * as NetworkService from "./networkservice.js";
+import * as OAuthAccountService from "./oauthaccountservice.js";
+import * as OpenCodeService from "./opencodeservice.js";
 import * as PiSettingsService from "./pisettingsservice.js";
 import * as PricingService from "./pricingservice.js";
 import * as PromptService from "./promptservice.js";
@@ -37,12 +41,16 @@ export {
     DeepLinkService,
     EnvCheckService,
     FrontendPreferencesService,
+    GeminiCatalogService,
+    GeminiCliAccountService,
     GeminiService,
     GrokBuildService,
     ImportService,
     LogService,
     MCPService,
     NetworkService,
+    OAuthAccountService,
+    OpenCodeService,
     PiSettingsService,
     PricingService,
     PromptService,
@@ -81,6 +89,12 @@ export {
     EnvConflict,
     FrontendPreferences,
     GeminiAuthType,
+    GeminiCliAccount,
+    GeminiCliOAuthLogin,
+    GeminiCliOAuthLoginStatus,
+    GeminiCliQuotaSnapshot,
+    GeminiModel,
+    GeminiModelCatalog,
     GeminiPreset,
     GeminiProvider,
     GeminiProxyStatus,
@@ -103,6 +117,29 @@ export {
     ManualTestResult,
     ModelDailyStat,
     NetworkSettings,
+    OAuthAccountSummary,
+    OAuthImportItem,
+    OAuthImportRequest,
+    OAuthImportResult,
+    OAuthLoginStart,
+    OAuthLoginStatus,
+    OAuthQuotaSnapshot,
+    OpenCodeApplyResult,
+    OpenCodeConfigInfo,
+    OpenCodeConfigSnapshot,
+    OpenCodeDefaultModelsInput,
+    OpenCodeDiagnostics,
+    OpenCodeMCPServerInfo,
+    OpenCodeMCPServerInput,
+    OpenCodeModelInfo,
+    OpenCodeModelInput,
+    OpenCodePathInput,
+    OpenCodePromptInfo,
+    OpenCodeProviderInfo,
+    OpenCodeProviderInput,
+    OpenCodeWSLSyncInput,
+    OpenCodeWSLSyncResult,
+    OpenCodeWSLTargetInfo,
     PiBuiltinCatalogSnapshot,
     PiBuiltinModel,
     PiBuiltinModelAddRequest,

@@ -40,7 +40,7 @@ func (prs *ProviderRelayService) forwardCodexResponsesWithContinue(
 	}
 
 	attemptStarted := time.Now()
-	resp, err := prs.sendNativeCodexResponsesRequest(c, provider, endpoint, query, clientHeaders, initialBody)
+	resp, err := prs.sendNativeCodexResponsesRequest(c, provider, execution.CredentialHeaders, endpoint, query, clientHeaders, initialBody)
 	if resp != nil {
 		requestLog.HttpCode = resp.StatusCode()
 	}
@@ -108,6 +108,7 @@ func (prs *ProviderRelayService) recordCodexContinueAttempt(
 func (prs *ProviderRelayService) sendNativeCodexResponsesRequest(
 	c *gin.Context,
 	provider services.Provider,
+	credentialHeaders map[string]string,
 	endpoint string,
 	query map[string]string,
 	clientHeaders map[string]string,
@@ -115,6 +116,9 @@ func (prs *ProviderRelayService) sendNativeCodexResponsesRequest(
 ) (*xrequest.Response, error) {
 	headers, err := services.BuildUpstreamHeaders(provider, "codex", clientHeaders, services.UpstreamProtocolOpenAIResponses)
 	if err != nil {
+		return nil, err
+	}
+	if err := services.ApplyOAuthCredentialHeaders(headers, credentialHeaders); err != nil {
 		return nil, err
 	}
 	deleteHeaderCaseInsensitive(headers, "Accept-Encoding")

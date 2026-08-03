@@ -102,7 +102,7 @@ func (prs *ProviderRelayService) foldCodexResponsesStream(
 			}
 			logCodexContinue("INFO", traceID, "发起续写请求 | next_round=%d | provider=%s | replay_items=%d", roundNo+1, provider.Name, len(state.replayTail))
 			attemptStarted = time.Now()
-			response, err = prs.sendNativeCodexResponsesRequest(c, provider, endpoint, query, headers, nextBody)
+			response, err = prs.sendNativeCodexResponsesRequest(c, provider, execution.CredentialHeaders, endpoint, query, headers, nextBody)
 			if err != nil || response == nil || response.StatusCode() < 200 || response.StatusCode() >= 300 || !isEventStream(response) {
 				attemptErr := err
 				if attemptErr == nil {

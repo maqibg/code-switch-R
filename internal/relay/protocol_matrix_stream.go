@@ -39,6 +39,8 @@ func NewProtocolMatrixSSEConverter(source, target relayprotocol.Protocol, model 
 		converter.source = newAnthropicMatrixSSESource(model)
 	case relayprotocol.OpenAIResponses:
 		converter.source = newResponsesMatrixSSESource(model)
+	case relayprotocol.GeminiNative:
+		converter.source = newGeminiMatrixSSESource(model)
 	default:
 		converter.source = &unsupportedMatrixSSESource{err: fmt.Errorf("不支持的流式源协议: %s", source)}
 	}
@@ -49,6 +51,8 @@ func NewProtocolMatrixSSEConverter(source, target relayprotocol.Protocol, model 
 		converter.target = &responsesMatrixSSETarget{converter: NewCodexChatSSEConverter(model)}
 	case relayprotocol.AnthropicMessages:
 		converter.target = newAnthropicMatrixSSETarget(model)
+	case relayprotocol.GeminiNative:
+		converter.target = newGeminiMatrixSSETarget()
 	default:
 		converter.target = &unsupportedMatrixSSETarget{err: fmt.Errorf("不支持的流式目标协议: %s", target)}
 	}
@@ -116,6 +120,8 @@ func protocolUsageParser(protocol relayprotocol.Protocol) func(string, *services
 		return ReasonixParseTokenUsageFromResponse
 	case relayprotocol.OpenAIResponses:
 		return CodexParseTokenUsageFromResponse
+	case relayprotocol.GeminiNative:
+		return GeminiParseTokenUsageFromResponse
 	default:
 		return ClaudeCodeParseTokenUsageFromResponse
 	}

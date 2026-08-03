@@ -50,6 +50,14 @@ func ProviderEligibleForRelay(provider Provider, platform string) bool {
 	if !provider.Enabled || strings.TrimSpace(provider.APIURL) == "" {
 		return false
 	}
+	if strings.EqualFold(strings.TrimSpace(provider.CredentialType), "oauth") {
+		// 账号是否存在、是否需要刷新由 OAuthAccountService 在当前 attempt
+		// 解析；这里仅保留有明确引用的 Provider，避免把空引用放入轮询池。
+		return strings.TrimSpace(provider.CredentialRef) != ""
+	}
+	if strings.EqualFold(strings.TrimSpace(platform), "gemini") || provider.GetUpstreamProtocol() == UpstreamProtocolGoogle {
+		return GeminiProviderEligibleForNative(provider)
+	}
 	scheme, _ := provider.effectiveAuthScheme(platform)
 	return scheme == "none" || strings.TrimSpace(provider.APIKey) != ""
 }
@@ -59,6 +67,9 @@ func BuildUpstreamHeaders(provider Provider, platform string, clientHeaders map[
 }
 
 func BuildUpstreamHeadersForModel(provider Provider, platform, model string, clientHeaders map[string]string, upstreamProtocol UpstreamProtocolType) (map[string]string, error) {
+	if strings.EqualFold(strings.TrimSpace(platform), "gemini") || upstreamProtocol == UpstreamProtocolGoogle {
+		return BuildGeminiUpstreamHeaders(provider, clientHeaders)
+	}
 	var err error
 	provider, err = resolvePiProviderConfigValues(provider, platform)
 	if err != nil {

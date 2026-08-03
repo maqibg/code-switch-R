@@ -48,11 +48,14 @@ type RequestLog struct {
 	Provider         string `json:"provider"` // 请求发生时的 provider 名（历史记录，改名后不回溯）
 	// ProviderID 关联 provider 表。0 表示未知（供应商已删除，或 Gemini
 	// 尚未并入 provider 表）。按 ID 关联使改名无需 UPDATE 日志表。
-	ProviderID        int64 `json:"provider_id,omitempty"`
-	HttpCode          int   `json:"http_code"`
-	InputTokens       int   `json:"input_tokens"`
-	OutputTokens      int   `json:"output_tokens"`
-	CacheCreateTokens int   `json:"cache_create_tokens"`
+	ProviderID        int64  `json:"provider_id,omitempty"`
+	CredentialID      string `json:"credential_id,omitempty"`
+	AuthMode          string `json:"auth_mode,omitempty"`
+	CredentialStatus  string `json:"credential_status,omitempty"`
+	HttpCode          int    `json:"http_code"`
+	InputTokens       int    `json:"input_tokens"`
+	OutputTokens      int    `json:"output_tokens"`
+	CacheCreateTokens int    `json:"cache_create_tokens"`
 	// Ephemeral5mTokens/Ephemeral1hTokens 分别对应 cache_creation.ephemeral_5m/1h_input_tokens。
 	// 为 0 时按 CacheCreateTokens 全量当 5m 计费(旧数据兼容)。
 	Ephemeral5mTokens int     `json:"ephemeral_5m_tokens"`

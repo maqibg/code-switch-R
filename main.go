@@ -135,14 +135,22 @@ func main() {
 	notificationService := services.NewNotificationService(appSettings) // 通知服务
 	blacklistService := services.NewBlacklistService(settingsService, notificationService)
 	geminiService := services.NewGeminiService(relayAddr)
+	geminiCliAccountService := services.NewGeminiCliAccountService()
+	oauthAccountService := services.NewOAuthAccountService()
+	if err := oauthAccountService.Start(); err != nil {
+		log.Printf("加载 Claude/Codex OAuth 账号失败，账号功能将报告错误: %v", err)
+	}
 	piSettings := services.NewPiSettingsService(relayAddr, providerService)
 	pricingService := services.NewPricingService(appSettings, piSettings)
 	providerRelay := relay.NewProviderRelayService(providerService, blacklistService, notificationService, appSettings, pricingService, relayAddr)
+	providerRelay.SetOAuthAccountService(oauthAccountService)
+	openCodeService := services.NewOpenCodeService(providerService, providerRelay.Addr())
 	grokBuildService := services.NewGrokBuildService(providerRelay.Addr(), appSettings, providerService)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
 	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
 	providerModelDiscovery := services.NewProviderModelDiscoveryService(appSettings)
+	geminiCatalogService := services.NewGeminiCatalogService(providerService, appSettings)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
 	logService := services.NewLogService(providerService, pricingService, appSettings)
 	logService.StartMaintenance()
@@ -232,6 +240,7 @@ func main() {
 			application.NewService(appservice),
 			application.NewService(suiService),
 			application.NewService(providerService),
+			application.NewService(oauthAccountService),
 			application.NewService(settingsService),
 			application.NewService(blacklistService),
 			application.NewService(claudeSettings),
@@ -249,13 +258,16 @@ func main() {
 			application.NewService(versionService),
 			application.NewService(updateService),
 			application.NewService(geminiService),
+			application.NewService(geminiCliAccountService),
 			application.NewService(consoleService),
 			application.NewService(networkService),
 			application.NewService(reasonixSettings),
 			application.NewService(piSettings),
 			application.NewService(pricingService),
 			application.NewService(providerModelDiscovery),
+			application.NewService(geminiCatalogService),
 			application.NewService(frontendPreferencesService),
+			application.NewService(openCodeService),
 			application.NewService(grokBuildService),
 		},
 		Assets: application.AssetOptions{

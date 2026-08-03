@@ -5,6 +5,7 @@ import (
 	"codeswitch/services"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -34,6 +35,23 @@ func (prs *ProviderRelayService) prepareMatrixExecution(execution *relayForwardE
 	execution.BodyBytes = converted
 	execution.CodexChatMessages = chatMessages
 	execution.TargetEndpoint = rewriteEndpointForProtocol(execution.TargetEndpoint, execution.RoutePlan.UpstreamProtocol)
+	if execution.RoutePlan.UpstreamProtocol == relayprotocol.GeminiNative {
+		action := services.GeminiActionGenerate
+		if execution.IsStream {
+			action = services.GeminiActionStreamGenerate
+		}
+		request := services.GeminiEndpointRequest{
+			Version: execution.Provider.GeminiAPIVersion(""), Model: execution.Model, Action: action,
+		}
+		if _, query := httpx.SplitEndpointQuery(execution.TargetEndpoint); query != "" {
+			request.Query, _ = url.ParseQuery(strings.TrimPrefix(query, "?"))
+		}
+		targetURL, err := services.BuildGeminiEndpoint(execution.Provider, request)
+		if err != nil {
+			return err
+		}
+		execution.TargetURL = targetURL
+	}
 	execution.ProtocolMatrixBridge = true
 	if execution.IsStream {
 		execution.MatrixSSEConverter = NewProtocolMatrixSSEConverter(
@@ -49,6 +67,17 @@ func (prs *ProviderRelayService) prepareMatrixExecution(execution *relayForwardE
 
 func rewriteEndpointForProtocol(endpoint string, target relayprotocol.Protocol) string {
 	path, query := httpx.SplitEndpointQuery(endpoint)
+	if strings.Contains(strings.ToLower(path), "/models/") &&
+		(strings.Contains(strings.ToLower(path), "/v1beta/") || strings.Contains(strings.ToLower(path), "/v1/")) {
+		switch target {
+		case relayprotocol.OpenAIChat:
+			return "/v1/chat/completions" + query
+		case relayprotocol.OpenAIResponses:
+			return "/v1/responses" + query
+		case relayprotocol.AnthropicMessages:
+			return "/v1/messages" + query
+		}
+	}
 	if !isClientProtocolEndpoint(path) {
 		return httpx.EndpointWithQuery(path, query)
 	}
@@ -88,6 +117,9 @@ func convertProtocolRequestWithHistory(body []byte, source, target relayprotocol
 	case relayprotocol.AnthropicMessages:
 		converted, convertErr := chatRequestToAnthropic(chat)
 		return converted, messages, convertErr
+	case relayprotocol.GeminiNative:
+		converted, convertErr := chatRequestToGemini(chat)
+		return converted, messages, convertErr
 	default:
 		return nil, nil, services.NewClientRequestRejectedError(fmt.Sprintf("不支持的目标协议: %s", target))
 	}
@@ -110,6 +142,12 @@ func requestToCanonicalChatWithHistory(body []byte, source relayprotocol.Protoco
 		return convertCodexResponsesToOpenAIChatObjectWithHistory(body, history)
 	case relayprotocol.AnthropicMessages:
 		chat, err := anthropicRequestToChat(body)
+		if captureMessages {
+			return chat, chatMessagesFromCanonical(chat), err
+		}
+		return chat, nil, err
+	case relayprotocol.GeminiNative:
+		chat, err := geminiRequestToChat(body)
 		if captureMessages {
 			return chat, chatMessagesFromCanonical(chat), err
 		}
@@ -555,6 +593,8 @@ func convertProtocolResponse(body []byte, source, target relayprotocol.Protocol,
 		return ConvertOpenAIChatToCodexResponse(encoded)
 	case relayprotocol.AnthropicMessages:
 		return chatResponseToAnthropic(chat)
+	case relayprotocol.GeminiNative:
+		return chatResponseToGemini(chat)
 	default:
 		return nil, fmt.Errorf("不支持的客户端协议: %s", target)
 	}
@@ -568,6 +608,8 @@ func responseToCanonicalChat(body []byte, source relayprotocol.Protocol, model s
 		return anthropicResponseToChat(body, model)
 	case relayprotocol.OpenAIResponses:
 		return responsesResponseToChat(body, model)
+	case relayprotocol.GeminiNative:
+		return geminiResponseToChat(body, model)
 	default:
 		return nil, fmt.Errorf("不支持的上游协议: %s", source)
 	}
@@ -891,6 +933,8 @@ func parseConvertedUsage(body []byte, protocol relayprotocol.Protocol, usage *se
 		ReasonixParseTokenUsageFromResponse(string(body), usage)
 	case relayprotocol.OpenAIResponses:
 		CodexParseTokenUsageFromResponse(string(body), usage)
+	case relayprotocol.GeminiNative:
+		GeminiParseTokenUsageFromResponse(string(body), usage)
 	default:
 		ClaudeCodeParseTokenUsageFromResponse(string(body), usage)
 	}

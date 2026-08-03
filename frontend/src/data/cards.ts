@@ -1,8 +1,11 @@
 export type AutomationCard = {
   id: number
+  providerId?: string
   name: string
   apiUrl: string
   apiKey: string
+  apiKeyMasked?: string
+  hasApiKey?: boolean
   officialSite: string
   icon: string
   tint: string
@@ -47,6 +50,13 @@ export type AutomationCard = {
   metadataUserId?: string
   // 上游协议类型（anthropic / openai_chat / openai_responses / auto）
   upstreamProtocol?: string
+  credentialType?: string
+  credentialRef?: string
+  endpointKind?: string
+  apiVersion?: string
+  project?: string
+  location?: string
+  catalogSource?: string
   // Codex reasoning 自动续写，仅对 Codex 原生 Responses 流式请求生效
   codexReasoningContinueEnabled?: boolean
   // Codex reasoning 自动续写控制台日志

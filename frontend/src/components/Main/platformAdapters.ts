@@ -106,13 +106,26 @@ const jsonPlatformAdapter = (tab: CliSettingsPlatform): PlatformAdapter => ({
   },
 })
 
-// ---------- gemini：string ID，卡片 ID 是前端序号，真实 ID 走缓存下标 ----------
+// ---------- gemini：使用后端稳定 ID，缓存只承载编辑时的原始字段 ----------
 
-const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard => ({
-  id: 300 + index, // Gemini 使用 300+ 的 ID 范围
+const stableGeminiCardID = (provider: GeminiProvider): number => {
+  if (provider.numericId && provider.numericId > 0) return provider.numericId
+  let hash = 2166136261
+  for (const character of provider.id) {
+    hash ^= character.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return 300000 + (hash >>> 0) % 100000000
+}
+
+const geminiToCard = (provider: GeminiProvider): AutomationCard => ({
+  id: stableGeminiCardID(provider),
+  providerId: provider.id,
   name: provider.name,
   apiUrl: provider.baseUrl || '',
   apiKey: provider.apiKey || '',
+  apiKeyMasked: provider.apiKeyMasked,
+  hasApiKey: provider.hasApiKey,
   officialSite: provider.websiteUrl || '',
   icon: 'gemini',
   tint: 'rgba(251, 146, 60, 0.18)',
@@ -120,24 +133,40 @@ const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard =
   enabled: provider.enabled,
   proxyEnabled: !!provider.proxyEnabled,
   level: provider.level || 1,
+  credentialType: provider.credentialType,
+  endpointKind: provider.endpointKind,
+  apiVersion: provider.apiVersion,
+  project: provider.project,
+  location: provider.location,
+  authScheme: provider.authScheme,
+  authHeader: provider.authHeader,
+  headers: provider.headers,
+  catalogSource: provider.catalogSource,
 })
 
 const cardToGemini = (card: AutomationCard, original: GeminiProvider): GeminiProvider => ({
   ...original,
   name: card.name,
   baseUrl: card.apiUrl,
-  apiKey: card.apiKey,
+  apiKey: card.apiKey || original.apiKey || '',
   websiteUrl: card.officialSite,
   enabled: card.enabled,
   proxyEnabled: !!card.proxyEnabled,
   level: card.level || 1,
+  credentialType: card.credentialType || original.credentialType,
+  endpointKind: card.endpointKind || original.endpointKind,
+  apiVersion: card.apiVersion || original.apiVersion,
+  project: card.project || original.project,
+  location: card.location || original.location,
+  authScheme: card.authScheme || original.authScheme,
+  authHeader: card.authHeader || original.authHeader,
+  headers: { ...(card.headers || original.headers || {}) },
 })
 
-// 按卡片 ID（300+index 序号）解析缓存里的原始 provider
 const resolveGeminiOriginal = (state: MainState, cardId: number): GeminiProvider | undefined => {
-  const index = state.cards.gemini.findIndex((c) => c.id === cardId)
-  if (index === -1) return undefined
-  return state.geminiProvidersCache.value[index]
+  const card = state.cards.gemini.find((item) => item.id === cardId)
+  if (!card?.providerId) return undefined
+  return state.geminiProvidersCache.value.find((provider) => provider.id === card.providerId)
 }
 
 const geminiAdapter: PlatformAdapter = {
@@ -149,16 +178,18 @@ const geminiAdapter: PlatformAdapter = {
   },
   // Gemini 没有整体保存接口，按名字对比缓存做增删改，最后按卡片顺序重排
   async persistCards(state) {
-    const currentNames = new Set(state.cards.gemini.map((c) => c.name))
+    const currentProviderIDs = new Set(state.cards.gemini.map((card) => card.providerId).filter(Boolean))
 
     for (const cached of state.geminiProvidersCache.value) {
-      if (!currentNames.has(cached.name)) {
+      if (!currentProviderIDs.has(cached.id)) {
         await DeleteGeminiProvider(cached.id)
       }
     }
 
     for (const card of state.cards.gemini) {
-      const original = state.geminiProvidersCache.value.find((p) => p.name === card.name)
+      const original = card.providerId
+        ? state.geminiProvidersCache.value.find((p) => p.id === card.providerId)
+        : undefined
       if (original) {
         await UpdateGeminiProvider(cardToGemini(card, original))
       } else {
@@ -170,18 +201,28 @@ const geminiAdapter: PlatformAdapter = {
           websiteUrl: card.officialSite,
           enabled: card.enabled,
           proxyEnabled: !!card.proxyEnabled,
+          credentialType: card.credentialType,
+          endpointKind: card.endpointKind,
+          apiVersion: card.apiVersion,
+          project: card.project,
+          location: card.location,
+          authScheme: card.authScheme,
+          authHeader: card.authHeader,
+          headers: card.headers,
         }
         await AddGeminiProvider(newProvider)
       }
     }
 
-    // 刷新缓存以获取最新的 ID，再按卡片顺序保存排序
+    // 刷新缓存以获取最新的 ID，再按稳定 Provider ID 保存排序
     const updatedProviders = (await GetGeminiProviders()) as GeminiProvider[]
     state.geminiProvidersCache.value = updatedProviders
 
     const orderedIds: string[] = []
     for (const card of state.cards.gemini) {
-      const provider = updatedProviders.find((p) => p.name === card.name)
+      const provider = card.providerId
+        ? updatedProviders.find((p) => p.id === card.providerId)
+        : updatedProviders.find((p) => p.name === card.name)
       if (provider) {
         orderedIds.push(provider.id)
       }

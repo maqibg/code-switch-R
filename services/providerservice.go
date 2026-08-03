@@ -67,6 +67,11 @@ type Provider struct {
 	AuthScheme string `json:"authScheme,omitempty"`
 	AuthHeader string `json:"authHeader,omitempty"`
 
+	// CredentialType/Ref separate the credential owner from the upstream Header policy.
+	// Empty keeps the legacy API-key behavior; oauth never falls back to APIKey.
+	CredentialType string `json:"credentialType,omitempty"`
+	CredentialRef  string `json:"credentialRef,omitempty"`
+
 	// Headers contains non-authentication upstream headers. Dangerous transport and
 	// credential headers are rejected before requests are sent.
 	Headers map[string]string `json:"headers,omitempty"`
@@ -115,6 +120,12 @@ type Provider struct {
 	// 非导出因此不进 Wails 绑定：对外仍通过 GeminiProvider 暴露，
 	// 前端无需改动。持久化时进 config_json 的 gemini 子对象。
 	gemini *geminiConfigPayload `json:"-"`
+
+	// openCode 承载 OpenCode provider map entry 的专有数据。
+	// OpenCode 使用字符串 providerKey、npm 和嵌套模型，不能压缩进传统
+	// Provider 的 Name/APIURL/SupportedModels 字段；对外由 OpenCodeService
+	// 返回脱敏 DTO，避免把原始 JSON 和 API Key 暴露给 Wails。
+	openCode *openCodeProviderPayload `json:"-"`
 }
 
 type providerEnvelope struct {
@@ -389,6 +400,31 @@ func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
 	return providers, nil
 }
 
+// UpdateGeminiCatalog stores a remote Native catalog without changing the
+// provider's credentials or route policy. Relay discovery uses this cache so a
+// model returned by /models is immediately routable on the next request.
+func (ps *ProviderService) UpdateGeminiCatalog(providerID int64, models []GeminiModel) error {
+	providers, err := ps.LoadProviders("gemini")
+	if err != nil {
+		return err
+	}
+	for index := range providers {
+		if providers[index].ID != providerID {
+			continue
+		}
+		if providers[index].gemini == nil {
+			providers[index].gemini = &geminiConfigPayload{}
+		}
+		now := time.Now().UTC()
+		providers[index].gemini.Catalog = cloneGeminiModels(models)
+		providers[index].gemini.CatalogSource = "remote"
+		providers[index].gemini.CatalogFetchedAt = now.Format(time.RFC3339)
+		providers[index].gemini.CatalogExpiresAt = now.Add(30 * time.Minute).Format(time.RFC3339)
+		return ps.SaveProviders("gemini", providers)
+	}
+	return fmt.Errorf("未找到 Gemini Provider %d", providerID)
+}
+
 func (ps *ProviderService) invalidateProviderCache(path string) {
 	ps.cacheMu.Lock()
 	delete(ps.fileCache, path)
@@ -502,6 +538,8 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		ConnectivityAuthType: source.ConnectivityAuthType, // 复制认证方式
 		AuthScheme:           source.AuthScheme,
 		AuthHeader:           source.AuthHeader,
+		CredentialType:       source.CredentialType,
+		CredentialRef:        source.CredentialRef,
 		UserAgentPreset:      source.UserAgentPreset,
 		CustomUserAgent:      source.CustomUserAgent,
 		RequestIdentity:      nil,
@@ -702,6 +740,8 @@ func ResolveProviderUpstreamProtocol(platform string, provider Provider, effecti
 		return UpstreamProtocolOpenAIResponses
 	case "reasonix", "pi":
 		return UpstreamProtocolOpenAIChat
+	case "gemini":
+		return UpstreamProtocolGoogle
 	default:
 		return UpstreamProtocolAnthropic
 	}
@@ -783,6 +823,15 @@ func (p *Provider) ValidateConfiguration() []string {
 		if err := validateHeaderNameAndValue(p.AuthHeader, p.APIKey); err != nil {
 			errors = append(errors, err.Error())
 		}
+	}
+	credentialType := strings.ToLower(strings.TrimSpace(p.CredentialType))
+	switch credentialType {
+	case "", "api_key", "apikey", "oauth", "none":
+	default:
+		errors = append(errors, fmt.Sprintf("不支持的 Credential 类型: %s", p.CredentialType))
+	}
+	if credentialType == "oauth" && strings.TrimSpace(p.CredentialRef) == "" {
+		errors = append(errors, "OAuth Credential 必须填写 credentialRef")
 	}
 	normalizedHeaders, err := canonicalizeHeaderMap(p.Headers)
 	if err != nil {

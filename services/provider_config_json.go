@@ -33,6 +33,8 @@ type providerConfigPayload struct {
 	UpstreamProtocol     string `json:"upstreamProtocol,omitempty"`
 	AuthScheme           string `json:"authScheme,omitempty"`
 	AuthHeader           string `json:"authHeader,omitempty"`
+	CredentialType       string `json:"credentialType,omitempty"`
+	CredentialRef        string `json:"credentialRef,omitempty"`
 
 	Headers         map[string]string `json:"headers,omitempty"`
 	UserAgentPreset string            `json:"userAgentPreset,omitempty"`
@@ -62,6 +64,10 @@ type providerConfigPayload struct {
 	// 放在独立嵌套对象里而不是平铺：这些字段不属于 Provider 结构体，
 	// 平铺会让"config_json 字段必须与 Provider 字段一一对应"的检查失效。
 	Gemini *geminiConfigPayload `json:"gemini,omitempty"`
+
+	// OpenCode 的完整 provider payload，和 Gemini 一样保持独立命名空间，
+	// 避免把外部配置的未知字段误当成通用 Provider 字段。
+	OpenCode *openCodeProviderPayload `json:"openCode,omitempty"`
 }
 
 // geminiConfigPayload Gemini provider 在 provider 表中的专有数据
@@ -77,6 +83,19 @@ type geminiConfigPayload struct {
 	PartnerPromotionKey string            `json:"partnerPromotionKey,omitempty"`
 	EnvConfig           map[string]string `json:"envConfig,omitempty"`
 	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"`
+	CredentialType      string            `json:"credentialType,omitempty"`
+	EndpointKind        string            `json:"endpointKind,omitempty"`
+	APIVersion          string            `json:"apiVersion,omitempty"`
+	Project             string            `json:"project,omitempty"`
+	Location            string            `json:"location,omitempty"`
+	AuthScheme          string            `json:"authScheme,omitempty"`
+	AuthHeader          string            `json:"authHeader,omitempty"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	ModelsEndpoint      string            `json:"modelsEndpoint,omitempty"`
+	Catalog             []GeminiModel     `json:"catalog,omitempty"`
+	CatalogSource       string            `json:"catalogSource,omitempty"`
+	CatalogFetchedAt    string            `json:"catalogFetchedAt,omitempty"`
+	CatalogExpiresAt    string            `json:"catalogExpiresAt,omitempty"`
 }
 
 // marshalProviderConfig 把 Provider 的长尾字段序列化为 config_json。
@@ -103,6 +122,8 @@ func marshalProviderConfig(provider Provider) (string, error) {
 		UpstreamProtocol:     provider.UpstreamProtocol,
 		AuthScheme:           provider.AuthScheme,
 		AuthHeader:           provider.AuthHeader,
+		CredentialType:       provider.CredentialType,
+		CredentialRef:        provider.CredentialRef,
 
 		Headers:         provider.Headers,
 		UserAgentPreset: provider.UserAgentPreset,
@@ -125,7 +146,8 @@ func marshalProviderConfig(provider Provider) (string, error) {
 		ConnectivityTestModel:    provider.ConnectivityTestModel,
 		ConnectivityTestEndpoint: provider.ConnectivityTestEndpoint,
 
-		Gemini: provider.gemini,
+		Gemini:   provider.gemini,
+		OpenCode: provider.openCode,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -163,6 +185,8 @@ func applyProviderConfig(provider *Provider, configJSON string) error {
 	provider.UpstreamProtocol = payload.UpstreamProtocol
 	provider.AuthScheme = payload.AuthScheme
 	provider.AuthHeader = payload.AuthHeader
+	provider.CredentialType = payload.CredentialType
+	provider.CredentialRef = payload.CredentialRef
 
 	provider.Headers = payload.Headers
 	provider.UserAgentPreset = payload.UserAgentPreset
@@ -185,5 +209,6 @@ func applyProviderConfig(provider *Provider, configJSON string) error {
 	provider.ConnectivityTestModel = payload.ConnectivityTestModel
 	provider.ConnectivityTestEndpoint = payload.ConnectivityTestEndpoint
 	provider.gemini = payload.Gemini
+	provider.openCode = payload.OpenCode
 	return nil
 }

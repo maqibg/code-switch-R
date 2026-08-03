@@ -19,6 +19,9 @@ type RelayAttemptLog struct {
 	// ProviderID 关联 provider 表。0 表示未知（例如 Gemini 尚未并入 provider 表，
 	// 见 A1 第 5 步）。日志按 ID 关联后，改名不再需要 UPDATE 日志表。
 	ProviderID       int64
+	CredentialID     string
+	AuthMode         string
+	CredentialStatus string
 	Model            string
 	UpstreamProtocol string
 	HTTPCode         int
@@ -40,7 +43,8 @@ func RequestLogInsertStatement(log RequestLog) dbcore.Statement {
 	return dbcore.Statement{Query: `
 			INSERT INTO request_log (
 				request_id, platform, source_id, client_protocol, upstream_protocol,
-				requested_model, model, provider, provider_id, http_code, attempt_count, error_type,
+				requested_model, model, provider, provider_id, credential_id, auth_mode, credential_status,
+				http_code, attempt_count, error_type,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 				reasoning_tokens, usage_status, usage_known_mask, usage_json, is_stream, duration_sec, ephemeral_5m_tokens,
 				ephemeral_1h_tokens, service_tier, input_cost, output_cost, reasoning_cost,
@@ -52,12 +56,14 @@ func RequestLogInsertStatement(log RequestLog) dbcore.Statement {
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?
 			WHERE NOT EXISTS (
 				SELECT 1 FROM request_log WHERE request_id = ? AND request_id <> ''
 			)
 	`, Args: []any{log.RequestID, log.Platform, log.SourceID, log.ClientProtocol, log.UpstreamProtocol,
-		log.RequestedModel, log.Model, log.Provider, dbcore.NullableID(log.ProviderID), log.HttpCode, log.AttemptCount, log.ErrorType,
+		log.RequestedModel, log.Model, log.Provider, dbcore.NullableID(log.ProviderID), log.CredentialID, log.AuthMode, log.CredentialStatus,
+		log.HttpCode, log.AttemptCount, log.ErrorType,
 		log.InputTokens, log.OutputTokens, log.CacheCreateTokens, log.CacheReadTokens,
 		log.ReasoningTokens, log.UsageStatus, log.UsageKnownMask, log.UsageJSON, dbcore.BoolToInt(log.IsStream), log.DurationSec, log.Ephemeral5mTokens,
 		log.Ephemeral1hTokens, log.ServiceTier, log.InputCost, log.OutputCost, log.ReasoningCost,
@@ -71,7 +77,8 @@ func RequestLogInsertStatement(log RequestLog) dbcore.Statement {
 func RelayAttemptInsertStatement(requestID, platform, sourceID string, attempt RelayAttemptLog) dbcore.Statement {
 	return dbcore.Statement{Query: `
 				INSERT INTO relay_attempt (
-			request_id, attempt_index, platform, source_id, provider, provider_id, model,
+			request_id, attempt_index, platform, source_id, provider, provider_id,
+			credential_id, auth_mode, credential_status, model,
 			upstream_protocol, http_code, success, error_type, error_message,
 				duration_sec, input_tokens, output_tokens, cache_create_tokens,
 					cache_read_tokens, reasoning_tokens, usage_status, usage_known_mask, usage_json,
@@ -84,11 +91,12 @@ func RelayAttemptInsertStatement(requestID, platform, sourceID string, attempt R
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
 				)
 				ON CONFLICT(request_id, attempt_index) DO NOTHING
 			`, Args: []any{requestID, attempt.AttemptIndex, platform, sourceID,
-		attempt.Provider, dbcore.NullableID(attempt.ProviderID), attempt.Model, attempt.UpstreamProtocol, attempt.HTTPCode,
+		attempt.Provider, dbcore.NullableID(attempt.ProviderID), attempt.CredentialID, attempt.AuthMode, attempt.CredentialStatus,
+		attempt.Model, attempt.UpstreamProtocol, attempt.HTTPCode,
 		dbcore.BoolToInt(attempt.Success), attempt.ErrorType, attempt.ErrorMessage, attempt.DurationSec,
 		attempt.Usage.InputTokens, attempt.Usage.OutputTokens, attempt.Usage.CacheCreateTokens,
 		attempt.Usage.CacheReadTokens, attempt.Usage.ReasoningTokens, attempt.Usage.UsageStatus,

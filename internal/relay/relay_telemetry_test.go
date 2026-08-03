@@ -66,6 +66,23 @@ func TestRelayTelemetryRedactsProviderSecretsAndURLTokens(t *testing.T) {
 	}
 }
 
+func TestRelayTelemetryStoresPseudonymousOAuthContext(t *testing.T) {
+	telemetry := &relayTelemetry{RequestID: "req-oauth-context", Platform: "claude", StartedAt: time.Now()}
+	provider := services.Provider{Name: "oauth", CredentialType: "oauth", CredentialRef: "claude-account-ref"}
+	telemetry.recordAttempt(provider, nil, services.RequestLog{HttpCode: 200}, time.Now(), true, nil)
+	if len(telemetry.Attempts) != 1 {
+		t.Fatal("OAuth attempt 未记录")
+	}
+	attempt := telemetry.Attempts[0]
+	if attempt.CredentialID == "" || attempt.CredentialID == "claude-account-ref" || attempt.AuthMode != "claude_code_oauth" || attempt.CredentialStatus != "resolved" {
+		t.Fatalf("OAuth attempt 上下文错误: %#v", attempt)
+	}
+	logical := telemetry.logicalRequest(200)
+	if logical.CredentialID != attempt.CredentialID || logical.AuthMode != attempt.AuthMode || logical.CredentialStatus != attempt.CredentialStatus {
+		t.Fatalf("逻辑日志未继承 OAuth 上下文: %#v", logical)
+	}
+}
+
 func TestRelayTelemetryClientAbortOverridesCommittedHTTPStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

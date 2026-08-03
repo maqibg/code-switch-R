@@ -116,6 +116,11 @@ var schemaMigrations = []schemaMigration{
 		name:    "usage-billing-state",
 		up:      migrateUsageBillingColumns,
 	},
+	{
+		version: 12,
+		name:    "gemini-explicit-credentials",
+		up:      migrateGeminiExplicitCredentials,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表

@@ -1135,7 +1135,7 @@ func (s *CliConfigService) saveCodexAuthContent(authPath string, content string)
 // ========== Gemini 配置操作 ==========
 
 func (s *CliConfigService) getGeminiEnvPath() string {
-	return filepath.Join(s.homeDir, ".gemini", ".env")
+	return filepath.Join(geminiCLIRoot(), ".env")
 }
 
 func (s *CliConfigService) getGeminiConfig() (*CLIConfig, error) {

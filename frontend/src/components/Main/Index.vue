@@ -459,6 +459,8 @@
       </template>
       </section>
 
+      <GeminiStatusPanel v-if="activeTab === 'gemini'" />
+
       <div
         v-if="platformOrderMenu.open"
         class="platform-order-context-menu"
@@ -527,7 +529,24 @@
                   />
                 </label>
 
-                <label class="form-field">
+                <div v-if="isOAuthPlatformModal" class="form-field">
+                  <span>Credential 类型</span>
+                  <select v-model="modalState.form.credentialType" class="gemini-select">
+                    <option v-for="option in oauthCredentialOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                  <span class="field-hint">OAuth 账号由账号页统一刷新；Provider 只保存 credentialRef。</span>
+                </div>
+
+                <div v-if="isOAuthCredential" class="form-field">
+                  <span>OAuth 账号</span>
+                  <select v-model="modalState.form.credentialRef" class="gemini-select" required>
+                    <option value="" disabled>选择已保存账号</option>
+                    <option v-for="option in oauthAccountOptions" :key="option.value" :value="option.value">{{ option.label }} · {{ option.status }}</option>
+                  </select>
+                  <span class="field-hint">没有账号时先打开侧边栏的 OAuth 账号页面完成登录或导入。</span>
+                </div>
+
+                <label v-if="!isOAuthCredential" class="form-field">
                   <span>{{ t('components.main.form.labels.apiKey') }}</span>
                   <BaseInput
                     v-model="modalState.form.apiKey"
@@ -535,6 +554,39 @@
                     :placeholder="t('components.main.form.placeholders.apiKey')"
                   />
                 </label>
+
+                <div v-if="isGeminiProviderModal" class="form-field">
+                  <span>Credential 类型</span>
+                  <select v-model="modalState.form.credentialType" class="gemini-select">
+                    <option v-for="option in geminiCredentialOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                  <span class="field-hint">CLI OAuth 只能用于 Gemini CLI；Native Relay 不会选择它。</span>
+                </div>
+
+                <div v-if="isGeminiProviderModal" class="form-field">
+                  <span>Gemini 端点类型</span>
+                  <select v-model="modalState.form.endpointKind" class="gemini-select">
+                    <option v-for="option in geminiEndpointOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                </div>
+
+                <div v-if="isGeminiProviderModal" class="gemini-inline-fields">
+                  <label class="form-field">
+                    <span>API 版本</span>
+                    <select v-model="modalState.form.apiVersion" class="gemini-select">
+                      <option value="v1beta">v1beta</option>
+                      <option value="v1">v1</option>
+                    </select>
+                  </label>
+                  <label v-if="modalState.form.endpointKind === 'vertex'" class="form-field">
+                    <span>Vertex Project</span>
+                    <BaseInput v-model="modalState.form.project" type="text" placeholder="Google Cloud project" />
+                  </label>
+                  <label v-if="modalState.form.endpointKind === 'vertex'" class="form-field">
+                    <span>Vertex Location</span>
+                    <BaseInput v-model="modalState.form.location" type="text" placeholder="us-central1" />
+                  </label>
+                </div>
 
                 <!-- API 端点（可选）-->
                 <label class="form-field">
@@ -929,6 +981,7 @@ import BaseInput from '../common/BaseInput.vue'
 import GrokOAuthPanel from './GrokOAuthPanel.vue'
 import GrokRuntimeBar from './GrokRuntimeBar.vue'
 import GrokUpstreamModelField from './GrokUpstreamModelField.vue'
+import GeminiStatusPanel from './GeminiStatusPanel.vue'
 import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import HeaderEditor from '../common/HeaderEditor.vue'
@@ -1192,6 +1245,13 @@ const {
   userAgentOptions,
   showUpstreamProtocolField,
   isGrokProviderModal,
+  isGeminiProviderModal,
+  isOAuthPlatformModal,
+  isOAuthCredential,
+  oauthCredentialOptions,
+  oauthAccountOptions,
+  geminiCredentialOptions,
+  geminiEndpointOptions,
   isCodexChatProtocol,
   effectiveUpstreamProtocolOptions,
   upstreamProtocolHint,
@@ -2083,6 +2143,27 @@ onUnmounted(() => {
 :global(.dark) .test-result.error {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
+}
+
+.gemini-inline-fields {
+  display: grid;
+  grid-template-columns: minmax(130px, .7fr) repeat(2, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.gemini-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--mac-border);
+  border-radius: 6px;
+  background: var(--mac-surface);
+  color: var(--mac-text);
+  font: inherit;
+}
+
+@media (max-width: 680px) {
+  .gemini-inline-fields { grid-template-columns: 1fr; }
 }
 
 /* 直连应用按钮 */

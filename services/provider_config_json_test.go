@@ -110,10 +110,11 @@ func TestProviderConfigCoversEveryPersistedField(t *testing.T) {
 		"piTemplate": true,
 	}
 	// 只存在于 config_json、不对应 Provider 导出字段的键。
-	// gemini 承载 Gemini provider 的专有数据，通过非导出字段 Provider.gemini
-	// 读写——非导出是为了不进 Wails 绑定，对外仍用 GeminiProvider。
+	// gemini/openCode 承载对应平台的专有数据，通过非导出字段读写——非导出是
+	// 为了不进 Wails 绑定，对外分别由平台专用 DTO 返回。
 	configOnly := map[string]bool{
-		"gemini": true,
+		"gemini":   true,
+		"openCode": true,
 	}
 
 	providerTags := jsonTagSet(t, reflect.TypeOf(Provider{}))

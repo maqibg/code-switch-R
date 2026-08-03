@@ -25,7 +25,9 @@ type providerScope struct {
 
 // scopeForKind 把 provider kind 解析成存储范围。
 //
-// kind 必须是注册平台（claude/codex/grok/reasonix/pi，含别名）或 gemini。
+// kind 必须是注册平台（claude/codex/grok/reasonix/pi，含别名）、gemini
+// 或 OpenCode。OpenCode 使用外部配置文件，不加入 providerPlatformDefinitions，
+// 避免启动迁移把 opencode.json 当作应用内 Provider 文件导入。
 func scopeForKind(kind string) (providerScope, error) {
 	normalized := strings.ToLower(strings.TrimSpace(kind))
 	if id := resolvePlatformID(normalized); id != "" {
@@ -34,6 +36,9 @@ func scopeForKind(kind string) (providerScope, error) {
 	// gemini 由独立的 GeminiService 管理，尚未并入 provider 表（A1 第 5 步）
 	if normalized == "gemini" {
 		return providerScope{platform: "gemini"}, nil
+	}
+	if normalized == openCodePlatform {
+		return providerScope{platform: openCodePlatform}, nil
 	}
 	return providerScope{}, fmt.Errorf("不支持的 provider kind: %s", kind)
 }

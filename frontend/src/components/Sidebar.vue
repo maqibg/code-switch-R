@@ -71,6 +71,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: '/', icon: 'home', labelKey: 'sidebar.home' },
   { path: '/pi', icon: 'cpu', labelKey: 'sidebar.pi', isNew: true },
+  { path: '/opencode', icon: 'zap', labelKey: 'sidebar.opencode', isNew: true },
+  { path: '/oauth-accounts', icon: 'key-round', labelKey: 'sidebar.accounts', isNew: true },
   { path: '/pricing', icon: 'dollar-sign', labelKey: 'sidebar.pricing', isNew: true },
   { path: '/stats', icon: 'pie-chart', labelKey: 'sidebar.stats' },
   { path: '/prompts', icon: 'file-text', labelKey: 'sidebar.prompts', isNew: true },
@@ -165,6 +167,12 @@ const navigate = (path: string) => {
         <svg v-else-if="item.icon === 'search'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+
+        <!-- OAuth Accounts -->
+        <svg v-else-if="item.icon === 'key-round'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="7.5" cy="15.5" r="3.5"></circle>
+          <path d="M10 13l9-9 2 2-2 2 2 2-2 2-2-2-5 5"></path>
         </svg>
 
         <!-- Bar Chart -->

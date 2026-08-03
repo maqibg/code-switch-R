@@ -18,6 +18,9 @@ func migrateUsageBillingColumns(tx sqlExecutor) error {
 	}
 
 	attemptColumns := []struct{ name, definition string }{
+		{"credential_id", "TEXT NOT NULL DEFAULT ''"},
+		{"auth_mode", "TEXT NOT NULL DEFAULT ''"},
+		{"credential_status", "TEXT NOT NULL DEFAULT ''"},
 		{"usage_status", "TEXT NOT NULL DEFAULT 'unknown'"},
 		{"usage_known_mask", "INTEGER NOT NULL DEFAULT 0"},
 		{"usage_json", "TEXT NOT NULL DEFAULT ''"},

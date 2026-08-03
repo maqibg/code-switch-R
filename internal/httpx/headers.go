@@ -10,7 +10,7 @@ import (
 // BlockedUpstreamHeaders 由代理统一管理、禁止用户自定义覆盖的 Header
 // （认证、逐跳传输控制等）。键为全小写。
 var BlockedUpstreamHeaders = map[string]struct{}{
-	"authorization": {}, "proxy-authorization": {}, "x-api-key": {}, "host": {},
+	"authorization": {}, "proxy-authorization": {}, "x-api-key": {}, "chatgpt-account-id": {}, "host": {},
 	"content-length": {}, "transfer-encoding": {}, "connection": {}, "keep-alive": {},
 	"proxy-authenticate": {}, "te": {}, "trailer": {}, "upgrade": {}, "accept-encoding": {},
 }

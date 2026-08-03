@@ -56,6 +56,8 @@
   "sidebar": {
     "home": "首页",
     "pi": "Pi 配置",
+    "opencode": "OpenCode",
+    "accounts": "OAuth 账号",
     "pricing": "模型定价",
     "stats": "统计",
     "prompts": "提示词",

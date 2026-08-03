@@ -23,6 +23,7 @@ const (
 // GeminiProvider Gemini 供应商配置
 type GeminiProvider struct {
 	ID                  string            `json:"id"`
+	NumericID           int64             `json:"numericId,omitempty"`
 	Name                string            `json:"name"`
 	WebsiteURL          string            `json:"websiteUrl,omitempty"`
 	APIKeyURL           string            `json:"apiKeyUrl,omitempty"`
@@ -37,6 +38,26 @@ type GeminiProvider struct {
 	Level               int               `json:"level,omitempty"`          // 优先级分组 (1-10, 默认 1)
 	EnvConfig           map[string]string `json:"envConfig,omitempty"`      // .env 配置
 	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"` // settings.json 配置
+
+	// CredentialType、EndpointKind 和 Vertex 字段是运行时契约；不再根据名称、
+	// URL 或 Key 前缀猜测 Native/CLI 认证类型。
+	CredentialType   string            `json:"credentialType,omitempty"`
+	EndpointKind     string            `json:"endpointKind,omitempty"`
+	APIVersion       string            `json:"apiVersion,omitempty"`
+	Project          string            `json:"project,omitempty"`
+	Location         string            `json:"location,omitempty"`
+	AuthScheme       string            `json:"authScheme,omitempty"`
+	AuthHeader       string            `json:"authHeader,omitempty"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	ModelsEndpoint   string            `json:"modelsEndpoint,omitempty"`
+	Catalog          []GeminiModel     `json:"catalog,omitempty"`
+	CatalogSource    string            `json:"catalogSource,omitempty"`
+	CatalogFetchedAt string            `json:"catalogFetchedAt,omitempty"`
+	CatalogExpiresAt string            `json:"catalogExpiresAt,omitempty"`
+
+	// 对外查询只返回遮罩状态，APIKey 仅在后端内存和持久化路径中使用。
+	HasAPIKey    bool   `json:"hasApiKey,omitempty"`
+	APIKeyMasked string `json:"apiKeyMasked,omitempty"`
 
 	// numericID 是 provider 表里的 int64 主键（A1 第 5 步）。
 	// 非导出因此不进 Wails 绑定——对外 ID 仍是上面的 string，前端无需改动。
@@ -147,7 +168,17 @@ func (s *GeminiService) GetPresets() []GeminiPreset {
 func (s *GeminiService) GetProviders() []GeminiProvider {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.providers
+	result := make([]GeminiProvider, len(s.providers))
+	copy(result, s.providers)
+	for i := range result {
+		result[i].NumericID = result[i].numericID
+		result[i].HasAPIKey = strings.TrimSpace(result[i].APIKey) != ""
+		if result[i].HasAPIKey {
+			result[i].APIKeyMasked = maskSecret(result[i].APIKey)
+		}
+		result[i].APIKey = ""
+	}
+	return result
 }
 
 // AddProvider 添加供应商
@@ -242,13 +273,27 @@ func (s *GeminiService) SwitchProvider(id string) error {
 	}
 
 	// 检测认证类型
+	if strings.EqualFold(strings.TrimSpace(provider.CredentialType), string(GeminiCredentialNativeOAuth)) ||
+		strings.EqualFold(strings.TrimSpace(provider.CredentialType), string(GeminiCredentialVertexAPIKey)) ||
+		strings.EqualFold(strings.TrimSpace(provider.CredentialType), string(GeminiCredentialVertexADC)) ||
+		strings.EqualFold(strings.TrimSpace(provider.CredentialType), string(GeminiCredentialVertexService)) {
+		return fmt.Errorf("Credential %s 只用于 Native/Vertex Relay，不能应用到 Gemini CLI", provider.CredentialType)
+	}
 	authType := detectGeminiAuthType(provider)
 
 	// 根据认证类型写入配置
 	switch authType {
 	case GeminiAuthOAuth:
-		// OAuth：清空 .env
-		if err := writeGeminiEnv(map[string]string{}); err != nil {
+		// OAuth 只清理 Gemini CLI 受管字段，用户自己的变量和注释必须保留。
+		envConfig, readErr := readGeminiEnv()
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return fmt.Errorf("读取 .env 失败: %w", readErr)
+		}
+		if envConfig == nil {
+			envConfig = make(map[string]string)
+		}
+		clearGeminiCLIManagedEnv(envConfig)
+		if err := writeGeminiEnv(envConfig); err != nil {
 			return fmt.Errorf("写入 .env 失败: %w", err)
 		}
 		// 写入 OAuth 认证标志
@@ -273,14 +318,21 @@ func (s *GeminiService) SwitchProvider(id string) error {
 			}
 		}
 
-		// 构建 envConfig：先从预设获取，再用 provider 字段覆盖
-		envConfig := make(map[string]string)
+		// 构建 envConfig：先保留外部变量，再只更新 Gemini CLI 受管字段。
+		envConfig, readErr := readGeminiEnv()
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return fmt.Errorf("读取 .env 失败: %w", readErr)
+		}
+		if envConfig == nil {
+			envConfig = make(map[string]string)
+		}
+		clearGeminiCLIManagedEnv(envConfig)
 
 		// 1. 先查找预设并复制其 EnvConfig
 		for _, preset := range s.presets {
 			if preset.Name == provider.Name || preset.PartnerPromotionKey == provider.PartnerPromotionKey {
 				for k, v := range preset.EnvConfig {
-					if v != "" {
+					if v != "" && isGeminiCLIManagedEnvKey(k) {
 						envConfig[k] = v
 					}
 				}
@@ -291,7 +343,7 @@ func (s *GeminiService) SwitchProvider(id string) error {
 		// 2. 再用 provider.EnvConfig 覆盖
 		if provider.EnvConfig != nil {
 			for k, v := range provider.EnvConfig {
-				if v != "" {
+				if v != "" && isGeminiCLIManagedEnvKey(k) {
 					envConfig[k] = v
 				}
 			}
@@ -388,6 +440,14 @@ func (s *GeminiService) GetStatus() (*GeminiStatus, error) {
 
 // detectGeminiAuthType 检测供应商认证类型
 func detectGeminiAuthType(provider *GeminiProvider) GeminiAuthType {
+	switch strings.TrimSpace(provider.CredentialType) {
+	case string(GeminiCredentialCLIOAuth):
+		return GeminiAuthOAuth
+	case string(GeminiCredentialGateway):
+		return GeminiAuthGeneric
+	case string(GeminiCredentialAPIKey), string(GeminiCredentialVertexAPIKey):
+		return GeminiAuthAPIKey
+	}
 	// 优先级 1: 检查 partner_promotion_key
 	switch strings.ToLower(provider.PartnerPromotionKey) {
 	case "google-official":
@@ -427,8 +487,7 @@ func getConfigDir() string {
 
 // getGeminiDir 获取 Gemini 配置目录
 func getGeminiDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".gemini")
+	return geminiCLIRoot()
 }
 
 // getGeminiEnvPath 获取 .env 文件路径

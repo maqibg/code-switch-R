@@ -97,6 +97,15 @@ export function Stop(): $CancellablePromise<void> {
     return $Call.ByID(291391407);
 }
 
+/**
+ * UpdateGeminiCatalog stores a remote Native catalog without changing the
+ * provider's credentials or route policy. Relay discovery uses this cache so a
+ * model returned by /models is immediately routable on the next request.
+ */
+export function UpdateGeminiCatalog(providerID: number, models: $models.GeminiModel[]): $CancellablePromise<void> {
+    return $Call.ByID(2322632208, providerID, models);
+}
+
 export function UpdatePiProviderTemplate(template: $models.PiProviderTemplate): $CancellablePromise<void> {
     return $Call.ByID(3644834370, template);
 }

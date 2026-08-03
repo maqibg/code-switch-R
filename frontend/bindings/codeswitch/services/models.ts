@@ -1120,6 +1120,7 @@ export class DeepLinkImportRequest {
      * 远程配置 URL
      */
     "configUrl"?: string | null;
+    "credentialType"?: string;
 
     /** Creates a new DeepLinkImportRequest instance. */
     constructor($$source: Partial<DeepLinkImportRequest> = {}) {
@@ -1347,6 +1348,232 @@ export enum GeminiAuthType {
     GeminiAuthGeneric = "generic",
 };
 
+export class GeminiCliAccount {
+    "id": string;
+    "email"?: string;
+    "projectId"?: string;
+    "runtimeRoot": string;
+    "tokenExpiresAt"?: string;
+    "hasAccessToken": boolean;
+    "hasRefreshToken": boolean;
+    "applied": boolean;
+    "lastRefreshAt"?: string;
+    "refreshError"?: string;
+    "quota"?: GeminiCliQuotaSnapshot | null;
+
+    /** Creates a new GeminiCliAccount instance. */
+    constructor($$source: Partial<GeminiCliAccount> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("runtimeRoot" in $$source)) {
+            this["runtimeRoot"] = "";
+        }
+        if (!("hasAccessToken" in $$source)) {
+            this["hasAccessToken"] = false;
+        }
+        if (!("hasRefreshToken" in $$source)) {
+            this["hasRefreshToken"] = false;
+        }
+        if (!("applied" in $$source)) {
+            this["applied"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GeminiCliAccount instance from a string or object.
+     */
+    static createFrom($$source: any = {}): GeminiCliAccount {
+        const $$createField10_0 = $$createType20;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("quota" in $$parsedSource) {
+            $$parsedSource["quota"] = $$createField10_0($$parsedSource["quota"]);
+        }
+        return new GeminiCliAccount($$parsedSource as Partial<GeminiCliAccount>);
+    }
+}
+
+export class GeminiCliOAuthLogin {
+    "sessionId": string;
+    "authorizationUrl": string;
+    "redirectUri": string;
+    "expiresAt": string;
+
+    /** Creates a new GeminiCliOAuthLogin instance. */
+    constructor($$source: Partial<GeminiCliOAuthLogin> = {}) {
+        if (!("sessionId" in $$source)) {
+            this["sessionId"] = "";
+        }
+        if (!("authorizationUrl" in $$source)) {
+            this["authorizationUrl"] = "";
+        }
+        if (!("redirectUri" in $$source)) {
+            this["redirectUri"] = "";
+        }
+        if (!("expiresAt" in $$source)) {
+            this["expiresAt"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GeminiCliOAuthLogin instance from a string or object.
+     */
+    static createFrom($$source: any = {}): GeminiCliOAuthLogin {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new GeminiCliOAuthLogin($$parsedSource as Partial<GeminiCliOAuthLogin>);
+    }
+}
+
+export class GeminiCliOAuthLoginStatus {
+    "sessionId": string;
+    "completed": boolean;
+    "accountId"?: string;
+    "error"?: string;
+    "expiresAt": string;
+
+    /** Creates a new GeminiCliOAuthLoginStatus instance. */
+    constructor($$source: Partial<GeminiCliOAuthLoginStatus> = {}) {
+        if (!("sessionId" in $$source)) {
+            this["sessionId"] = "";
+        }
+        if (!("completed" in $$source)) {
+            this["completed"] = false;
+        }
+        if (!("expiresAt" in $$source)) {
+            this["expiresAt"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GeminiCliOAuthLoginStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): GeminiCliOAuthLoginStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new GeminiCliOAuthLoginStatus($$parsedSource as Partial<GeminiCliOAuthLoginStatus>);
+    }
+}
+
+export class GeminiCliQuotaSnapshot {
+    "plan"?: string;
+    "remainingPercent"?: number;
+    "resetAt"?: string;
+    "fetchedAt"?: string;
+    "error"?: string;
+
+    /** Creates a new GeminiCliQuotaSnapshot instance. */
+    constructor($$source: Partial<GeminiCliQuotaSnapshot> = {}) {
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GeminiCliQuotaSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): GeminiCliQuotaSnapshot {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new GeminiCliQuotaSnapshot($$parsedSource as Partial<GeminiCliQuotaSnapshot>);
+    }
+}
+
+export class GeminiModel {
+    "id": string;
+    "name"?: string;
+    "description"?: string;
+    "supportedGenerationMethods"?: string[];
+    "inputTokenLimit"?: number;
+    "outputTokenLimit"?: number;
+    "supportsTools": boolean;
+    "supportsVision": boolean;
+    "supportsAudio": boolean;
+    "supportsDocuments": boolean;
+    "supportsThinking": boolean;
+    "supportsCountTokens": boolean;
+    "source"?: string;
+    "discoveredAt"?: string;
+    "expiresAt"?: string;
+
+    /** Creates a new GeminiModel instance. */
+    constructor($$source: Partial<GeminiModel> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("supportsTools" in $$source)) {
+            this["supportsTools"] = false;
+        }
+        if (!("supportsVision" in $$source)) {
+            this["supportsVision"] = false;
+        }
+        if (!("supportsAudio" in $$source)) {
+            this["supportsAudio"] = false;
+        }
+        if (!("supportsDocuments" in $$source)) {
+            this["supportsDocuments"] = false;
+        }
+        if (!("supportsThinking" in $$source)) {
+            this["supportsThinking"] = false;
+        }
+        if (!("supportsCountTokens" in $$source)) {
+            this["supportsCountTokens"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GeminiModel instance from a string or object.
+     */
+    static createFrom($$source: any = {}): GeminiModel {
+        const $$createField3_0 = $$createType18;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("supportedGenerationMethods" in $$parsedSource) {
+            $$parsedSource["supportedGenerationMethods"] = $$createField3_0($$parsedSource["supportedGenerationMethods"]);
+        }
+        return new GeminiModel($$parsedSource as Partial<GeminiModel>);
+    }
+}
+
+export class GeminiModelCatalog {
+    "providerId": string;
+    "source": string;
+    "fetchedAt"?: string;
+    "expiresAt"?: string;
+    "discoveryError"?: string;
+    "models": GeminiModel[];
+
+    /** Creates a new GeminiModelCatalog instance. */
+    constructor($$source: Partial<GeminiModelCatalog> = {}) {
+        if (!("providerId" in $$source)) {
+            this["providerId"] = "";
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("models" in $$source)) {
+            this["models"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GeminiModelCatalog instance from a string or object.
+     */
+    static createFrom($$source: any = {}): GeminiModelCatalog {
+        const $$createField5_0 = $$createType22;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("models" in $$parsedSource) {
+            $$parsedSource["models"] = $$createField5_0($$parsedSource["models"]);
+        }
+        return new GeminiModelCatalog($$parsedSource as Partial<GeminiModelCatalog>);
+    }
+}
+
 /**
  * GeminiPreset 预设供应商
  */
@@ -1394,6 +1621,7 @@ export class GeminiPreset {
  */
 export class GeminiProvider {
     "id": string;
+    "numericId"?: number;
     "name": string;
     "websiteUrl"?: string;
     "apiKeyUrl"?: string;
@@ -1429,6 +1657,30 @@ export class GeminiProvider {
      */
     "settingsConfig"?: { [_ in string]?: any };
 
+    /**
+     * CredentialType、EndpointKind 和 Vertex 字段是运行时契约；不再根据名称、
+     * URL 或 Key 前缀猜测 Native/CLI 认证类型。
+     */
+    "credentialType"?: string;
+    "endpointKind"?: string;
+    "apiVersion"?: string;
+    "project"?: string;
+    "location"?: string;
+    "authScheme"?: string;
+    "authHeader"?: string;
+    "headers"?: { [_ in string]?: string };
+    "modelsEndpoint"?: string;
+    "catalog"?: GeminiModel[];
+    "catalogSource"?: string;
+    "catalogFetchedAt"?: string;
+    "catalogExpiresAt"?: string;
+
+    /**
+     * 对外查询只返回遮罩状态，APIKey 仅在后端内存和持久化路径中使用。
+     */
+    "hasApiKey"?: boolean;
+    "apiKeyMasked"?: string;
+
     /** Creates a new GeminiProvider instance. */
     constructor($$source: Partial<GeminiProvider> = {}) {
         if (!("id" in $$source)) {
@@ -1448,14 +1700,22 @@ export class GeminiProvider {
      * Creates a new GeminiProvider instance from a string or object.
      */
     static createFrom($$source: any = {}): GeminiProvider {
-        const $$createField13_0 = $$createType4;
-        const $$createField14_0 = $$createType5;
+        const $$createField14_0 = $$createType4;
+        const $$createField15_0 = $$createType5;
+        const $$createField23_0 = $$createType4;
+        const $$createField25_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("envConfig" in $$parsedSource) {
-            $$parsedSource["envConfig"] = $$createField13_0($$parsedSource["envConfig"]);
+            $$parsedSource["envConfig"] = $$createField14_0($$parsedSource["envConfig"]);
         }
         if ("settingsConfig" in $$parsedSource) {
-            $$parsedSource["settingsConfig"] = $$createField14_0($$parsedSource["settingsConfig"]);
+            $$parsedSource["settingsConfig"] = $$createField15_0($$parsedSource["settingsConfig"]);
+        }
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField23_0($$parsedSource["headers"]);
+        }
+        if ("catalog" in $$parsedSource) {
+            $$parsedSource["catalog"] = $$createField25_0($$parsedSource["catalog"]);
         }
         return new GeminiProvider($$parsedSource as Partial<GeminiProvider>);
     }
@@ -1652,7 +1912,7 @@ export class GrokOAuthAccountDTO {
      * Creates a new GrokOAuthAccountDTO instance from a string or object.
      */
     static createFrom($$source: any = {}): GrokOAuthAccountDTO {
-        const $$createField13_0 = $$createType19;
+        const $$createField13_0 = $$createType23;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("quota" in $$parsedSource) {
             $$parsedSource["quota"] = $$createField13_0($$parsedSource["quota"]);
@@ -1747,7 +2007,7 @@ export class GrokOAuthRefreshResult {
      * Creates a new GrokOAuthRefreshResult instance from a string or object.
      */
     static createFrom($$source: any = {}): GrokOAuthRefreshResult {
-        const $$createField2_0 = $$createType21;
+        const $$createField2_0 = $$createType25;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("account" in $$parsedSource) {
             $$parsedSource["account"] = $$createField2_0($$parsedSource["account"]);
@@ -1989,7 +2249,7 @@ export class LogStats {
      * Creates a new LogStats instance from a string or object.
      */
     static createFrom($$source: any = {}): LogStats {
-        const $$createField17_0 = $$createType23;
+        const $$createField17_0 = $$createType27;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("series" in $$parsedSource) {
             $$parsedSource["series"] = $$createField17_0($$parsedSource["series"]);
@@ -2078,7 +2338,7 @@ export class MCPParseResult {
      * Creates a new MCPParseResult instance from a string or object.
      */
     static createFrom($$source: any = {}): MCPParseResult {
-        const $$createField0_0 = $$createType25;
+        const $$createField0_0 = $$createType29;
         const $$createField1_0 = $$createType18;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("servers" in $$parsedSource) {
@@ -2299,12 +2559,1173 @@ export class NetworkSettings {
      * Creates a new NetworkSettings instance from a string or object.
      */
     static createFrom($$source: any = {}): NetworkSettings {
-        const $$createField3_0 = $$createType26;
+        const $$createField3_0 = $$createType30;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("targetCli" in $$parsedSource) {
             $$parsedSource["targetCli"] = $$createField3_0($$parsedSource["targetCli"]);
         }
         return new NetworkSettings($$parsedSource as Partial<NetworkSettings>);
+    }
+}
+
+/**
+ * OAuthAccountSummary 是可返回到前端的脱敏账号摘要，绝不包含任何 token 或原始 JWT。
+ */
+export class OAuthAccountSummary {
+    "id": string;
+    "platform": string;
+    "authMode": string;
+    "displayName": string;
+    "email": string;
+    "accountId": string;
+    "userId": string;
+    "organizationId": string;
+    "organizationName": string;
+    "planType": string;
+    "status": string;
+    "accessTokenExpiresAt": number;
+    "lastRefreshAt": string;
+    "lastSuccessAt": string;
+    "refreshError": string;
+    "quotaError": string;
+    "quota": OAuthQuotaSnapshot;
+    "source": string;
+    "createdAt": string;
+    "updatedAt": string;
+
+    /** Creates a new OAuthAccountSummary instance. */
+    constructor($$source: Partial<OAuthAccountSummary> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("platform" in $$source)) {
+            this["platform"] = "";
+        }
+        if (!("authMode" in $$source)) {
+            this["authMode"] = "";
+        }
+        if (!("displayName" in $$source)) {
+            this["displayName"] = "";
+        }
+        if (!("email" in $$source)) {
+            this["email"] = "";
+        }
+        if (!("accountId" in $$source)) {
+            this["accountId"] = "";
+        }
+        if (!("userId" in $$source)) {
+            this["userId"] = "";
+        }
+        if (!("organizationId" in $$source)) {
+            this["organizationId"] = "";
+        }
+        if (!("organizationName" in $$source)) {
+            this["organizationName"] = "";
+        }
+        if (!("planType" in $$source)) {
+            this["planType"] = "";
+        }
+        if (!("status" in $$source)) {
+            this["status"] = "";
+        }
+        if (!("accessTokenExpiresAt" in $$source)) {
+            this["accessTokenExpiresAt"] = 0;
+        }
+        if (!("lastRefreshAt" in $$source)) {
+            this["lastRefreshAt"] = "";
+        }
+        if (!("lastSuccessAt" in $$source)) {
+            this["lastSuccessAt"] = "";
+        }
+        if (!("refreshError" in $$source)) {
+            this["refreshError"] = "";
+        }
+        if (!("quotaError" in $$source)) {
+            this["quotaError"] = "";
+        }
+        if (!("quota" in $$source)) {
+            this["quota"] = (new OAuthQuotaSnapshot());
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("createdAt" in $$source)) {
+            this["createdAt"] = "";
+        }
+        if (!("updatedAt" in $$source)) {
+            this["updatedAt"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OAuthAccountSummary instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OAuthAccountSummary {
+        const $$createField16_0 = $$createType31;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("quota" in $$parsedSource) {
+            $$parsedSource["quota"] = $$createField16_0($$parsedSource["quota"]);
+        }
+        return new OAuthAccountSummary($$parsedSource as Partial<OAuthAccountSummary>);
+    }
+}
+
+export class OAuthImportItem {
+    "source": string;
+    "platform": string;
+    "action": string;
+    "message": string;
+    "warnings": string[];
+    "account"?: OAuthAccountSummary | null;
+
+    /** Creates a new OAuthImportItem instance. */
+    constructor($$source: Partial<OAuthImportItem> = {}) {
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("platform" in $$source)) {
+            this["platform"] = "";
+        }
+        if (!("action" in $$source)) {
+            this["action"] = "";
+        }
+        if (!("message" in $$source)) {
+            this["message"] = "";
+        }
+        if (!("warnings" in $$source)) {
+            this["warnings"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OAuthImportItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OAuthImportItem {
+        const $$createField4_0 = $$createType18;
+        const $$createField5_0 = $$createType33;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("warnings" in $$parsedSource) {
+            $$parsedSource["warnings"] = $$createField4_0($$parsedSource["warnings"]);
+        }
+        if ("account" in $$parsedSource) {
+            $$parsedSource["account"] = $$createField5_0($$parsedSource["account"]);
+        }
+        return new OAuthImportItem($$parsedSource as Partial<OAuthImportItem>);
+    }
+}
+
+export class OAuthImportRequest {
+    "platform": string;
+    "source": string;
+    "content": string;
+
+    /** Creates a new OAuthImportRequest instance. */
+    constructor($$source: Partial<OAuthImportRequest> = {}) {
+        if (!("platform" in $$source)) {
+            this["platform"] = "";
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("content" in $$source)) {
+            this["content"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OAuthImportRequest instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OAuthImportRequest {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OAuthImportRequest($$parsedSource as Partial<OAuthImportRequest>);
+    }
+}
+
+export class OAuthImportResult {
+    "items": OAuthImportItem[];
+    "created": number;
+    "updated": number;
+    "skipped": number;
+    "failed": number;
+
+    /** Creates a new OAuthImportResult instance. */
+    constructor($$source: Partial<OAuthImportResult> = {}) {
+        if (!("items" in $$source)) {
+            this["items"] = [];
+        }
+        if (!("created" in $$source)) {
+            this["created"] = 0;
+        }
+        if (!("updated" in $$source)) {
+            this["updated"] = 0;
+        }
+        if (!("skipped" in $$source)) {
+            this["skipped"] = 0;
+        }
+        if (!("failed" in $$source)) {
+            this["failed"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OAuthImportResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OAuthImportResult {
+        const $$createField0_0 = $$createType35;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("items" in $$parsedSource) {
+            $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
+        }
+        return new OAuthImportResult($$parsedSource as Partial<OAuthImportResult>);
+    }
+}
+
+export class OAuthLoginStart {
+    "loginId": string;
+    "authorizationUrl": string;
+    "verificationUrl": string;
+    "userCode": string;
+    "expiresAt": number;
+    "pollIntervalSeconds": number;
+    "manualCallbackRequired": boolean;
+
+    /** Creates a new OAuthLoginStart instance. */
+    constructor($$source: Partial<OAuthLoginStart> = {}) {
+        if (!("loginId" in $$source)) {
+            this["loginId"] = "";
+        }
+        if (!("authorizationUrl" in $$source)) {
+            this["authorizationUrl"] = "";
+        }
+        if (!("verificationUrl" in $$source)) {
+            this["verificationUrl"] = "";
+        }
+        if (!("userCode" in $$source)) {
+            this["userCode"] = "";
+        }
+        if (!("expiresAt" in $$source)) {
+            this["expiresAt"] = 0;
+        }
+        if (!("pollIntervalSeconds" in $$source)) {
+            this["pollIntervalSeconds"] = 0;
+        }
+        if (!("manualCallbackRequired" in $$source)) {
+            this["manualCallbackRequired"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OAuthLoginStart instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OAuthLoginStart {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OAuthLoginStart($$parsedSource as Partial<OAuthLoginStart>);
+    }
+}
+
+export class OAuthLoginStatus {
+    "loginId": string;
+    "status": string;
+    "message": string;
+    "account"?: OAuthAccountSummary | null;
+
+    /** Creates a new OAuthLoginStatus instance. */
+    constructor($$source: Partial<OAuthLoginStatus> = {}) {
+        if (!("loginId" in $$source)) {
+            this["loginId"] = "";
+        }
+        if (!("status" in $$source)) {
+            this["status"] = "";
+        }
+        if (!("message" in $$source)) {
+            this["message"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OAuthLoginStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OAuthLoginStatus {
+        const $$createField3_0 = $$createType33;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("account" in $$parsedSource) {
+            $$parsedSource["account"] = $$createField3_0($$parsedSource["account"]);
+        }
+        return new OAuthLoginStatus($$parsedSource as Partial<OAuthLoginStatus>);
+    }
+}
+
+/**
+ * OAuthQuotaSnapshot 保存最后一次成功读取的额度，不保存上游原始响应。
+ * 失败信息单独放在 OAuthAccountSummary.QuotaError，避免把一次失败伪装成 0。
+ */
+export class OAuthQuotaSnapshot {
+    "shortWindowPercent"?: number;
+    "weeklyPercent"?: number;
+    "monthlyPercent"?: number;
+    "shortWindowResetAt"?: number;
+    "weeklyResetAt"?: number;
+    "monthlyResetAt"?: number;
+    "fetchedAt"?: string;
+
+    /** Creates a new OAuthQuotaSnapshot instance. */
+    constructor($$source: Partial<OAuthQuotaSnapshot> = {}) {
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OAuthQuotaSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OAuthQuotaSnapshot {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OAuthQuotaSnapshot($$parsedSource as Partial<OAuthQuotaSnapshot>);
+    }
+}
+
+export class OpenCodeApplyResult {
+    "path": string;
+    "provider_key": string;
+    "mode": string;
+    "hash": string;
+    "warning": string;
+
+    /** Creates a new OpenCodeApplyResult instance. */
+    constructor($$source: Partial<OpenCodeApplyResult> = {}) {
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("provider_key" in $$source)) {
+            this["provider_key"] = "";
+        }
+        if (!("mode" in $$source)) {
+            this["mode"] = "";
+        }
+        if (!("hash" in $$source)) {
+            this["hash"] = "";
+        }
+        if (!("warning" in $$source)) {
+            this["warning"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeApplyResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeApplyResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OpenCodeApplyResult($$parsedSource as Partial<OpenCodeApplyResult>);
+    }
+}
+
+export class OpenCodeConfigInfo {
+    "path": string;
+    "source": string;
+    "format": string;
+    "hash": string;
+    "read_at": string;
+    "exists": boolean;
+    "conflict": boolean;
+    "warning": string;
+    "top_level_keys": string[];
+    "provider_count": number;
+
+    /** Creates a new OpenCodeConfigInfo instance. */
+    constructor($$source: Partial<OpenCodeConfigInfo> = {}) {
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("format" in $$source)) {
+            this["format"] = "";
+        }
+        if (!("hash" in $$source)) {
+            this["hash"] = "";
+        }
+        if (!("read_at" in $$source)) {
+            this["read_at"] = "";
+        }
+        if (!("exists" in $$source)) {
+            this["exists"] = false;
+        }
+        if (!("conflict" in $$source)) {
+            this["conflict"] = false;
+        }
+        if (!("warning" in $$source)) {
+            this["warning"] = "";
+        }
+        if (!("top_level_keys" in $$source)) {
+            this["top_level_keys"] = [];
+        }
+        if (!("provider_count" in $$source)) {
+            this["provider_count"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeConfigInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeConfigInfo {
+        const $$createField8_0 = $$createType18;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("top_level_keys" in $$parsedSource) {
+            $$parsedSource["top_level_keys"] = $$createField8_0($$parsedSource["top_level_keys"]);
+        }
+        return new OpenCodeConfigInfo($$parsedSource as Partial<OpenCodeConfigInfo>);
+    }
+}
+
+export class OpenCodeConfigSnapshot {
+    "config": OpenCodeConfigInfo;
+    "providers": OpenCodeProviderInfo[];
+    "default_model": string;
+    "small_model": string;
+    "warnings": string[];
+
+    /** Creates a new OpenCodeConfigSnapshot instance. */
+    constructor($$source: Partial<OpenCodeConfigSnapshot> = {}) {
+        if (!("config" in $$source)) {
+            this["config"] = (new OpenCodeConfigInfo());
+        }
+        if (!("providers" in $$source)) {
+            this["providers"] = [];
+        }
+        if (!("default_model" in $$source)) {
+            this["default_model"] = "";
+        }
+        if (!("small_model" in $$source)) {
+            this["small_model"] = "";
+        }
+        if (!("warnings" in $$source)) {
+            this["warnings"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeConfigSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeConfigSnapshot {
+        const $$createField0_0 = $$createType36;
+        const $$createField1_0 = $$createType38;
+        const $$createField4_0 = $$createType18;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("config" in $$parsedSource) {
+            $$parsedSource["config"] = $$createField0_0($$parsedSource["config"]);
+        }
+        if ("providers" in $$parsedSource) {
+            $$parsedSource["providers"] = $$createField1_0($$parsedSource["providers"]);
+        }
+        if ("warnings" in $$parsedSource) {
+            $$parsedSource["warnings"] = $$createField4_0($$parsedSource["warnings"]);
+        }
+        return new OpenCodeConfigSnapshot($$parsedSource as Partial<OpenCodeConfigSnapshot>);
+    }
+}
+
+export class OpenCodeDefaultModelsInput {
+    "model": string;
+    "small_model": string;
+
+    /** Creates a new OpenCodeDefaultModelsInput instance. */
+    constructor($$source: Partial<OpenCodeDefaultModelsInput> = {}) {
+        if (!("model" in $$source)) {
+            this["model"] = "";
+        }
+        if (!("small_model" in $$source)) {
+            this["small_model"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeDefaultModelsInput instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeDefaultModelsInput {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OpenCodeDefaultModelsInput($$parsedSource as Partial<OpenCodeDefaultModelsInput>);
+    }
+}
+
+export class OpenCodeDiagnostics {
+    "config_path_env_set": boolean;
+    "config_dir_env_set": boolean;
+    "config_path": string;
+    "config_source": string;
+    "relay_configured": boolean;
+    "relay_address_env_set": boolean;
+    "anthropic_key_env_set": boolean;
+    "openai_key_env_set": boolean;
+    "gemini_key_env_set": boolean;
+    "environment_warnings": string[];
+
+    /** Creates a new OpenCodeDiagnostics instance. */
+    constructor($$source: Partial<OpenCodeDiagnostics> = {}) {
+        if (!("config_path_env_set" in $$source)) {
+            this["config_path_env_set"] = false;
+        }
+        if (!("config_dir_env_set" in $$source)) {
+            this["config_dir_env_set"] = false;
+        }
+        if (!("config_path" in $$source)) {
+            this["config_path"] = "";
+        }
+        if (!("config_source" in $$source)) {
+            this["config_source"] = "";
+        }
+        if (!("relay_configured" in $$source)) {
+            this["relay_configured"] = false;
+        }
+        if (!("relay_address_env_set" in $$source)) {
+            this["relay_address_env_set"] = false;
+        }
+        if (!("anthropic_key_env_set" in $$source)) {
+            this["anthropic_key_env_set"] = false;
+        }
+        if (!("openai_key_env_set" in $$source)) {
+            this["openai_key_env_set"] = false;
+        }
+        if (!("gemini_key_env_set" in $$source)) {
+            this["gemini_key_env_set"] = false;
+        }
+        if (!("environment_warnings" in $$source)) {
+            this["environment_warnings"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeDiagnostics instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeDiagnostics {
+        const $$createField9_0 = $$createType18;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("environment_warnings" in $$parsedSource) {
+            $$parsedSource["environment_warnings"] = $$createField9_0($$parsedSource["environment_warnings"]);
+        }
+        return new OpenCodeDiagnostics($$parsedSource as Partial<OpenCodeDiagnostics>);
+    }
+}
+
+export class OpenCodeMCPServerInfo {
+    "key": string;
+    "type": string;
+    "ownership": string;
+    "url": string;
+    "command": string[];
+    "environment": { [_ in string]?: string };
+    "headers": { [_ in string]?: string };
+
+    /** Creates a new OpenCodeMCPServerInfo instance. */
+    constructor($$source: Partial<OpenCodeMCPServerInfo> = {}) {
+        if (!("key" in $$source)) {
+            this["key"] = "";
+        }
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("ownership" in $$source)) {
+            this["ownership"] = "";
+        }
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("command" in $$source)) {
+            this["command"] = [];
+        }
+        if (!("environment" in $$source)) {
+            this["environment"] = {};
+        }
+        if (!("headers" in $$source)) {
+            this["headers"] = {};
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeMCPServerInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeMCPServerInfo {
+        const $$createField4_0 = $$createType18;
+        const $$createField5_0 = $$createType4;
+        const $$createField6_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("command" in $$parsedSource) {
+            $$parsedSource["command"] = $$createField4_0($$parsedSource["command"]);
+        }
+        if ("environment" in $$parsedSource) {
+            $$parsedSource["environment"] = $$createField5_0($$parsedSource["environment"]);
+        }
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField6_0($$parsedSource["headers"]);
+        }
+        return new OpenCodeMCPServerInfo($$parsedSource as Partial<OpenCodeMCPServerInfo>);
+    }
+}
+
+export class OpenCodeMCPServerInput {
+    "key": string;
+    "type": string;
+    "url": string;
+    "command": string[];
+    "environment": { [_ in string]?: string };
+    "headers": { [_ in string]?: string };
+
+    /** Creates a new OpenCodeMCPServerInput instance. */
+    constructor($$source: Partial<OpenCodeMCPServerInput> = {}) {
+        if (!("key" in $$source)) {
+            this["key"] = "";
+        }
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("command" in $$source)) {
+            this["command"] = [];
+        }
+        if (!("environment" in $$source)) {
+            this["environment"] = {};
+        }
+        if (!("headers" in $$source)) {
+            this["headers"] = {};
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeMCPServerInput instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeMCPServerInput {
+        const $$createField3_0 = $$createType18;
+        const $$createField4_0 = $$createType4;
+        const $$createField5_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("command" in $$parsedSource) {
+            $$parsedSource["command"] = $$createField3_0($$parsedSource["command"]);
+        }
+        if ("environment" in $$parsedSource) {
+            $$parsedSource["environment"] = $$createField4_0($$parsedSource["environment"]);
+        }
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField5_0($$parsedSource["headers"]);
+        }
+        return new OpenCodeMCPServerInput($$parsedSource as Partial<OpenCodeMCPServerInput>);
+    }
+}
+
+/**
+ * OpenCodeModelInfo 是返回给前端的脱敏模型目录。
+ */
+export class OpenCodeModelInfo {
+    "id": string;
+    "name": string;
+    "context_limit": number;
+    "input_limit": number;
+    "output_limit": number;
+    "reasoning": boolean;
+    "tool_call": boolean;
+    "attachment": boolean;
+    "has_variants": boolean;
+    "extra_field_count": number;
+    "modalities": string[];
+    "variants": { [_ in string]?: any };
+
+    /** Creates a new OpenCodeModelInfo instance. */
+    constructor($$source: Partial<OpenCodeModelInfo> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("context_limit" in $$source)) {
+            this["context_limit"] = 0;
+        }
+        if (!("input_limit" in $$source)) {
+            this["input_limit"] = 0;
+        }
+        if (!("output_limit" in $$source)) {
+            this["output_limit"] = 0;
+        }
+        if (!("reasoning" in $$source)) {
+            this["reasoning"] = false;
+        }
+        if (!("tool_call" in $$source)) {
+            this["tool_call"] = false;
+        }
+        if (!("attachment" in $$source)) {
+            this["attachment"] = false;
+        }
+        if (!("has_variants" in $$source)) {
+            this["has_variants"] = false;
+        }
+        if (!("extra_field_count" in $$source)) {
+            this["extra_field_count"] = 0;
+        }
+        if (!("modalities" in $$source)) {
+            this["modalities"] = [];
+        }
+        if (!("variants" in $$source)) {
+            this["variants"] = {};
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeModelInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeModelInfo {
+        const $$createField10_0 = $$createType18;
+        const $$createField11_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("modalities" in $$parsedSource) {
+            $$parsedSource["modalities"] = $$createField10_0($$parsedSource["modalities"]);
+        }
+        if ("variants" in $$parsedSource) {
+            $$parsedSource["variants"] = $$createField11_0($$parsedSource["variants"]);
+        }
+        return new OpenCodeModelInfo($$parsedSource as Partial<OpenCodeModelInfo>);
+    }
+}
+
+export class OpenCodeModelInput {
+    "id": string;
+    "name": string;
+    "context_limit": number;
+    "input_limit": number;
+    "output_limit": number;
+    "reasoning": boolean;
+    "tool_call": boolean;
+    "attachment": boolean;
+    "modalities": string[];
+    "variants": { [_ in string]?: any };
+    "extra_json": string;
+
+    /** Creates a new OpenCodeModelInput instance. */
+    constructor($$source: Partial<OpenCodeModelInput> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("context_limit" in $$source)) {
+            this["context_limit"] = 0;
+        }
+        if (!("input_limit" in $$source)) {
+            this["input_limit"] = 0;
+        }
+        if (!("output_limit" in $$source)) {
+            this["output_limit"] = 0;
+        }
+        if (!("reasoning" in $$source)) {
+            this["reasoning"] = false;
+        }
+        if (!("tool_call" in $$source)) {
+            this["tool_call"] = false;
+        }
+        if (!("attachment" in $$source)) {
+            this["attachment"] = false;
+        }
+        if (!("modalities" in $$source)) {
+            this["modalities"] = [];
+        }
+        if (!("variants" in $$source)) {
+            this["variants"] = {};
+        }
+        if (!("extra_json" in $$source)) {
+            this["extra_json"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeModelInput instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeModelInput {
+        const $$createField8_0 = $$createType18;
+        const $$createField9_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("modalities" in $$parsedSource) {
+            $$parsedSource["modalities"] = $$createField8_0($$parsedSource["modalities"]);
+        }
+        if ("variants" in $$parsedSource) {
+            $$parsedSource["variants"] = $$createField9_0($$parsedSource["variants"]);
+        }
+        return new OpenCodeModelInput($$parsedSource as Partial<OpenCodeModelInput>);
+    }
+}
+
+export class OpenCodePathInput {
+    "path": string;
+
+    /** Creates a new OpenCodePathInput instance. */
+    constructor($$source: Partial<OpenCodePathInput> = {}) {
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodePathInput instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodePathInput {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OpenCodePathInput($$parsedSource as Partial<OpenCodePathInput>);
+    }
+}
+
+export class OpenCodePromptInfo {
+    "path": string;
+    "hash": string;
+    "exists": boolean;
+    "content": string;
+
+    /** Creates a new OpenCodePromptInfo instance. */
+    constructor($$source: Partial<OpenCodePromptInfo> = {}) {
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("hash" in $$source)) {
+            this["hash"] = "";
+        }
+        if (!("exists" in $$source)) {
+            this["exists"] = false;
+        }
+        if (!("content" in $$source)) {
+            this["content"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodePromptInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodePromptInfo {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OpenCodePromptInfo($$parsedSource as Partial<OpenCodePromptInfo>);
+    }
+}
+
+/**
+ * OpenCodeProviderInfo 不包含 API Key、原始 options 或未知字段值。
+ */
+export class OpenCodeProviderInfo {
+    "id": number;
+    "provider_key": string;
+    "name": string;
+    "npm": string;
+    "client_protocol": string;
+    "upstream_protocol": string;
+    "mode": string;
+    "gateway_key": string;
+    "base_url": string;
+    "api_key_configured": boolean;
+    "api_key_masked": string;
+    "headers_configured": boolean;
+    "timeout": number;
+    "enabled": boolean;
+    "level": number;
+    "managed": boolean;
+    "relay_enabled": boolean;
+    "models": OpenCodeModelInfo[];
+    "ownership": string;
+
+    /** Creates a new OpenCodeProviderInfo instance. */
+    constructor($$source: Partial<OpenCodeProviderInfo> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("provider_key" in $$source)) {
+            this["provider_key"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("npm" in $$source)) {
+            this["npm"] = "";
+        }
+        if (!("client_protocol" in $$source)) {
+            this["client_protocol"] = "";
+        }
+        if (!("upstream_protocol" in $$source)) {
+            this["upstream_protocol"] = "";
+        }
+        if (!("mode" in $$source)) {
+            this["mode"] = "";
+        }
+        if (!("gateway_key" in $$source)) {
+            this["gateway_key"] = "";
+        }
+        if (!("base_url" in $$source)) {
+            this["base_url"] = "";
+        }
+        if (!("api_key_configured" in $$source)) {
+            this["api_key_configured"] = false;
+        }
+        if (!("api_key_masked" in $$source)) {
+            this["api_key_masked"] = "";
+        }
+        if (!("headers_configured" in $$source)) {
+            this["headers_configured"] = false;
+        }
+        if (!("timeout" in $$source)) {
+            this["timeout"] = 0;
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("level" in $$source)) {
+            this["level"] = 0;
+        }
+        if (!("managed" in $$source)) {
+            this["managed"] = false;
+        }
+        if (!("relay_enabled" in $$source)) {
+            this["relay_enabled"] = false;
+        }
+        if (!("models" in $$source)) {
+            this["models"] = [];
+        }
+        if (!("ownership" in $$source)) {
+            this["ownership"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeProviderInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeProviderInfo {
+        const $$createField17_0 = $$createType40;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("models" in $$parsedSource) {
+            $$parsedSource["models"] = $$createField17_0($$parsedSource["models"]);
+        }
+        return new OpenCodeProviderInfo($$parsedSource as Partial<OpenCodeProviderInfo>);
+    }
+}
+
+export class OpenCodeProviderInput {
+    "provider_key": string;
+    "name": string;
+    "npm": string;
+    "client_protocol": string;
+    "upstream_protocol": string;
+    "mode": string;
+    "gateway_key": string;
+    "base_url": string;
+    "api_key": string;
+    "headers_json": string;
+    "options_json": string;
+    "timeout": number;
+    "enabled": boolean;
+    "level": number;
+    "models": OpenCodeModelInput[];
+
+    /** Creates a new OpenCodeProviderInput instance. */
+    constructor($$source: Partial<OpenCodeProviderInput> = {}) {
+        if (!("provider_key" in $$source)) {
+            this["provider_key"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("npm" in $$source)) {
+            this["npm"] = "";
+        }
+        if (!("client_protocol" in $$source)) {
+            this["client_protocol"] = "";
+        }
+        if (!("upstream_protocol" in $$source)) {
+            this["upstream_protocol"] = "";
+        }
+        if (!("mode" in $$source)) {
+            this["mode"] = "";
+        }
+        if (!("gateway_key" in $$source)) {
+            this["gateway_key"] = "";
+        }
+        if (!("base_url" in $$source)) {
+            this["base_url"] = "";
+        }
+        if (!("api_key" in $$source)) {
+            this["api_key"] = "";
+        }
+        if (!("headers_json" in $$source)) {
+            this["headers_json"] = "";
+        }
+        if (!("options_json" in $$source)) {
+            this["options_json"] = "";
+        }
+        if (!("timeout" in $$source)) {
+            this["timeout"] = 0;
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("level" in $$source)) {
+            this["level"] = 0;
+        }
+        if (!("models" in $$source)) {
+            this["models"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeProviderInput instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeProviderInput {
+        const $$createField14_0 = $$createType42;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("models" in $$parsedSource) {
+            $$parsedSource["models"] = $$createField14_0($$parsedSource["models"]);
+        }
+        return new OpenCodeProviderInput($$parsedSource as Partial<OpenCodeProviderInput>);
+    }
+}
+
+export class OpenCodeWSLSyncInput {
+    "distro": string;
+    "config_path": string;
+
+    /** Creates a new OpenCodeWSLSyncInput instance. */
+    constructor($$source: Partial<OpenCodeWSLSyncInput> = {}) {
+        if (!("distro" in $$source)) {
+            this["distro"] = "";
+        }
+        if (!("config_path" in $$source)) {
+            this["config_path"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeWSLSyncInput instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeWSLSyncInput {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OpenCodeWSLSyncInput($$parsedSource as Partial<OpenCodeWSLSyncInput>);
+    }
+}
+
+export class OpenCodeWSLSyncResult {
+    "distro": string;
+    "config_path": string;
+    "prompt_path": string;
+    "hash": string;
+    "synced_at": string;
+
+    /** Creates a new OpenCodeWSLSyncResult instance. */
+    constructor($$source: Partial<OpenCodeWSLSyncResult> = {}) {
+        if (!("distro" in $$source)) {
+            this["distro"] = "";
+        }
+        if (!("config_path" in $$source)) {
+            this["config_path"] = "";
+        }
+        if (!("prompt_path" in $$source)) {
+            this["prompt_path"] = "";
+        }
+        if (!("hash" in $$source)) {
+            this["hash"] = "";
+        }
+        if (!("synced_at" in $$source)) {
+            this["synced_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeWSLSyncResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeWSLSyncResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OpenCodeWSLSyncResult($$parsedSource as Partial<OpenCodeWSLSyncResult>);
+    }
+}
+
+export class OpenCodeWSLTargetInfo {
+    "distro": string;
+    "config_path": string;
+    "prompt_path": string;
+    "exists": boolean;
+    "hash": string;
+    "last_sync_hash": string;
+    "last_sync_at": string;
+    "error": string;
+
+    /** Creates a new OpenCodeWSLTargetInfo instance. */
+    constructor($$source: Partial<OpenCodeWSLTargetInfo> = {}) {
+        if (!("distro" in $$source)) {
+            this["distro"] = "";
+        }
+        if (!("config_path" in $$source)) {
+            this["config_path"] = "";
+        }
+        if (!("prompt_path" in $$source)) {
+            this["prompt_path"] = "";
+        }
+        if (!("exists" in $$source)) {
+            this["exists"] = false;
+        }
+        if (!("hash" in $$source)) {
+            this["hash"] = "";
+        }
+        if (!("last_sync_hash" in $$source)) {
+            this["last_sync_hash"] = "";
+        }
+        if (!("last_sync_at" in $$source)) {
+            this["last_sync_at"] = "";
+        }
+        if (!("error" in $$source)) {
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OpenCodeWSLTargetInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OpenCodeWSLTargetInfo {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OpenCodeWSLTargetInfo($$parsedSource as Partial<OpenCodeWSLTargetInfo>);
     }
 }
 
@@ -2352,7 +3773,7 @@ export class PiBuiltinCatalogSnapshot {
      * Creates a new PiBuiltinCatalogSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PiBuiltinCatalogSnapshot {
-        const $$createField7_0 = $$createType28;
+        const $$createField7_0 = $$createType44;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("providers" in $$parsedSource) {
             $$parsedSource["providers"] = $$createField7_0($$parsedSource["providers"]);
@@ -2392,7 +3813,7 @@ export class PiBuiltinModel {
      * Creates a new PiBuiltinModel instance from a string or object.
      */
     static createFrom($$source: any = {}): PiBuiltinModel {
-        const $$createField6_0 = $$createType29;
+        const $$createField6_0 = $$createType45;
         const $$createField7_0 = $$createType18;
         const $$createField11_0 = $$createType4;
         const $$createField12_0 = $$createType5;
@@ -2489,7 +3910,7 @@ export class PiBuiltinProvider {
      * Creates a new PiBuiltinProvider instance from a string or object.
      */
     static createFrom($$source: any = {}): PiBuiltinProvider {
-        const $$createField1_0 = $$createType31;
+        const $$createField1_0 = $$createType47;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField1_0($$parsedSource["models"]);
@@ -2531,7 +3952,7 @@ export class PiModelEntry {
      * Creates a new PiModelEntry instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelEntry {
-        const $$createField5_0 = $$createType29;
+        const $$createField5_0 = $$createType45;
         const $$createField6_0 = $$createType18;
         const $$createField10_0 = $$createType4;
         const $$createField11_0 = $$createType5;
@@ -2573,7 +3994,7 @@ export class PiModelOverride {
      * Creates a new PiModelOverride instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelOverride {
-        const $$createField2_0 = $$createType29;
+        const $$createField2_0 = $$createType45;
         const $$createField3_0 = $$createType18;
         const $$createField7_0 = $$createType4;
         const $$createField8_0 = $$createType5;
@@ -2665,7 +4086,7 @@ export class PiModelsCatalogSnapshot {
      * Creates a new PiModelsCatalogSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsCatalogSnapshot {
-        const $$createField10_0 = $$createType33;
+        const $$createField10_0 = $$createType49;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("templates" in $$parsedSource) {
             $$parsedSource["templates"] = $$createField10_0($$parsedSource["templates"]);
@@ -2706,7 +4127,7 @@ export class PiModelsCatalogTemplate {
      * Creates a new PiModelsCatalogTemplate instance from a string or object.
      */
     static createFrom($$source: any = {}): PiModelsCatalogTemplate {
-        const $$createField7_0 = $$createType35;
+        const $$createField7_0 = $$createType51;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField7_0($$parsedSource["models"]);
@@ -2756,8 +4177,8 @@ export class PiModelsProviderTemplate {
     static createFrom($$source: any = {}): PiModelsProviderTemplate {
         const $$createField6_0 = $$createType4;
         const $$createField8_0 = $$createType5;
-        const $$createField9_0 = $$createType37;
-        const $$createField10_0 = $$createType39;
+        const $$createField9_0 = $$createType53;
+        const $$createField10_0 = $$createType55;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField6_0($$parsedSource["headers"]);
@@ -2959,7 +4380,7 @@ export class PiProviderTemplate {
      * Creates a new PiProviderTemplate instance from a string or object.
      */
     static createFrom($$source: any = {}): PiProviderTemplate {
-        const $$createField7_0 = $$createType40;
+        const $$createField7_0 = $$createType56;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("knownModels" in $$parsedSource) {
             $$parsedSource["knownModels"] = $$createField7_0($$parsedSource["knownModels"]);
@@ -3084,7 +4505,7 @@ export class PiRuntimePlatform {
      */
     static createFrom($$source: any = {}): PiRuntimePlatform {
         const $$createField12_0 = $$createType18;
-        const $$createField13_0 = $$createType35;
+        const $$createField13_0 = $$createType51;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("managementBlockers" in $$parsedSource) {
             $$parsedSource["managementBlockers"] = $$createField12_0($$parsedSource["managementBlockers"]);
@@ -3191,14 +4612,14 @@ export class PiRuntimeSnapshot {
      * Creates a new PiRuntimeSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PiRuntimeSnapshot {
-        const $$createField5_0 = $$createType41;
-        const $$createField6_0 = $$createType41;
-        const $$createField7_0 = $$createType41;
-        const $$createField8_0 = $$createType42;
-        const $$createField9_0 = $$createType44;
+        const $$createField5_0 = $$createType57;
+        const $$createField6_0 = $$createType57;
+        const $$createField7_0 = $$createType57;
+        const $$createField8_0 = $$createType58;
+        const $$createField9_0 = $$createType60;
         const $$createField10_0 = $$createType18;
-        const $$createField11_0 = $$createType46;
-        const $$createField12_0 = $$createType48;
+        const $$createField11_0 = $$createType62;
+        const $$createField12_0 = $$createType64;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("modelsFile" in $$parsedSource) {
             $$parsedSource["modelsFile"] = $$createField5_0($$parsedSource["modelsFile"]);
@@ -3324,8 +4745,8 @@ export class PiSupplierMutationRequest {
      * Creates a new PiSupplierMutationRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): PiSupplierMutationRequest {
-        const $$createField3_0 = $$createType49;
-        const $$createField4_0 = $$createType37;
+        const $$createField3_0 = $$createType65;
+        const $$createField4_0 = $$createType53;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField3_0($$parsedSource["provider"]);
@@ -3357,7 +4778,7 @@ export class PiSupplierMutationResult {
      * Creates a new PiSupplierMutationResult instance from a string or object.
      */
     static createFrom($$source: any = {}): PiSupplierMutationResult {
-        const $$createField0_0 = $$createType49;
+        const $$createField0_0 = $$createType65;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField0_0($$parsedSource["provider"]);
@@ -3423,7 +4844,7 @@ export class PricingBuiltinPage {
      * Creates a new PricingBuiltinPage instance from a string or object.
      */
     static createFrom($$source: any = {}): PricingBuiltinPage {
-        const $$createField0_0 = $$createType51;
+        const $$createField0_0 = $$createType67;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -3540,8 +4961,8 @@ export class PricingCustomRule {
      * Creates a new PricingCustomRule instance from a string or object.
      */
     static createFrom($$source: any = {}): PricingCustomRule {
-        const $$createField5_0 = $$createType52;
-        const $$createField6_0 = $$createType54;
+        const $$createField5_0 = $$createType68;
+        const $$createField6_0 = $$createType70;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("rates" in $$parsedSource) {
             $$parsedSource["rates"] = $$createField5_0($$parsedSource["rates"]);
@@ -3583,7 +5004,7 @@ export class PricingMatchResult {
      * Creates a new PricingMatchResult instance from a string or object.
      */
     static createFrom($$source: any = {}): PricingMatchResult {
-        const $$createField4_0 = $$createType52;
+        const $$createField4_0 = $$createType68;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("rates" in $$parsedSource) {
             $$parsedSource["rates"] = $$createField4_0($$parsedSource["rates"]);
@@ -3724,7 +5145,7 @@ export class PricingTier {
      * Creates a new PricingTier instance from a string or object.
      */
     static createFrom($$source: any = {}): PricingTier {
-        const $$createField1_0 = $$createType52;
+        const $$createField1_0 = $$createType68;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("rates" in $$parsedSource) {
             $$parsedSource["rates"] = $$createField1_0($$parsedSource["rates"]);
@@ -3911,6 +5332,13 @@ export class Provider {
     "authHeader"?: string;
 
     /**
+     * CredentialType/Ref separate the credential owner from the upstream Header policy.
+     * Empty keeps the legacy API-key behavior; oauth never falls back to APIKey.
+     */
+    "credentialType"?: string;
+    "credentialRef"?: string;
+
+    /**
      * Headers contains non-authentication upstream headers. Dangerous transport and
      * credential headers are rejected before requests are sent.
      */
@@ -4013,14 +5441,14 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField11_0 = $$createType55;
+        const $$createField11_0 = $$createType71;
         const $$createField12_0 = $$createType4;
-        const $$createField16_0 = $$createType57;
-        const $$createField21_0 = $$createType4;
-        const $$createField24_0 = $$createType59;
-        const $$createField25_0 = $$createType60;
-        const $$createField27_0 = $$createType37;
-        const $$createField28_0 = $$createType39;
+        const $$createField16_0 = $$createType73;
+        const $$createField23_0 = $$createType4;
+        const $$createField26_0 = $$createType75;
+        const $$createField27_0 = $$createType76;
+        const $$createField29_0 = $$createType53;
+        const $$createField30_0 = $$createType55;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("supportedModels" in $$parsedSource) {
             $$parsedSource["supportedModels"] = $$createField11_0($$parsedSource["supportedModels"]);
@@ -4032,19 +5460,19 @@ export class Provider {
             $$parsedSource["availabilityConfig"] = $$createField16_0($$parsedSource["availabilityConfig"]);
         }
         if ("headers" in $$parsedSource) {
-            $$parsedSource["headers"] = $$createField21_0($$parsedSource["headers"]);
+            $$parsedSource["headers"] = $$createField23_0($$parsedSource["headers"]);
         }
         if ("requestIdentity" in $$parsedSource) {
-            $$parsedSource["requestIdentity"] = $$createField24_0($$parsedSource["requestIdentity"]);
+            $$parsedSource["requestIdentity"] = $$createField26_0($$parsedSource["requestIdentity"]);
         }
         if ("modelRequestIdentities" in $$parsedSource) {
-            $$parsedSource["modelRequestIdentities"] = $$createField25_0($$parsedSource["modelRequestIdentities"]);
+            $$parsedSource["modelRequestIdentities"] = $$createField27_0($$parsedSource["modelRequestIdentities"]);
         }
         if ("piModels" in $$parsedSource) {
-            $$parsedSource["piModels"] = $$createField27_0($$parsedSource["piModels"]);
+            $$parsedSource["piModels"] = $$createField29_0($$parsedSource["piModels"]);
         }
         if ("piModelOverrides" in $$parsedSource) {
-            $$parsedSource["piModelOverrides"] = $$createField28_0($$parsedSource["piModelOverrides"]);
+            $$parsedSource["piModelOverrides"] = $$createField30_0($$parsedSource["piModelOverrides"]);
         }
         return new Provider($$parsedSource as Partial<Provider>);
     }
@@ -4139,7 +5567,7 @@ export class ProviderModelDiscoveryRequest {
      * Creates a new ProviderModelDiscoveryRequest instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryRequest {
-        const $$createField1_0 = $$createType49;
+        const $$createField1_0 = $$createType65;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("provider" in $$parsedSource) {
             $$parsedSource["provider"] = $$createField1_0($$parsedSource["provider"]);
@@ -4168,7 +5596,7 @@ export class ProviderModelDiscoveryResult {
      * Creates a new ProviderModelDiscoveryResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryResult {
-        const $$createField0_0 = $$createType62;
+        const $$createField0_0 = $$createType78;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField0_0($$parsedSource["models"]);
@@ -4236,7 +5664,7 @@ export class ProviderRequestTemplate {
      */
     static createFrom($$source: any = {}): ProviderRequestTemplate {
         const $$createField2_0 = $$createType4;
-        const $$createField4_0 = $$createType59;
+        const $$createField4_0 = $$createType75;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
@@ -4362,7 +5790,7 @@ export class RecordCleanupResult {
      * Creates a new RecordCleanupResult instance from a string or object.
      */
     static createFrom($$source: any = {}): RecordCleanupResult {
-        const $$createField2_0 = $$createType63;
+        const $$createField2_0 = $$createType79;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storage" in $$parsedSource) {
             $$parsedSource["storage"] = $$createField2_0($$parsedSource["storage"]);
@@ -4884,48 +6312,64 @@ const $$createType15 = $Create.Array($$createType14);
 const $$createType16 = RequestLog.createFrom;
 const $$createType17 = $Create.Array($$createType16);
 const $$createType18 = $Create.Array($Create.Any);
-const $$createType19 = GrokOAuthQuota.createFrom;
-const $$createType20 = GrokOAuthAccountDTO.createFrom;
-const $$createType21 = $Create.Nullable($$createType20);
-const $$createType22 = LogStatsSeries.createFrom;
-const $$createType23 = $Create.Array($$createType22);
-const $$createType24 = MCPServer.createFrom;
-const $$createType25 = $Create.Array($$createType24);
-const $$createType26 = TargetCli.createFrom;
-const $$createType27 = PiBuiltinProvider.createFrom;
-const $$createType28 = $Create.Array($$createType27);
-const $$createType29 = $Create.Map($Create.Any, $Create.Any);
-const $$createType30 = PiBuiltinModel.createFrom;
-const $$createType31 = $Create.Array($$createType30);
-const $$createType32 = PiModelsCatalogTemplate.createFrom;
-const $$createType33 = $Create.Array($$createType32);
-const $$createType34 = PiModelsCatalogModel.createFrom;
+const $$createType19 = GeminiCliQuotaSnapshot.createFrom;
+const $$createType20 = $Create.Nullable($$createType19);
+const $$createType21 = GeminiModel.createFrom;
+const $$createType22 = $Create.Array($$createType21);
+const $$createType23 = GrokOAuthQuota.createFrom;
+const $$createType24 = GrokOAuthAccountDTO.createFrom;
+const $$createType25 = $Create.Nullable($$createType24);
+const $$createType26 = LogStatsSeries.createFrom;
+const $$createType27 = $Create.Array($$createType26);
+const $$createType28 = MCPServer.createFrom;
+const $$createType29 = $Create.Array($$createType28);
+const $$createType30 = TargetCli.createFrom;
+const $$createType31 = OAuthQuotaSnapshot.createFrom;
+const $$createType32 = OAuthAccountSummary.createFrom;
+const $$createType33 = $Create.Nullable($$createType32);
+const $$createType34 = OAuthImportItem.createFrom;
 const $$createType35 = $Create.Array($$createType34);
-const $$createType36 = PiModelEntry.createFrom;
-const $$createType37 = $Create.Array($$createType36);
-const $$createType38 = PiModelOverride.createFrom;
-const $$createType39 = $Create.Map($Create.Any, $$createType38);
-const $$createType40 = $Create.Map($Create.Any, $$createType36);
-const $$createType41 = PiRuntimeFileStatus.createFrom;
-const $$createType42 = PiRuntimeSettings.createFrom;
-const $$createType43 = PiRuntimeAuthStatus.createFrom;
+const $$createType36 = OpenCodeConfigInfo.createFrom;
+const $$createType37 = OpenCodeProviderInfo.createFrom;
+const $$createType38 = $Create.Array($$createType37);
+const $$createType39 = OpenCodeModelInfo.createFrom;
+const $$createType40 = $Create.Array($$createType39);
+const $$createType41 = OpenCodeModelInput.createFrom;
+const $$createType42 = $Create.Array($$createType41);
+const $$createType43 = PiBuiltinProvider.createFrom;
 const $$createType44 = $Create.Array($$createType43);
-const $$createType45 = PiRuntimePlatform.createFrom;
-const $$createType46 = $Create.Array($$createType45);
-const $$createType47 = PiRuntimeSupplier.createFrom;
-const $$createType48 = $Create.Array($$createType47);
-const $$createType49 = Provider.createFrom;
-const $$createType50 = PricingBuiltinRow.createFrom;
+const $$createType45 = $Create.Map($Create.Any, $Create.Any);
+const $$createType46 = PiBuiltinModel.createFrom;
+const $$createType47 = $Create.Array($$createType46);
+const $$createType48 = PiModelsCatalogTemplate.createFrom;
+const $$createType49 = $Create.Array($$createType48);
+const $$createType50 = PiModelsCatalogModel.createFrom;
 const $$createType51 = $Create.Array($$createType50);
-const $$createType52 = PricingRates.createFrom;
-const $$createType53 = PricingTier.createFrom;
-const $$createType54 = $Create.Array($$createType53);
-const $$createType55 = $Create.Map($Create.Any, $Create.Any);
-const $$createType56 = AvailabilityConfig.createFrom;
-const $$createType57 = $Create.Nullable($$createType56);
-const $$createType58 = ProviderRequestIdentity.createFrom;
-const $$createType59 = $Create.Nullable($$createType58);
-const $$createType60 = $Create.Map($Create.Any, $$createType58);
-const $$createType61 = DiscoveredModel.createFrom;
+const $$createType52 = PiModelEntry.createFrom;
+const $$createType53 = $Create.Array($$createType52);
+const $$createType54 = PiModelOverride.createFrom;
+const $$createType55 = $Create.Map($Create.Any, $$createType54);
+const $$createType56 = $Create.Map($Create.Any, $$createType52);
+const $$createType57 = PiRuntimeFileStatus.createFrom;
+const $$createType58 = PiRuntimeSettings.createFrom;
+const $$createType59 = PiRuntimeAuthStatus.createFrom;
+const $$createType60 = $Create.Array($$createType59);
+const $$createType61 = PiRuntimePlatform.createFrom;
 const $$createType62 = $Create.Array($$createType61);
-const $$createType63 = RecordStorageInfo.createFrom;
+const $$createType63 = PiRuntimeSupplier.createFrom;
+const $$createType64 = $Create.Array($$createType63);
+const $$createType65 = Provider.createFrom;
+const $$createType66 = PricingBuiltinRow.createFrom;
+const $$createType67 = $Create.Array($$createType66);
+const $$createType68 = PricingRates.createFrom;
+const $$createType69 = PricingTier.createFrom;
+const $$createType70 = $Create.Array($$createType69);
+const $$createType71 = $Create.Map($Create.Any, $Create.Any);
+const $$createType72 = AvailabilityConfig.createFrom;
+const $$createType73 = $Create.Nullable($$createType72);
+const $$createType74 = ProviderRequestIdentity.createFrom;
+const $$createType75 = $Create.Nullable($$createType74);
+const $$createType76 = $Create.Map($Create.Any, $$createType74);
+const $$createType77 = DiscoveredModel.createFrom;
+const $$createType78 = $Create.Array($$createType77);
+const $$createType79 = RecordStorageInfo.createFrom;

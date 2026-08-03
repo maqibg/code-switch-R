@@ -367,8 +367,16 @@ func (s *PromptService) getPromptFilePathReadOnly(platform string) (string, erro
 		dir = filepath.Join(home, ".codex")
 		filename = "AGENTS.md"
 	case "gemini":
-		dir = filepath.Join(home, ".gemini")
-		filename = "GEMINI.md"
+		dir = geminiCLIRoot()
+		settings, _, _ := readJSONObjectOrDefault(filepath.Join(dir, "settings.json"), map[string]json.RawMessage{})
+		decoded := make(map[string]any, len(settings))
+		for key, raw := range settings {
+			var value any
+			if json.Unmarshal(raw, &value) == nil {
+				decoded[key] = value
+			}
+		}
+		filename = GeminiCLIPromptFileName(decoded)
 	default:
 		return "", fmt.Errorf("不支持的平台: %s", platform)
 	}

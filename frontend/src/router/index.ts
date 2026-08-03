@@ -3,6 +3,8 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 const routes = [
   { path: '/', component: () => import('../components/Main/Index.vue') },
   { path: '/pi', component: () => import('../components/Pi/Index.vue') },
+  { path: '/opencode', component: () => import('../components/OpenCode/Index.vue') },
+  { path: '/oauth-accounts', component: () => import('../components/OAuthAccounts/Index.vue') },
   { path: '/pricing', component: () => import('../components/Pricing/Index.vue') },
   { path: '/stats', component: () => import('../components/Stats/Index.vue') },
   { path: '/prompts', component: () => import('../components/Prompts/Index.vue') },
