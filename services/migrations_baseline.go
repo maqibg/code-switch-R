@@ -122,6 +122,7 @@ const requestLogCreateSQL = `CREATE TABLE IF NOT EXISTS request_log (
 // 再加十个重复的单独调用（那十个列在 CREATE TABLE 里已声明过），纯属冗余。
 var requestLogColumns = []struct{ name, definition string }{
 	{"platform", "TEXT"},
+	{"thinking", "TEXT NOT NULL DEFAULT 'unknown'"},
 	{"model", "TEXT"},
 	{"provider", "TEXT"},
 	{"http_code", "INTEGER"},
@@ -218,8 +219,9 @@ func migrateRelayAttemptTable(tx sqlExecutor) error {
 		http_code INTEGER DEFAULT 0,
 		success INTEGER DEFAULT 0,
 		error_type TEXT DEFAULT '',
-		error_message TEXT DEFAULT '',
-		credential_id TEXT DEFAULT '',
+			error_message TEXT DEFAULT '',
+			thinking TEXT NOT NULL DEFAULT 'unknown',
+			credential_id TEXT DEFAULT '',
 		auth_mode TEXT DEFAULT '',
 		credential_status TEXT DEFAULT '',
 		duration_sec REAL DEFAULT 0,

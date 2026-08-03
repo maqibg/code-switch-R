@@ -12,7 +12,7 @@ import { formatBeijingDateTime } from '../utils/beijingTime'
 import { decimalMoney, formatDisplayMoney } from '../utils/money'
 import { useActivePolling } from './useActivePolling'
 
-const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'grok', 'gemini', 'reasonix', 'pi']
+const PLATFORM_ORDER: LogPlatform[] = ['claude', 'codex', 'grok', 'gemini', 'reasonix', 'pi', 'opencode']
 const REFRESH_INTERVAL = 60
 const RANGE_CACHE_TTL_MS = 45_000
 
@@ -73,6 +73,7 @@ export function useStatsDashboard() {
     gemini: emptyStats(),
     reasonix: emptyStats(),
     pi: emptyStats(),
+    opencode: emptyStats(),
   })
 
   const rangeCache = new Map<StatsRange, CacheEntry>()

@@ -44,6 +44,7 @@
             <option value="grok">Grok Build</option>
             <option value="reasonix">Reasonix</option>
             <option value="pi">Pi</option>
+            <option value="opencode">OpenCode</option>
           </select>
         </label>
         <label class="filter-field">
@@ -81,6 +82,7 @@
             <th class="col-platform">{{ t('components.logs.table.platform') }}</th>
             <th class="col-provider">{{ t('components.logs.table.provider') }}</th>
             <th class="col-model">{{ t('components.logs.table.model') }}</th>
+            <th class="col-thinking">{{ t('components.logs.table.thinking') }}</th>
             <th class="col-http">{{ t('components.logs.table.httpCode') }}</th>
             <th class="col-duration">{{ t('components.logs.table.duration') }}</th>
             <th class="col-cost">{{ t('components.logs.table.cost') }}</th>
@@ -93,6 +95,7 @@
             <td>{{ item.platform || '—' }}</td>
             <td>{{ item.provider || '—' }}</td>
             <td>{{ item.model || '—' }}</td>
+            <td class="thinking-cell">{{ item.thinking || 'unknown' }}</td>
             <td :class="['code', httpCodeClass(item.http_code)]">{{ item.http_code }}</td>
             <td><span :class="['duration-tag', durationColor(item.duration_sec)]">{{ formatDuration(item.duration_sec) }}</span></td>
             <td class="cost-cell">{{ formatLogCost(item) }}</td>
@@ -120,7 +123,7 @@
             </td>
           </tr>
           <tr v-if="!logs.length && !loading">
-            <td colspan="8" class="empty">{{ t('components.logs.empty') }}</td>
+            <td colspan="9" class="empty">{{ t('components.logs.empty') }}</td>
           </tr>
         </tbody>
       </table>

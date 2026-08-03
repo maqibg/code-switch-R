@@ -32,6 +32,7 @@ type relayTelemetry struct {
 	AliasPlatform  string
 	SourceID       string
 	ClientProtocol relayprotocol.Protocol
+	Thinking       string
 	RequestedModel string
 	IsStream       bool
 	StartedAt      time.Time
@@ -55,10 +56,10 @@ type requestPriceSnapshotItem struct {
 	Cost                 string `json:"cost"`
 }
 
-func beginRelayTelemetry(c *gin.Context, platform string, clientProtocol relayprotocol.Protocol, requestedModel string, isStream bool, pricingService *services.PricingService, sourceID string) *relayTelemetry {
+func beginRelayTelemetry(c *gin.Context, platform string, clientProtocol relayprotocol.Protocol, thinking string, requestedModel string, isStream bool, pricingService *services.PricingService, sourceID string) *relayTelemetry {
 	telemetry := &relayTelemetry{
 		RequestID: uuid.NewString(), Platform: platform, ClientProtocol: clientProtocol,
-		AliasPlatform: platform, SourceID: sourceID, RequestedModel: requestedModel, IsStream: isStream, StartedAt: time.Now(),
+		AliasPlatform: platform, SourceID: sourceID, Thinking: thinking, RequestedModel: requestedModel, IsStream: isStream, StartedAt: time.Now(),
 	}
 	// pricingService 为 nil 时不算成本，而不是回退到另一套定价引擎。
 	// 原先的 legacyPricing 回退会让同一进程出现两种计费口径，
@@ -120,6 +121,9 @@ func (t *relayTelemetry) appendAttempt(
 	success bool,
 	err error,
 ) {
+	if strings.TrimSpace(t.Thinking) != "" {
+		usage.Thinking = t.Thinking
+	}
 	usage.Provider = provider.Name
 	credentialID, authMode, credentialStatus := relayCredentialLogContext(provider, t.Platform, err)
 	usage.CredentialID = credentialID
@@ -149,8 +153,8 @@ func (t *relayTelemetry) logicalRequest(status int) services.RequestLog {
 		RequestID: t.RequestID, Platform: t.Platform, SourceID: t.SourceID,
 		// 新日志只保存实际发往 Provider 的映射后模型名（见 result.Model），
 		// 不再同时保存客户端请求名，避免同一请求出现两个模型口径。
-		ClientProtocol: string(t.ClientProtocol),
-		IsStream:       t.IsStream, DurationSec: time.Since(t.StartedAt).Seconds(),
+		ClientProtocol: string(t.ClientProtocol), Thinking: t.Thinking,
+		IsStream: t.IsStream, DurationSec: time.Since(t.StartedAt).Seconds(),
 		AttemptCount: len(t.Attempts), HttpCode: status,
 	}
 	snapshots := make([]requestPriceSnapshotItem, 0, len(t.Attempts))

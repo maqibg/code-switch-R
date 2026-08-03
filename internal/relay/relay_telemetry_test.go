@@ -18,7 +18,7 @@ import (
 func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
 	telemetry := &relayTelemetry{
 		RequestID: "req-1", Platform: "pi", ClientProtocol: relayprotocol.OpenAIChat,
-		RequestedModel: "primary/gpt-5", IsStream: true, StartedAt: time.Now(),
+		Thinking: "high", RequestedModel: "primary/gpt-5", IsStream: true, StartedAt: time.Now(),
 	}
 	telemetry.Attempts = []services.RelayAttemptLog{
 		{Provider: "first", Model: "gpt-5", HTTPCode: 500, Success: false, Usage: services.RequestLog{}, ErrorType: "upstream_5xx"},
@@ -38,6 +38,27 @@ func TestRelayTelemetrySeparatesLogicalRequestAndAttempts(t *testing.T) {
 	}
 	if !logical.CostCalculated || !logical.HasPricing || logical.TotalCost != "0.3" || logical.PricingSource != services.PricingSourceCustom || logical.PricingVersion != "custom:abc" || logical.PricingRuleID != "rule-1" {
 		t.Fatalf("逻辑请求未保留请求开始时捕获的价格元数据: %#v", logical)
+	}
+}
+
+func TestRelayTelemetryPreservesInitialThinkingAcrossAttempts(t *testing.T) {
+	telemetry := &relayTelemetry{
+		RequestID: "req-thinking", Platform: "codex", Thinking: "8192", StartedAt: time.Now(),
+	}
+	provider := services.Provider{Name: "provider"}
+	telemetry.recordAttempt(provider, nil, services.RequestLog{Thinking: "low", HttpCode: 500}, time.Now(), false, errors.New("failed"))
+	telemetry.recordAttempt(provider, nil, services.RequestLog{Thinking: "high", HttpCode: 200}, time.Now(), true, nil)
+
+	if len(telemetry.Attempts) != 2 {
+		t.Fatalf("尝试数量错误: %d", len(telemetry.Attempts))
+	}
+	for _, attempt := range telemetry.Attempts {
+		if attempt.Usage.Thinking != "8192" {
+			t.Fatalf("重试尝试不应使用转换后的思考值: %#v", attempt.Usage)
+		}
+	}
+	if logical := telemetry.logicalRequest(200); logical.Thinking != "8192" {
+		t.Fatalf("逻辑请求思考值错误: %q", logical.Thinking)
 	}
 }
 

@@ -132,6 +132,13 @@ func TestMigrationsAdoptExistingDatabase(t *testing.T) {
 	if provider != "Legacy" {
 		t.Errorf("迁移不应破坏历史数据，实际 provider=%q", provider)
 	}
+	var thinking string
+	if err := db.QueryRow(`SELECT thinking FROM request_log WHERE platform='claude'`).Scan(&thinking); err != nil {
+		t.Fatalf("读取历史思考值失败: %v", err)
+	}
+	if thinking != "unknown" {
+		t.Errorf("无法从历史请求恢复思考值时应标记 unknown，实际 %q", thinking)
+	}
 
 	// 缺失的列应被补齐
 	columns, err := tableColumnSet(db, "request_log")

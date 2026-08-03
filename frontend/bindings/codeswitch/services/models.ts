@@ -5851,12 +5851,18 @@ export class RequestLog {
     "request_id"?: string;
 
     /**
-     * claude、codex 或 gemini
+     * claude、codex、gemini、reasonix、pi、grok 或 opencode
      */
     "platform": string;
     "source_id"?: string;
     "client_protocol"?: string;
     "upstream_protocol"?: string;
+
+    /**
+     * Thinking 是客户端请求中明确传入的思考值，不是响应实际消耗的 reasoning_tokens。
+     * 新请求无参数时为 default，无法解析的历史记录为 unknown。
+     */
+    "thinking": string;
     "requested_model"?: string;
     "model": string;
 
@@ -5870,6 +5876,9 @@ export class RequestLog {
      * 尚未并入 provider 表）。按 ID 关联使改名无需 UPDATE 日志表。
      */
     "provider_id"?: number;
+    "credential_id"?: string;
+    "auth_mode"?: string;
+    "credential_status"?: string;
     "http_code": number;
     "input_tokens": number;
     "output_tokens": number;
@@ -5919,6 +5928,9 @@ export class RequestLog {
         }
         if (!("platform" in $$source)) {
             this["platform"] = "";
+        }
+        if (!("thinking" in $$source)) {
+            this["thinking"] = "";
         }
         if (!("model" in $$source)) {
             this["model"] = "";

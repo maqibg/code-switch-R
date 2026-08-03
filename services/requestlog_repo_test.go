@@ -13,6 +13,7 @@ func TestLogInsertStatementsExecuteAndReplayIdempotently(t *testing.T) {
 		Platform:         "codex",
 		ClientProtocol:   "openai_responses",
 		UpstreamProtocol: "openai_responses",
+		Thinking:         "8192",
 		Model:            "claude-mapped-model",
 		Provider:         "provider-a",
 		HttpCode:         200,
@@ -38,6 +39,13 @@ func TestLogInsertStatementsExecuteAndReplayIdempotently(t *testing.T) {
 	if requestCount != 1 {
 		t.Fatalf("request_log 重放不应重复计数，实际 %d 行", requestCount)
 	}
+	var requestThinking string
+	if err := db.QueryRow(`SELECT thinking FROM request_log WHERE request_id = ?`, request.RequestID).Scan(&requestThinking); err != nil {
+		t.Fatal(err)
+	}
+	if requestThinking != request.Thinking {
+		t.Fatalf("request_log 思考值错误: %q", requestThinking)
+	}
 
 	attempt := RelayAttemptLog{
 		AttemptIndex:     1,
@@ -47,6 +55,7 @@ func TestLogInsertStatementsExecuteAndReplayIdempotently(t *testing.T) {
 		HTTPCode:         200,
 		Success:          true,
 		Usage: RequestLog{
+			Thinking:       request.Thinking,
 			InputTokens:    8,
 			OutputTokens:   3,
 			UsageStatus:    UsageStatusComplete,
@@ -68,5 +77,12 @@ func TestLogInsertStatementsExecuteAndReplayIdempotently(t *testing.T) {
 	}
 	if attemptCount != 1 {
 		t.Fatalf("relay_attempt 重放不应重复计数，实际 %d 行", attemptCount)
+	}
+	var attemptThinking string
+	if err := db.QueryRow(`SELECT thinking FROM relay_attempt WHERE request_id = ? AND attempt_index = 1`, request.RequestID).Scan(&attemptThinking); err != nil {
+		t.Fatal(err)
+	}
+	if attemptThinking != request.Thinking {
+		t.Fatalf("relay_attempt 思考值错误: %q", attemptThinking)
 	}
 }

@@ -586,6 +586,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		if protocolName, exists := c.Get(services.OpenCodeClientProtocolContextKey); exists {
 			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
 		}
+		thinking := requestedThinkingValue(bodyBytes, clientProtocol)
 		if kind == "pi" {
 			services.LogPiDebugInbound(c.GetString(services.PiPlatformContextKey), endpoint, flattenQuery(c.Request.URL.Query()), cloneHeaders(c.Request.Header), bodyBytes)
 		}
@@ -619,7 +620,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		if kind == "opencode" {
 			opencodeGateway = c.GetString(services.OpenCodeGatewayContextKey)
 		}
-		telemetry := beginRelayTelemetry(c, kind, clientProtocol, telemetryModel, isStream, prs.pricingService, piPlatform)
+		telemetry := beginRelayTelemetry(c, kind, clientProtocol, thinking, telemetryModel, isStream, prs.pricingService, piPlatform)
 		if piPlatform != "" {
 			telemetry.SourceID = piPlatform
 		}
@@ -1469,7 +1470,7 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 		geminiRequest.Query = c.Request.URL.Query()
 		isStream := geminiRequest.IsStream() || strings.EqualFold(geminiRequest.Query.Get("alt"), "sse")
 		requestedModel := geminiRequest.Model
-		telemetry := beginRelayTelemetry(c, "gemini", relayprotocol.GeminiNative, requestedModel, isStream, prs.pricingService, "")
+		telemetry := beginRelayTelemetry(c, "gemini", relayprotocol.GeminiNative, requestedThinkingValue(bodyBytes, relayprotocol.GeminiNative), requestedModel, isStream, prs.pricingService, "")
 		defer telemetry.finish(c)
 
 		// 加载 Gemini providers（已并入 provider 表，与其他平台同一类型）

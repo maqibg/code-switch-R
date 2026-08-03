@@ -763,7 +763,8 @@
       "grok": "Grok Build",
       "gemini": "Gemini",
       "reasonix": "Reasonix",
-      "pi": "Pi"
+      "pi": "Pi",
+      "opencode": "OpenCode"
     },
     "cards": {
       "requests": "今日请求",
@@ -1240,6 +1241,7 @@
         "platform": "平台",
         "provider": "供应商",
         "model": "模型",
+        "thinking": "思考",
         "httpCode": "HTTP",
         "stream": "传输",
         "duration": "耗时",

@@ -121,6 +121,11 @@ var schemaMigrations = []schemaMigration{
 		name:    "gemini-explicit-credentials",
 		up:      migrateGeminiExplicitCredentials,
 	},
+	{
+		version: 13,
+		name:    "request-thinking-log",
+		up:      migrateRequestThinkingColumns,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表

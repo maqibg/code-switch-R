@@ -39,13 +39,16 @@ const (
 type RequestLog struct {
 	ID               int64  `json:"id"`
 	RequestID        string `json:"request_id,omitempty"`
-	Platform         string `json:"platform"` // claude、codex 或 gemini
+	Platform         string `json:"platform"` // claude、codex、gemini、reasonix、pi、grok 或 opencode
 	SourceID         string `json:"source_id,omitempty"`
 	ClientProtocol   string `json:"client_protocol,omitempty"`
 	UpstreamProtocol string `json:"upstream_protocol,omitempty"`
-	RequestedModel   string `json:"requested_model,omitempty"`
-	Model            string `json:"model"`
-	Provider         string `json:"provider"` // 请求发生时的 provider 名（历史记录，改名后不回溯）
+	// Thinking 是客户端请求中明确传入的思考值，不是响应实际消耗的 reasoning_tokens。
+	// 新请求无参数时为 default，无法解析的历史记录为 unknown。
+	Thinking       string `json:"thinking"`
+	RequestedModel string `json:"requested_model,omitempty"`
+	Model          string `json:"model"`
+	Provider       string `json:"provider"` // 请求发生时的 provider 名（历史记录，改名后不回溯）
 	// ProviderID 关联 provider 表。0 表示未知（供应商已删除，或 Gemini
 	// 尚未并入 provider 表）。按 ID 关联使改名无需 UPDATE 日志表。
 	ProviderID        int64  `json:"provider_id,omitempty"`

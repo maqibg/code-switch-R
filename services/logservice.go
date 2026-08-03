@@ -483,6 +483,7 @@ func (ls *LogService) requestLogFromRecord(record xdb.Record) RequestLog {
 		SourceID:          record.GetString("source_id"),
 		ClientProtocol:    record.GetString("client_protocol"),
 		UpstreamProtocol:  record.GetString("upstream_protocol"),
+		Thinking:          record.GetString("thinking"),
 		RequestedModel:    record.GetString("requested_model"),
 		Model:             record.GetString("model"),
 		Provider:          record.GetString("provider"),

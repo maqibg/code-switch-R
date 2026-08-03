@@ -13,7 +13,7 @@ func TestDashboardSuccessExcludesErroredTwoHundredResponses(t *testing.T) {
 	}
 	defer db.Close()
 	_, err = db.Exec(`CREATE TABLE request_log (
-		created_at TEXT, platform TEXT, provider TEXT, model TEXT, upstream_protocol TEXT, http_code INTEGER, error_type TEXT,
+		created_at TEXT, platform TEXT, thinking TEXT DEFAULT 'unknown', provider TEXT, model TEXT, upstream_protocol TEXT, http_code INTEGER, error_type TEXT,
 		input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
 		usage_status TEXT DEFAULT 'complete',
 		reasoning_tokens INTEGER DEFAULT 0, cache_create_tokens INTEGER DEFAULT 0,

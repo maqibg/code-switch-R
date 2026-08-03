@@ -506,7 +506,7 @@ func queryModelRanks(db *sql.DB, window statsWindow, limit int) ([]ModelDailySta
 func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]RequestLog, error) {
 	query := `
 		SELECT
-			id, platform, model, provider, http_code,
+				id, platform, thinking, model, provider, http_code,
 			input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 			reasoning_tokens, is_stream, duration_sec, created_at,
 					input_cost,
@@ -542,6 +542,7 @@ func queryRecentLogs(db *sql.DB, window statsWindow, limit int) ([]RequestLog, e
 		if err := rows.Scan(
 			&logItem.ID,
 			&logItem.Platform,
+			&logItem.Thinking,
 			&logItem.Model,
 			&logItem.Provider,
 			&logItem.HttpCode,
