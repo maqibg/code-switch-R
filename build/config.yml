@@ -11,7 +11,7 @@ info:
   description: "code-switch-R desktop relay controller." # The application description
   copyright: "(c) 2025, code-switch-R" # Copyright text
   comments: "code-switch-R desktop relay controller" # Comments
-  version: "2.6.62" # The application version
+  version: "2.6.63" # The application version
 
 # Dev mode configuration
 dev_mode:

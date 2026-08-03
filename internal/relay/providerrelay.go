@@ -83,6 +83,13 @@ var errClientAbort = errors.New("client aborted, skip failure count")
 // errResponseCommitted 表示响应头或响应体已经发送，后续不得再切换 Provider。
 var errResponseCommitted = errors.New("response already committed")
 
+func clientRequestContextError(c *gin.Context) error {
+	if c == nil || c.Request == nil {
+		return nil
+	}
+	return c.Request.Context().Err()
+}
+
 // NewProviderRelayService 构造转发服务。
 //
 // 不再需要 GeminiService：Gemini provider 已并入 provider 表，
@@ -911,6 +918,10 @@ func (prs *ProviderRelayService) forwardRequest(
 
 	if err != nil {
 		friendly := services.DescribeProxyTransportError(err, proxyConfig)
+		if contextErr := clientRequestContextError(c); contextErr != nil {
+			relayDebugf("[INFO] Provider %s 请求已结束，停止上游转发: %v\n", provider.Name, contextErr)
+			return false, fmt.Errorf("%w: %v", errClientAbort, err)
+		}
 		// resp 存在但 err != nil：可能是客户端中断，不计入失败
 		if resp != nil && requestLog.HttpCode == 0 {
 			relayDebugf("[INFO] Provider %s 响应存在但状态码为0，判定为客户端中断\n", provider.Name)

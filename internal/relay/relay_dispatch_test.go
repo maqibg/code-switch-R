@@ -2,9 +2,13 @@ package relay
 
 import (
 	"codeswitch/services"
+	"context"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 // 失败分类是三套 handler 合并后的唯一判定入口，逐类锁死。
@@ -70,6 +74,20 @@ func TestClientAbortStopsDispatchInBothModes(t *testing.T) {
 	}
 	if action.RecordFailure {
 		t.Error("客户端断开不是 provider 的问题，不应记失败")
+	}
+}
+
+func TestClientRequestContextErrorDetectsDisconnectedRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+	requestContext, cancel := context.WithCancel(context.Background())
+	ginContext.Request = httptest.NewRequest("POST", "/v1/messages", nil).WithContext(requestContext)
+	if clientRequestContextError(ginContext) != nil {
+		t.Fatal("请求未取消时不应报告客户端中断")
+	}
+	cancel()
+	if !errors.Is(clientRequestContextError(ginContext), context.Canceled) {
+		t.Fatal("请求取消后必须识别为客户端中断")
 	}
 }
 

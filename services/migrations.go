@@ -126,6 +126,11 @@ var schemaMigrations = []schemaMigration{
 		name:    "request-thinking-log",
 		up:      migrateRequestThinkingColumns,
 	},
+	{
+		version: 14,
+		name:    "request-credential-log",
+		up:      migrateRequestCredentialLogColumns,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表
