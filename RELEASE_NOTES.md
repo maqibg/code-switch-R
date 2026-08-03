@@ -1,3 +1,12 @@
+# Code Switch v2.6.62
+
+## 更新亮点
+- 日志页新增“思考”列，记录每个请求明确传入的推理参数，并覆盖 Claude、Codex、Gemini、Reasonix、Pi、Grok 和 OpenCode。
+- Gemini 优先显示 `thinkingLevel`，没有等级时保留原始 `thinkingBudget` 数字；不从响应 Token 用量反推思考等级。
+- 重试记录沿用客户端最初的思考参数，无参数显示 `default`，无法恢复的历史记录显示 `unknown`。
+
+---
+
 # Code Switch v2.6.61
 
 ## 更新亮点
