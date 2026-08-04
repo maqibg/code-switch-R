@@ -49,3 +49,24 @@ export const formatBeijingDateTime = (
   }).format(parsed)
 }
 
+export const formatBeijingDateTimeLines = (value?: string) => {
+  const parsed = parseStoredUTCTimestamp(value)
+  if (!parsed) return value || '—'
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BEIJING_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(parsed).reduce<Record<string, string>>((result, part) => {
+    result[part.type] = part.value
+    return result
+  }, {})
+
+  return `${parts.year}/${parts.month}/${parts.day}\n${parts.hour}:${parts.minute}:${parts.second}`
+}
+

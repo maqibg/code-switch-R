@@ -91,7 +91,7 @@
         </thead>
         <tbody>
           <tr v-for="item in logs" :key="item.id">
-            <td>{{ formatTime(item.created_at) }}</td>
+            <td class="time-cell">{{ formatTime(item.created_at) }}</td>
             <td>{{ item.platform || '—' }}</td>
             <td>{{ item.provider || '—' }}</td>
             <td>{{ item.model || '—' }}</td>
@@ -190,7 +190,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { formatBeijingDateTime } from '../../utils/beijingTime'
+import { formatBeijingDateTimeLines } from '../../utils/beijingTime'
 import { compareMoney, decimalMoney, formatDisplayMoney, moneyNumber } from '../../utils/money'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
@@ -221,7 +221,7 @@ import { Line } from 'vue-chartjs'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
@@ -522,7 +522,7 @@ const backToHome = () => {
 }
 
 const formatTime = (value?: string) => {
-  return formatBeijingDateTime(value, locale.value === 'zh' ? 'zh' : 'en')
+  return formatBeijingDateTimeLines(value)
 }
 
 const formatDuration = (value?: number) => {
@@ -588,7 +588,7 @@ const formatCacheHitRate = (cacheRead?: number, totalInputTokens?: number) => {
 }
 
 const formatCurrency = (value?: string | number) => {
-  return formatDisplayMoney(value)
+  return formatDisplayMoney(value, 'USD', 'en-US')
 }
 
 const formatLogCost = (item: RequestLog) => {
@@ -603,7 +603,7 @@ const formatLogCost = (item: RequestLog) => {
 }
 
 const formatSummaryCurrency = (value?: string | number) => {
-  return formatDisplayMoney(value, 'USD', locale.value === 'zh' ? 'zh-CN' : 'en-US', 2)
+  return formatDisplayMoney(value, 'USD', 'en-US', 2)
 }
 
 const statsCards = computed(() => {

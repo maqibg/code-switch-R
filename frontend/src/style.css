@@ -917,6 +917,20 @@ html.dark .mac-sidebar-item:hover {
   white-space: nowrap;
 }
 
+.logs-table,
+.logs-table * {
+  -webkit-user-select: text;
+  user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+.logs-table .time-cell {
+  white-space: pre-line;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
 .logs-table .col-time { width: 180px; }
 .logs-table .col-platform { width: 120px; }
 .logs-table .col-provider { width: 170px; }
@@ -1029,6 +1043,7 @@ html.dark .mac-sidebar-item:hover {
 }
 
 .logs-table th {
+  text-align: center;
   text-transform: uppercase;
   font-size: 0.75rem;
   letter-spacing: 0.08em;
