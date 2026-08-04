@@ -9,10 +9,11 @@ import (
 
 func TestNormalizeFrontendPreferencesPlatformOrder(t *testing.T) {
 	prefs := normalizeFrontendPreferences(FrontendPreferences{
-		Theme:             "dark",
-		Locale:            "zh",
-		HomePlatformOrder: []string{" codex ", "unknown", "codex", "claude"},
-		PiPlatformOrder:   []string{" anthropic ", "", "anthropic", "openai-codex"},
+		Theme:               "dark",
+		Locale:              "zh",
+		HomePlatformOrder:   []string{" codex ", "unknown", "codex", "claude"},
+		PiPlatformOrder:     []string{" anthropic ", "", "anthropic", "openai-codex"},
+		HiddenPlatformPages: []string{" gemini ", "unknown", "gemini", "opencode"},
 	})
 
 	wantHome := []string{"codex", "claude", "gemini", "reasonix", "others"}
@@ -26,6 +27,10 @@ func TestNormalizeFrontendPreferencesPlatformOrder(t *testing.T) {
 	if prefs.VisitedPages == nil {
 		t.Fatal("visited pages must remain a non-nil empty slice")
 	}
+	wantHidden := []string{"gemini", "opencode"}
+	if !slices.Equal(prefs.HiddenPlatformPages, wantHidden) {
+		t.Fatalf("hidden platform pages = %#v, want %#v", prefs.HiddenPlatformPages, wantHidden)
+	}
 }
 
 func TestDefaultFrontendPreferencesIncludesStablePlatformOrder(t *testing.T) {
@@ -35,6 +40,9 @@ func TestDefaultFrontendPreferencesIncludesStablePlatformOrder(t *testing.T) {
 	}
 	if prefs.PiPlatformOrder == nil || len(prefs.PiPlatformOrder) != 0 {
 		t.Fatalf("Pi platform order = %#v, want non-nil empty slice", prefs.PiPlatformOrder)
+	}
+	if prefs.HiddenPlatformPages == nil || len(prefs.HiddenPlatformPages) != 0 {
+		t.Fatalf("hidden platform pages = %#v, want non-nil empty slice", prefs.HiddenPlatformPages)
 	}
 }
 
@@ -54,5 +62,8 @@ func TestLoadFrontendPreferencesAddsPlatformOrderToLegacyFile(t *testing.T) {
 	}
 	if prefs.PiPlatformOrder == nil || len(prefs.PiPlatformOrder) != 0 {
 		t.Fatalf("Pi platform order = %#v, want non-nil empty slice", prefs.PiPlatformOrder)
+	}
+	if prefs.HiddenPlatformPages == nil || len(prefs.HiddenPlatformPages) != 0 {
+		t.Fatalf("hidden platform pages = %#v, want non-nil empty slice", prefs.HiddenPlatformPages)
 	}
 }

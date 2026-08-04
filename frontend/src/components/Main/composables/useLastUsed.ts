@@ -18,7 +18,12 @@ interface LastUsedProvider {
 
 export function useLastUsed(
   state: MainState,
-  deps: { router: Router; loadBlacklistStatus: (tab: string) => Promise<void> },
+  deps: {
+    router: Router
+    loadBlacklistStatus: (tab: string) => Promise<void>
+    autoSwitchPlatform?: boolean
+    currentPlatform?: () => string | undefined
+  },
 ) {
   const lastUsedProviders = reactive<Record<string, LastUsedProvider | null>>({
     claude: null,
@@ -31,6 +36,23 @@ export function useLastUsed(
   let highlightTimer: number | undefined
 
   const switchToTabAndHighlight = (platform: string, providerName: string) => {
+    const currentPlatform = deps.currentPlatform?.()
+    if (deps.autoSwitchPlatform === false) {
+      if (!currentPlatform || platform !== currentPlatform) return
+      lastUsedProviders[platform] = {
+        platform,
+        provider_name: providerName,
+        updated_at: Date.now(),
+      }
+      highlightedProvider.value = providerName
+      if (highlightTimer) clearTimeout(highlightTimer)
+      highlightTimer = window.setTimeout(() => {
+        highlightedProvider.value = null
+      }, 3000)
+      void deps.loadBlacklistStatus(platform)
+      return
+    }
+
     if (platform === 'pi') {
       lastUsedProviders[platform] = {
         platform,

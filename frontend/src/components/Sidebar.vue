@@ -1,59 +1,77 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { fetchCurrentVersion } from '../services/version'
 import {
+  getStoredHiddenPlatformPages,
   getStoredSidebarCollapsed,
   getStoredVisitedPages,
   persistFrontendPreferencesPatch,
   setStoredSidebarCollapsed,
   setStoredVisitedPages,
+  type PlatformPageID,
 } from '../utils/frontendPreferences'
 
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 
-// 动态版本号（从后端获取）
 const appVersion = ref('...')
-onMounted(async () => {
-  try {
-    appVersion.value = await fetchCurrentVersion()
-  } catch {
-    appVersion.value = 'v?.?.?'
-  }
-})
-
-// 侧边栏收起状态
 const isCollapsed = ref(false)
+const platformGroupOpen = ref(true)
+const hiddenPlatforms = ref<PlatformPageID[]>([])
 const visitedPages = ref<Set<string>>(new Set())
 
-onMounted(() => {
+const platforms: Array<{ id: PlatformPageID; name: string; mark: string }> = [
+  { id: 'claude', name: 'Claude Code', mark: 'C' },
+  { id: 'codex', name: 'Codex', mark: 'X' },
+  { id: 'pi', name: 'Pi', mark: 'P' },
+  { id: 'grok', name: 'Grok Build', mark: 'G' },
+  { id: 'reasonix', name: 'Reasonix', mark: 'R' },
+  { id: 'gemini', name: 'Gemini', mark: 'G' },
+  { id: 'opencode', name: 'OpenCode', mark: 'O' },
+]
+
+const primaryItems = [
+  { path: '/logs', icon: 'logs', labelKey: 'sidebar.logs' },
+]
+
+const toolItems = [
+  { path: '/stats', icon: 'stats', labelKey: 'sidebar.stats' },
+  { path: '/prompts', icon: 'prompts', labelKey: 'sidebar.prompts' },
+  { path: '/mcp', icon: 'mcp', labelKey: 'sidebar.mcp' },
+  { path: '/env', icon: 'env', labelKey: 'sidebar.env' },
+  { path: '/pricing', icon: 'pricing', labelKey: 'sidebar.pricing' },
+  { path: '/console', icon: 'console', labelKey: 'sidebar.console' },
+]
+
+const visiblePlatforms = computed(() => platforms.filter(({ id }) => !hiddenPlatforms.value.includes(id)))
+const currentPath = computed(() => route.path)
+
+const loadPreferences = () => {
   isCollapsed.value = getStoredSidebarCollapsed()
+  hiddenPlatforms.value = getStoredHiddenPlatformPages()
   visitedPages.value = new Set(getStoredVisitedPages())
-  // 标记当前页面为已访问
-  markAsVisited(route.path)
-})
-
-// 监听路由变化，标记为已访问
-watch(() => route.path, (newPath) => {
-  markAsVisited(newPath)
-})
-
-function markAsVisited(path: string) {
-  if (!visitedPages.value.has(path)) {
-    visitedPages.value.add(path)
-    const pages = [...visitedPages.value]
-    setStoredVisitedPages(pages)
-    void persistFrontendPreferencesPatch({ visited_pages: pages })
-  }
 }
 
-// 判断是否显示 NEW 徽章（仅在未访问时显示）
-function shouldShowNew(item: NavItem): boolean {
-  return item.isNew === true && !visitedPages.value.has(item.path)
+const markAsVisited = (path: string) => {
+  if (visitedPages.value.has(path)) return
+  visitedPages.value.add(path)
+  const pages = [...visitedPages.value]
+  setStoredVisitedPages(pages)
+  void persistFrontendPreferencesPatch({ visited_pages: pages })
 }
+
+const isActive = (path: string) => {
+  if (path === '/logs') return currentPath.value === '/' || currentPath.value === '/logs'
+  return currentPath.value === path || currentPath.value.startsWith(`${path}/`)
+}
+
+const isPlatformActive = (id: PlatformPageID) => currentPath.value === `/platform/${id}` || currentPath.value.startsWith(`/platform/${id}/`)
+const shouldShowNew = (path: string) => path !== '/logs' && !visitedPages.value.has(path)
+
+const navigate = (path: string) => { void router.push(path) }
 
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
@@ -61,340 +79,149 @@ const toggleCollapse = () => {
   void persistFrontendPreferencesPatch({ sidebar_collapsed: isCollapsed.value })
 }
 
-interface NavItem {
-  path: string
-  icon: string
-  labelKey: string
-  isNew?: boolean
-}
+const togglePlatformGroup = () => { platformGroupOpen.value = !platformGroupOpen.value }
 
-const navItems: NavItem[] = [
-  { path: '/', icon: 'home', labelKey: 'sidebar.home' },
-  { path: '/pi', icon: 'cpu', labelKey: 'sidebar.pi', isNew: true },
-  { path: '/opencode', icon: 'zap', labelKey: 'sidebar.opencode', isNew: true },
-  { path: '/oauth-accounts', icon: 'key-round', labelKey: 'sidebar.accounts', isNew: true },
-  { path: '/pricing', icon: 'dollar-sign', labelKey: 'sidebar.pricing', isNew: true },
-  { path: '/stats', icon: 'pie-chart', labelKey: 'sidebar.stats' },
-  { path: '/prompts', icon: 'file-text', labelKey: 'sidebar.prompts', isNew: true },
-  { path: '/mcp', icon: 'plug', labelKey: 'sidebar.mcp' },
-  { path: '/env', icon: 'search', labelKey: 'sidebar.env', isNew: true },
-  { path: '/logs', icon: 'bar-chart', labelKey: 'sidebar.logs' },
-  { path: '/console', icon: 'terminal', labelKey: 'sidebar.console' },
-  { path: '/settings', icon: 'settings', labelKey: 'sidebar.settings' },
-]
+const handleVisibilityChanged = () => { hiddenPlatforms.value = getStoredHiddenPlatformPages() }
 
-const currentPath = computed(() => route.path)
+onMounted(async () => {
+  loadPreferences()
+  markAsVisited(route.path)
+  window.addEventListener('platform-visibility-updated', handleVisibilityChanged)
+  try {
+    appVersion.value = await fetchCurrentVersion()
+  } catch {
+    appVersion.value = 'v?.?.?'
+  }
+})
 
-const navigate = (path: string) => {
-  router.push(path)
-}
+watch(() => route.path, (path) => markAsVisited(path))
+
+onUnmounted(() => window.removeEventListener('platform-visibility-updated', handleVisibilityChanged))
 </script>
 
 <template>
-  <nav class="mac-sidebar" :class="{ collapsed: isCollapsed }">
+  <nav class="mac-sidebar" :class="{ collapsed: isCollapsed }" aria-label="主导航">
     <div class="sidebar-header">
-      <span class="sidebar-title" v-if="!isCollapsed">code-switch-R</span>
-      <button class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? 'Expand' : 'Collapse'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline v-if="isCollapsed" points="9 18 15 12 9 6"></polyline>
-          <polyline v-else points="15 18 9 12 15 6"></polyline>
+      <span v-if="!isCollapsed" class="sidebar-title">code-switch-R</span>
+      <button class="collapse-btn" type="button" :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'" @click="toggleCollapse">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polyline v-if="isCollapsed" points="9 18 15 12 9 6" />
+          <polyline v-else points="15 18 9 12 15 6" />
         </svg>
       </button>
     </div>
 
     <div class="nav-list">
+      <div class="nav-section-label" v-if="!isCollapsed">工作区</div>
       <button
-        v-for="item in navItems"
+        v-for="item in primaryItems"
         :key="item.path"
+        type="button"
         class="nav-item"
-        :class="{ active: currentPath === item.path }"
+        :class="{ active: isActive(item.path) }"
         :title="isCollapsed ? t(item.labelKey) : ''"
         @click="navigate(item.path)"
       >
-        <!-- Home -->
-        <svg v-if="item.icon === 'home'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        <svg v-if="item.icon === 'logs'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M5 4h14v16H5z" /><path d="M8 8h8M8 12h8M8 16h5" />
         </svg>
-
-        <!-- Pi -->
-        <svg v-else-if="item.icon === 'cpu'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-          <rect x="5" y="5" width="14" height="14" rx="2"></rect>
-          <rect x="9" y="9" width="6" height="6" rx="1"></rect>
-          <path d="M9 1v4M15 1v4M9 19v4M15 19v4M19 9h4M19 14h4M1 9h4M1 14h4"></path>
-        </svg>
-
-        <!-- Model Pricing -->
-        <svg v-else-if="item.icon === 'dollar-sign'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="1" x2="12" y2="23"></line>
-          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-        </svg>
-
-        <!-- File Text -->
-        <svg v-else-if="item.icon === 'file-text'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="16" y1="13" x2="8" y2="13"></line>
-          <line x1="16" y1="17" x2="8" y2="17"></line>
-          <polyline points="10 9 9 9 8 9"></polyline>
-        </svg>
-
-        <!-- Pie Chart -->
-        <svg v-else-if="item.icon === 'pie-chart'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21.21 15.89A10 10 0 1 1 8.11 2.79"></path>
-          <path d="M12 2v10h10"></path>
-        </svg>
-
-        <!-- Plug -->
-        <svg v-else-if="item.icon === 'plug'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 22v-5"></path>
-          <path d="M9 8V2"></path>
-          <path d="M15 8V2"></path>
-          <path d="M18 8v5a6 6 0 0 1-12 0V8h12z"></path>
-        </svg>
-
-        <!-- Activity -->
-        <svg v-else-if="item.icon === 'activity'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-
-        <!-- Zap -->
-        <svg v-else-if="item.icon === 'zap'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-
-        <!-- Search -->
-        <svg v-else-if="item.icon === 'search'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-
-        <!-- OAuth Accounts -->
-        <svg v-else-if="item.icon === 'key-round'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="7.5" cy="15.5" r="3.5"></circle>
-          <path d="M10 13l9-9 2 2-2 2 2 2-2 2-2-2-5 5"></path>
-        </svg>
-
-        <!-- Bar Chart -->
-        <svg v-else-if="item.icon === 'bar-chart'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="20" x2="12" y2="10"></line>
-          <line x1="18" y1="20" x2="18" y2="4"></line>
-          <line x1="6" y1="20" x2="6" y2="16"></line>
-        </svg>
-
-        <!-- Terminal -->
-        <svg v-else-if="item.icon === 'terminal'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="4 17 10 11 4 5"></polyline>
-          <line x1="12" y1="19" x2="20" y2="19"></line>
-        </svg>
-
-        <!-- Settings -->
-        <svg v-else-if="item.icon === 'settings'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-
         <span class="nav-label" v-if="!isCollapsed">{{ t(item.labelKey) }}</span>
-        <span v-if="shouldShowNew(item) && !isCollapsed" class="new-badge">NEW</span>
+      </button>
+
+      <div class="platform-group">
+        <button class="nav-group-heading" type="button" :class="{ collapsed: !platformGroupOpen }" :title="isCollapsed ? '平台' : ''" @click="togglePlatformGroup">
+          <span class="nav-group-heading-content">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></svg>
+            <span v-if="!isCollapsed">平台</span>
+          </span>
+          <svg v-if="!isCollapsed" class="group-caret" :class="{ rotated: !platformGroupOpen }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+        <div v-if="platformGroupOpen" class="platform-list">
+          <button
+            v-for="platform in visiblePlatforms"
+            :key="platform.id"
+            type="button"
+            class="platform-item"
+            :class="{ active: isPlatformActive(platform.id) }"
+            :title="isCollapsed ? platform.name : ''"
+            @click="navigate(`/platform/${platform.id}`)"
+          >
+            <span class="platform-mark" :data-platform="platform.id">{{ platform.mark }}</span>
+            <span v-if="!isCollapsed" class="nav-label">{{ platform.name }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="nav-section-label nav-section-label-spaced" v-if="!isCollapsed">数据与工具</div>
+      <button
+        v-for="item in toolItems"
+        :key="item.path"
+        type="button"
+        class="nav-item"
+        :class="{ active: isActive(item.path) }"
+        :title="isCollapsed ? t(item.labelKey) : ''"
+        @click="navigate(item.path)"
+      >
+        <svg v-if="item.icon === 'stats'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg>
+        <svg v-else-if="item.icon === 'prompts'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></svg>
+        <svg v-else-if="item.icon === 'mcp'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 7V2M15 7V2M6 7h12v5a6 6 0 0 1-12 0Z" /><path d="M12 18v4" /></svg>
+        <svg v-else-if="item.icon === 'env'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4M8 11h6" /></svg>
+        <svg v-else-if="item.icon === 'pricing'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2v20M17 6.5C16 5.5 14.6 5 12.8 5 10 5 8 6.5 8 8.7c0 2.5 2.4 3.4 5 4.1 2.6.7 5 1.6 5 4.1 0 2.2-2 3.7-4.8 3.7-1.9 0-3.5-.5-4.7-1.6" /></svg>
+        <svg v-else-if="item.icon === 'console'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 7 5 5-5 5M13 17h6" /></svg>
+        <span class="nav-label" v-if="!isCollapsed">{{ t(item.labelKey) }}</span>
+        <span v-if="!isCollapsed && shouldShowNew(item.path)" class="new-badge">NEW</span>
       </button>
     </div>
 
     <div class="sidebar-footer" v-if="!isCollapsed">
-      <span class="version">{{ appVersion }}</span>
+      <button type="button" class="nav-item footer-settings" :class="{ active: isActive('/settings') }" @click="navigate('/settings')">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5.4 15H5a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 10.85 5H11a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.6 11H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
+        <span class="nav-label">{{ t('sidebar.settings') }}</span>
+      </button>
+      <div class="sidebar-meta"><span class="status-dot"></span><span>Relay 运行中</span><span class="version">{{ appVersion }}</span></div>
     </div>
+    <div v-else class="sidebar-footer collapsed-footer"><span class="status-dot"></span></div>
   </nav>
 </template>
 
 <style scoped>
-.mac-sidebar {
-  width: 200px;
-  min-width: 200px;
-  background: var(--mac-surface);
-  border-right: 1px solid var(--mac-border);
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  transition: width 0.2s ease, min-width 0.2s ease;
-}
-
-.mac-sidebar.collapsed {
-  width: 48px;
-  min-width: 48px;
-}
-
-.sidebar-header {
-  /* macOS 红绿灯按钮区域约 52px 高，添加额外 padding */
-  padding: 52px 16px 16px;
-  border-bottom: 1px solid var(--mac-border);
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  justify-items: center;
-  gap: 8px;
-  /* 拖拽区域 */
-  -webkit-app-region: drag;
-}
-
-.sidebar-header * {
-  /* 按钮等元素需要可点击 */
-  -webkit-app-region: no-drag;
-}
-
-.mac-sidebar.collapsed .sidebar-header {
-  padding: 52px 0 16px;
-  grid-template-columns: 1fr;
-  justify-items: center;
-}
-
-.sidebar-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--mac-text);
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  grid-column: 2;
-  justify-self: center;
-}
-
-.collapse-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  color: var(--mac-text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-  grid-column: 3;
-  justify-self: end;
-}
-
-.mac-sidebar.collapsed .collapse-btn {
-  grid-column: 1;
-  justify-self: center;
-}
-
-.collapse-btn:hover {
-  background: rgba(15, 23, 42, 0.06);
-  color: var(--mac-text);
-}
-
-html.dark .collapse-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.collapse-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-.nav-list {
-  flex: 1;
-  padding: 12px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
-  scrollbar-width: none; /* Firefox 隐藏滚动条但保留滚动 */
-  -ms-overflow-style: none; /* IE/Edge Legacy 隐藏滚动条 */
-}
-
-.nav-list::-webkit-scrollbar {
-  display: none; /* WebKit 隐藏滚动条 */
-}
-
-.mac-sidebar.collapsed .nav-list {
-  padding: 12px 0;
-  align-items: center;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: var(--mac-text-secondary);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  /* 横向留出缓冲，避免被父级 overflow 裁切圆角 */
-  box-sizing: border-box;
-  width: calc(100% - 8px);
-  margin: 0 4px;
-  text-align: left;
-}
-
-.mac-sidebar.collapsed .nav-item {
-  /* 收起态固定宽度，确保图标居中 */
-  width: 36px;
-  margin: 0 auto;
-  padding: 10px 0;
-  justify-content: center;
-}
-
-.nav-item:hover {
-  background: rgba(15, 23, 42, 0.06);
-  color: var(--mac-text);
-}
-
-html.dark .nav-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.nav-item.active {
-  background: var(--mac-accent);
-  color: #fff;
-}
-
-.nav-item.active:hover {
-  background: var(--mac-accent);
-  color: #fff;
-}
-
-.nav-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-.nav-label {
-  flex: 1;
-}
-
-.new-badge {
-  font-size: 0.6rem;
-  font-weight: 700;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.nav-item.active .new-badge {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-}
-
-.sidebar-footer {
-  padding: 12px 16px;
-  border-top: 1px solid var(--mac-border);
-}
-
-.version {
-  font-size: 0.75rem;
-  color: var(--mac-text-secondary);
-  opacity: 0.6;
-}
+.mac-sidebar { width: 216px; min-width: 216px; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--mac-sidebar); border-right: 1px solid var(--mac-sidebar-border); transition: width .2s ease, min-width .2s ease; }
+.mac-sidebar.collapsed { width: 52px; min-width: 52px; }
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; min-height: 70px; padding: 24px 14px 10px 18px; border-bottom: 1px solid var(--mac-sidebar-border); -webkit-app-region: drag; }
+.sidebar-header * { -webkit-app-region: no-drag; }
+.sidebar-title { overflow: hidden; color: var(--mac-text); font-size: 15px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
+.collapse-btn { display: grid; width: 28px; height: 28px; place-items: center; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; }
+.collapse-btn:hover, .nav-item:hover, .platform-item:hover, .nav-group-heading:hover { background: color-mix(in srgb, var(--mac-text) 7%, transparent); color: var(--mac-text); }
+.collapse-btn svg { width: 16px; height: 16px; }
+.nav-list { flex: 1; overflow-y: auto; padding: 12px 8px; scrollbar-width: none; }
+.nav-list::-webkit-scrollbar { display: none; }
+.nav-section-label { padding: 4px 10px 7px; color: var(--mac-text-secondary); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.nav-section-label-spaced { margin-top: 12px; }
+.nav-item, .platform-item, .nav-group-heading { width: 100%; display: flex; align-items: center; gap: 9px; min-height: 34px; margin: 1px 0; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; font-weight: 550; text-align: left; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.nav-item.active, .platform-item.active { background: color-mix(in srgb, var(--mac-accent) 14%, transparent); color: var(--mac-text); }
+.nav-item.active .nav-icon, .platform-item.active .platform-mark { color: var(--mac-accent); }
+.nav-icon { width: 16px; height: 16px; flex: 0 0 auto; }
+.nav-label { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
+.nav-group-heading { justify-content: space-between; color: var(--mac-text); font-size: 11px; font-weight: 700; }
+.nav-group-heading-content { display: flex; align-items: center; gap: 9px; }
+.group-caret { width: 14px; height: 14px; transition: transform .15s ease; }
+.group-caret.rotated { transform: rotate(-90deg); }
+.platform-list { display: grid; gap: 1px; padding: 2px 0 4px 10px; }
+.platform-item { min-height: 32px; }
+.platform-mark { display: inline-grid; width: 20px; height: 20px; place-items: center; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--platform-color, var(--mac-accent)) 35%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 11%, transparent); color: var(--platform-color, var(--mac-accent)); font-size: 10px; font-weight: 750; }
+.platform-mark[data-platform="claude"] { --platform-color: #b76645; }.platform-mark[data-platform="codex"] { --platform-color: #277b71; }.platform-mark[data-platform="pi"] { --platform-color: #89507d; }.platform-mark[data-platform="grok"] { --platform-color: #506b80; }.platform-mark[data-platform="reasonix"] { --platform-color: #82633f; }.platform-mark[data-platform="gemini"] { --platform-color: #3d70c9; }.platform-mark[data-platform="opencode"] { --platform-color: #5c7580; }
+.new-badge { color: var(--mac-accent); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.sidebar-footer { padding: 8px 8px 14px; border-top: 1px solid var(--mac-sidebar-border); }
+.footer-settings { margin-bottom: 8px; }
+.sidebar-meta { display: flex; align-items: center; gap: 6px; padding: 4px 10px; color: var(--mac-text-secondary); font-size: 10px; }
+.status-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: #2eaa67; box-shadow: 0 0 0 3px color-mix(in srgb, #2eaa67 14%, transparent); }
+.version { margin-left: auto; opacity: .65; }
+.collapsed-footer { display: grid; place-items: center; padding: 13px 0; }
+.mac-sidebar.collapsed .sidebar-header { justify-content: center; padding: 24px 0 10px; }
+.mac-sidebar.collapsed .collapse-btn { margin: 0; }
+.mac-sidebar.collapsed .nav-list { padding-inline: 8px; }
+.mac-sidebar.collapsed .nav-item, .mac-sidebar.collapsed .platform-item, .mac-sidebar.collapsed .nav-group-heading { justify-content: center; padding-inline: 0; }
+.mac-sidebar.collapsed .platform-list { padding-left: 0; }
+.mac-sidebar.collapsed .platform-mark { width: 24px; height: 24px; }
+@media (max-width: 760px) { .mac-sidebar { width: 190px; min-width: 190px; } .mac-sidebar.collapsed { width: 52px; min-width: 52px; } }
 </style>

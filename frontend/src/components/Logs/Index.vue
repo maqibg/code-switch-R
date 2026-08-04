@@ -1,9 +1,10 @@
 <template>
   <div class="logs-page">
     <div class="logs-header">
-      <BaseButton variant="outline" type="button" @click="backToHome">
-        {{ t('components.logs.back') }}
-      </BaseButton>
+      <div class="logs-identity">
+        <p class="logs-eyebrow">REQUEST LOG</p>
+        <h1>{{ t('sidebar.logs') }}</h1>
+      </div>
       <div class="refresh-indicator">
         <span>{{ t('components.logs.nextRefresh', { seconds: countdown }) }}</span>
         <BaseButton size="sm" :disabled="loading" @click="manualRefresh">
@@ -188,7 +189,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { formatBeijingDateTimeLines } from '../../utils/beijingTime'
 import { compareMoney, decimalMoney, formatDisplayMoney, moneyNumber } from '../../utils/money'
@@ -222,7 +223,6 @@ import { Line } from 'vue-chartjs'
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
 const { t } = useI18n()
-const router = useRouter()
 const route = useRoute()
 
 const logs = ref<RequestLog[]>([])
@@ -517,9 +517,6 @@ const prevPage = () => {
   }
 }
 
-const backToHome = () => {
-  router.push('/')
-}
 
 const formatTime = (value?: string) => {
   return formatBeijingDateTimeLines(value)
@@ -696,6 +693,9 @@ useActivePolling(startPolling, stopCountdown)
 </script>
 
 <style scoped>
+.logs-identity { display: grid; gap: 3px; }
+.logs-identity h1 { margin: 0; color: var(--mac-text); font-size: 1.25rem; }
+.logs-eyebrow { margin: 0; color: var(--mac-text-secondary); font-size: .68rem; letter-spacing: .12em; }
 .logs-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));

@@ -7,6 +7,7 @@
   --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
   --mac-surface: #ffffff;
   --mac-surface-strong: #f5f5f7;
+  --mac-bg: #eef1f6;
   --mac-border: rgba(15, 23, 42, 0.12);
   --mac-divider: rgba(15, 23, 42, 0.12);
   --mac-sidebar: #f2f3f5;
@@ -36,6 +37,7 @@ html.dark {
   color-scheme: dark;
   --mac-surface: #1c1e24;
   --mac-surface-strong: #21232c;
+  --mac-bg: #12141a;
   --mac-border: rgba(255, 255, 255, 0.06);
   --mac-divider: rgba(255, 255, 255, 0.08);
   --mac-sidebar: #181a20;
@@ -1822,9 +1824,10 @@ html.dark .secondary-btn:active:not(:disabled) {
   width: 100%;
 }
 .general-page {
-  width: 100%;
-  margin: 0;
-  padding: 32px 48px 48px;
+  width: min(1180px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 24px 0 48px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 32px;
@@ -1839,7 +1842,7 @@ html.dark .secondary-btn:active:not(:disabled) {
 }
 
 /* 全局按钮样式修复 - 防止 Tailwind Preflight 导致的布局问题 */
-button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button)) {
+button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.layout-tab):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button)) {
   display: inline-flex !important;
   flex-direction: row !important;
   align-items: center !important;
@@ -1851,6 +1854,10 @@ button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab
   padding: 10px 20px !important;
   box-sizing: border-box !important;
   white-space: nowrap !important;
+}
+
+@media (max-width: 760px) {
+  .general-page { width: calc(100% - 32px); padding-bottom: 36px; }
 }
 
 /* 修复按钮内 SVG 被 Tailwind preflight 设置为 display:block 导致的布局问题 */

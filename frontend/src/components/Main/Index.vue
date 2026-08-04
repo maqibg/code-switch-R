@@ -1,6 +1,6 @@
 <template>
-  <div class="main-shell" @click="closePlatformOrderMenu">
-    <div class="global-actions">
+  <div class="main-shell" :class="{ 'embedded-main-shell': embedded }" @click="closePlatformOrderMenu">
+    <div v-if="!embedded" class="global-actions">
       <p class="global-eyebrow">{{ t('components.main.hero.eyebrow') }}</p>
       <button
         class="ghost-icon github-icon"
@@ -68,8 +68,8 @@
         </svg>
       </button>
     </div>
-    <div class="contrib-page">
-      <section class="contrib-hero">
+    <div class="contrib-page" :class="{ 'embedded-contrib-page': embedded }">
+      <section v-if="!embedded" class="contrib-hero">
         <h1 v-if="showHomeTitle">{{ t('components.main.hero.title') }}</h1>
         <!-- <p class="lead">
           {{ t('components.main.hero.lead') }}
@@ -77,7 +77,7 @@
       </section>
 
       <section
-        v-if="showHeatmap"
+        v-if="!embedded && showHeatmap"
         ref="heatmapContainerRef"
         class="contrib-wall"
         :aria-label="t('components.main.heatmap.ariaLabel')"
@@ -124,7 +124,7 @@
 
       <section class="automation-section">
       <div class="section-header">
-        <div class="tab-group" role="tablist" :aria-label="t('components.main.tabs.ariaLabel')">
+          <div v-if="!embedded" class="tab-group" role="tablist" :aria-label="t('components.main.tabs.ariaLabel')">
           <button
             v-for="(tab, idx) in tabs"
             :key="tab.id"
@@ -160,6 +160,7 @@
           </template>
           <template v-else>
           <div v-if="!isGrokBuildTab" class="relay-toggle" :aria-label="currentProxyLabel">
+            <span class="relay-label">{{ currentProxyLabel }}</span>
             <div class="relay-switch">
               <label class="mac-switch sm">
                 <input
@@ -174,6 +175,7 @@
             </div>
           </div>
           <div v-else class="relay-toggle" :aria-label="t('grok.actions.enableRelay')">
+            <span class="relay-label">{{ t('grok.actions.enableRelay') }}</span>
             <div class="relay-switch">
               <label class="mac-switch sm">
                 <input type="checkbox" :checked="grokRelayActive" :disabled="grokRuntimeBusy || Boolean(grokRuntime?.conflict) || (!grokRelayActive && !hasEligibleGrokRelayProvider)" @change="onGrokRelayToggle" />
@@ -459,7 +461,7 @@
       </template>
       </section>
 
-      <GeminiStatusPanel v-if="activeTab === 'gemini'" />
+      <GeminiStatusPanel v-if="!embedded && activeTab === 'gemini'" />
 
       <div
         v-if="platformOrderMenu.open"
@@ -494,7 +496,13 @@
       @close="closeModal"
     >
       <form class="vendor-form" @submit.prevent="submitModal">
-                <label class="form-field">
+                <div class="provider-modal-tabs" role="tablist" aria-label="供应商设置分类">
+                  <button type="button" role="tab" :aria-selected="providerModalTab === 'basic'" :class="{ active: providerModalTab === 'basic' }" @click="providerModalTab = 'basic'">基本信息</button>
+                  <button type="button" role="tab" :aria-selected="providerModalTab === 'auth'" :class="{ active: providerModalTab === 'auth' }" @click="providerModalTab = 'auth'">认证方式</button>
+                  <button type="button" role="tab" :aria-selected="providerModalTab === 'routing'" :class="{ active: providerModalTab === 'routing' }" @click="providerModalTab = 'routing'">请求路由</button>
+                  <button type="button" role="tab" :aria-selected="providerModalTab === 'advanced'" :class="{ active: providerModalTab === 'advanced' }" @click="providerModalTab = 'advanced'">高级设置</button>
+                </div>
+                <label v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.name') }}</span>
                   <BaseInput
                     v-model="modalState.form.name"
@@ -504,7 +512,7 @@
                   />
                 </label>
 
-                <label class="form-field">
+                <label v-show="providerModalTab === 'basic'" class="form-field">
                   <span class="label-row">
                     {{ t('components.main.form.labels.apiUrl') }}
                     <span v-if="modalState.errors.apiUrl" class="field-error">
@@ -520,7 +528,7 @@
                   />
                 </label>
 
-                <label class="form-field">
+                <label v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.officialSite') }}</span>
                   <BaseInput
                     v-model="modalState.form.officialSite"
@@ -529,24 +537,7 @@
                   />
                 </label>
 
-                <div v-if="isOAuthPlatformModal" class="form-field">
-                  <span>Credential 类型</span>
-                  <select v-model="modalState.form.credentialType" class="gemini-select">
-                    <option v-for="option in oauthCredentialOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                  </select>
-                  <span class="field-hint">OAuth 账号由账号页统一刷新；Provider 只保存 credentialRef。</span>
-                </div>
-
-                <div v-if="isOAuthCredential" class="form-field">
-                  <span>OAuth 账号</span>
-                  <select v-model="modalState.form.credentialRef" class="gemini-select" required>
-                    <option value="" disabled>选择已保存账号</option>
-                    <option v-for="option in oauthAccountOptions" :key="option.value" :value="option.value">{{ option.label }} · {{ option.status }}</option>
-                  </select>
-                  <span class="field-hint">没有账号时先打开侧边栏的 OAuth 账号页面完成登录或导入。</span>
-                </div>
-
-                <label v-if="!isOAuthCredential" class="form-field">
+                <label v-if="!isOAuthCredential" v-show="providerModalTab === 'auth'" class="form-field">
                   <span>{{ t('components.main.form.labels.apiKey') }}</span>
                   <BaseInput
                     v-model="modalState.form.apiKey"
@@ -555,22 +546,32 @@
                   />
                 </label>
 
-                <div v-if="isGeminiProviderModal" class="form-field">
+                <div v-if="!isGeminiProviderModal && isOAuthCredential" v-show="providerModalTab === 'auth'" class="form-field legacy-credential-field">
+                  <span>当前凭据</span>
+                  <span class="field-hint">当前供应商仍保存 OAuth 凭据。账号登录、刷新和应用请前往账号页；保存时会保留此配置。</span>
+                </div>
+
+                <div v-if="isGeminiProviderModal && isOAuthCredential" v-show="providerModalTab === 'auth'" class="form-field legacy-credential-field">
+                  <span>当前凭据</span>
+                  <span class="field-hint">当前供应商仍保存 OAuth 凭据。账号登录、刷新和应用请前往 Gemini 的账号页；保存时会保留此配置。</span>
+                </div>
+
+                <div v-else-if="isGeminiProviderModal" v-show="providerModalTab === 'auth'" class="form-field">
                   <span>Credential 类型</span>
                   <select v-model="modalState.form.credentialType" class="gemini-select">
                     <option v-for="option in geminiCredentialOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                   </select>
-                  <span class="field-hint">CLI OAuth 只能用于 Gemini CLI；Native Relay 不会选择它。</span>
+                  <span class="field-hint">Gemini CLI OAuth 在账号页管理；这里仅配置 API 供应商认证。</span>
                 </div>
 
-                <div v-if="isGeminiProviderModal" class="form-field">
+                <div v-if="isGeminiProviderModal" v-show="providerModalTab === 'routing'" class="form-field">
                   <span>Gemini 端点类型</span>
                   <select v-model="modalState.form.endpointKind" class="gemini-select">
                     <option v-for="option in geminiEndpointOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                   </select>
                 </div>
 
-                <div v-if="isGeminiProviderModal" class="gemini-inline-fields">
+                <div v-if="isGeminiProviderModal" v-show="providerModalTab === 'routing'" class="gemini-inline-fields">
                   <label class="form-field">
                     <span>API 版本</span>
                     <select v-model="modalState.form.apiVersion" class="gemini-select">
@@ -589,7 +590,7 @@
                 </div>
 
                 <!-- API 端点（可选）-->
-                <label class="form-field">
+                <label v-show="providerModalTab === 'routing'" class="form-field">
                   <span>{{ t('components.main.form.labels.apiEndpoint') }}</span>
                   <BaseInput
                     v-model="modalState.form.apiEndpoint"
@@ -600,7 +601,7 @@
                 </label>
 
                 <!-- 上游协议类型 -->
-                <div v-if="showUpstreamProtocolField" class="form-field">
+                <div v-if="showUpstreamProtocolField" v-show="providerModalTab === 'routing'" class="form-field">
                   <span>{{ t('components.main.form.labels.upstreamProtocol') }}</span>
                   <Listbox v-model="modalState.form.upstreamProtocol" v-slot="{ open }">
                     <div class="level-select">
@@ -631,7 +632,7 @@
                   <span class="field-hint">{{ upstreamProtocolHint }}</span>
                 </div>
 
-                <div v-if="isGrokProviderModal" class="form-field">
+                <div v-if="isGrokProviderModal" v-show="providerModalTab === 'routing'" class="form-field">
                   <GrokUpstreamModelField
                     v-model="modalState.form.grokUpstreamModel"
                     :provider="modelDiscoveryProvider"
@@ -639,7 +640,7 @@
                   <span class="field-hint">{{ t('grok.form.upstreamModelHint') }}</span>
                 </div>
 
-                <div v-if="modalState.tabId === 'codex'" class="form-field switch-field">
+                <div v-if="modalState.tabId === 'codex'" v-show="providerModalTab === 'routing'" class="form-field switch-field">
                   <span>{{ t('components.main.form.labels.codexReasoningContinue') }}</span>
                   <div class="switch-inline">
                     <label class="mac-switch">
@@ -657,7 +658,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.codexReasoningContinue') }}</span>
                 </div>
 
-                <div v-if="modalState.tabId === 'codex'" class="form-field switch-field">
+                <div v-if="modalState.tabId === 'codex'" v-show="providerModalTab === 'routing'" class="form-field switch-field">
                   <span>{{ t('components.main.form.labels.codexReasoningContinueLog') }}</span>
                   <div class="switch-inline">
                     <label class="mac-switch">
@@ -685,7 +686,7 @@
                 </div>
 
                 <!-- 认证方式 -->
-                <div class="form-field">
+                <div v-show="providerModalTab === 'auth'" class="form-field">
                   <span>{{ t('components.main.form.labels.connectivityAuthType') }}</span>
                   <Listbox v-model="selectedAuthType" v-slot="{ open }">
                     <div class="level-select">
@@ -720,7 +721,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.connectivityAuthType') }}</span>
                 </div>
 
-                <label class="form-field">
+                <label v-show="providerModalTab === 'routing'" class="form-field">
                   <span>{{ t('components.main.form.labels.modelsEndpoint') }}</span>
                   <BaseInput
                     v-model="modalState.form.modelsEndpoint"
@@ -729,7 +730,7 @@
                   />
                 </label>
 
-                <div class="form-field">
+                <div v-show="providerModalTab === 'advanced'" class="form-field">
                   <span>{{ t('components.main.form.labels.userAgentPreset') }}</span>
                   <Listbox v-model="modalState.form.userAgentPreset" v-slot="{ open }">
                     <div class="level-select">
@@ -764,11 +765,11 @@
                   />
                 </div>
 
-                <div class="form-field">
+                <div v-show="providerModalTab === 'advanced'" class="form-field">
                   <HeaderEditor v-model="modalState.form.headers" />
                 </div>
 
-                <div class="form-field">
+                <div v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.icon') }}</span>
                   <Listbox v-model="modalState.form.icon" v-slot="{ open }" class="w-full">
                     <div class="icon-select">
@@ -809,7 +810,7 @@
                   </Listbox>
                 </div>
 
-                <div class="form-field">
+                <div v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.level') }}</span>
                   <Listbox v-model="modalState.form.level" v-slot="{ open }">
                     <div class="level-select">
@@ -842,7 +843,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.level') }}</span>
                 </div>
 
-                <div v-if="!isGrokProviderModal" class="form-field">
+                <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'advanced'" class="form-field">
                   <ModelWhitelistEditor
                     v-model="modalState.form.supportedModels"
                     :platform="modalState.tabId"
@@ -850,11 +851,11 @@
                   />
                 </div>
 
-                <div v-if="!isGrokProviderModal" class="form-field">
+                <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'advanced'" class="form-field">
                   <ModelMappingEditor v-model="modalState.form.modelMapping" />
                 </div>
 
-                <div v-if="!isGrokProviderModal" class="form-field">
+                <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'advanced'" class="form-field">
                   <CLIConfigEditor
                     :platform="activeTab as CLIPlatform"
                     v-model="modalState.form.cliConfig"
@@ -865,7 +866,7 @@
                   />
                 </div>
 
-                <div class="form-field switch-field">
+                <div v-show="providerModalTab === 'basic'" class="form-field switch-field">
                   <span>{{ t('components.main.form.labels.enabled') }}</span>
                   <div class="switch-inline">
                     <label class="mac-switch">
@@ -878,7 +879,7 @@
                   </div>
                 </div>
 
-                <div class="form-field switch-field">
+                <div v-show="providerModalTab === 'basic'" class="form-field switch-field">
                   <span>{{ t('components.main.form.labels.providerProxy') }}</span>
                   <div class="switch-inline">
                     <label class="mac-switch">
@@ -892,7 +893,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.providerProxy') }}</span>
                 </div>
 
-                <div class="form-field">
+                <div v-show="providerModalTab === 'advanced'" class="form-field">
                   <button
                     type="button"
                     class="test-connectivity-btn"
@@ -991,7 +992,7 @@ import type { CLIPlatform } from '../../services/cliConfig'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
 import { showToast } from '../../utils/toast'
 import { createMainState } from './state'
-import { providerTabIds } from './platformTabs'
+import { providerTabIds, type ProviderTab } from './platformTabs'
 import {
   formatOfficialSite,
   iconSvg,
@@ -1018,8 +1019,20 @@ import {
   type GrokRuntimeStatus,
 } from '../../services/grok'
 
+type MainView = 'providers' | 'grok-accounts'
+
+const props = withDefaults(defineProps<{
+  embedded?: boolean
+  platform?: ProviderTab
+  view?: MainView
+}>(), {
+  embedded: false,
+  view: 'providers' as MainView,
+})
+
 const { t, locale } = useI18n()
 const router = useRouter()
+const embedded = computed(() => Boolean(props.embedded))
 
 // ---------- 主题与导航 ----------
 
@@ -1075,6 +1088,16 @@ const {
 
 const state = createMainState()
 const { tabs, selectedIndex, activeTab, activeProviderTab, activeCards } = state
+
+const syncEmbeddedTab = () => {
+  if (!props.embedded) return
+  const target = props.view === 'grok-accounts' ? 'grok-oauth' : props.platform
+  const index = tabs.findIndex((tab) => tab.id === target)
+  if (index >= 0) selectedIndex.value = index
+}
+
+// 嵌入页的显示平台由外层路由决定；内部索引被任何异步事件改动后立即校正。
+watch([() => props.platform, () => props.view, () => state.activeTab.value], syncEmbeddedTab, { immediate: true, flush: 'sync' })
 
 const isGrokBuildTab = computed(() => activeTab.value === 'grok')
 const isGrokOAuthTab = computed(() => activeTab.value === 'grok-oauth')
@@ -1232,10 +1255,14 @@ const {
 const { highlightedProvider, isLastUsedProvider, scrollToCard } = useLastUsed(state, {
   router,
   loadBlacklistStatus,
+  // 独立平台页中的 Main 只展示当前平台，不能被其他平台的全局事件切走。
+  autoSwitchPlatform: !embedded.value,
+  currentPlatform: () => props.platform,
 })
 
 const {
   modalState,
+  providerModalTab,
   iconSearchQuery,
   filteredIconOptions,
   getLevelDescription,
@@ -1246,10 +1273,7 @@ const {
   showUpstreamProtocolField,
   isGrokProviderModal,
   isGeminiProviderModal,
-  isOAuthPlatformModal,
   isOAuthCredential,
-  oauthCredentialOptions,
-  oauthAccountOptions,
   geminiCredentialOptions,
   geminiEndpointOptions,
   isCodexChatProtocol,
@@ -1337,15 +1361,16 @@ const refreshAllData = async () => {
   if (refreshing.value) return
   refreshing.value = true
   try {
-    await Promise.all([
-      reloadHeatmap(),
+    const tasks: Array<Promise<unknown>> = [
       loadProvidersFromDisk(),
       refreshGrokRuntime(),
       ...providerProxyTabIds.map(refreshProxyState),
       ...providerProxyTabIds.map((tab) => refreshDirectAppliedStatus(tab)),
       ...providerTabIds.map((tab) => loadProviderStats(tab)),
       ...providerTabIds.map((tab) => loadBlacklistStatus(tab)),
-    ])
+    ]
+    if (!embedded.value) tasks.unshift(reloadHeatmap())
+    await Promise.all(tasks)
   } catch (error) {
     console.error('Failed to refresh data', error)
   } finally {
@@ -1356,7 +1381,8 @@ const refreshAllData = async () => {
 // ---------- 生命周期 ----------
 
 onMounted(async () => {
-  void initHeatmap()
+  if (!embedded.value) void initHeatmap()
+  syncEmbeddedTab()
   await loadProvidersFromDisk()
   await Promise.all(providerProxyTabIds.map(refreshProxyState))
   await Promise.all(providerProxyTabIds.map((tab) => refreshDirectAppliedStatus(tab)))
@@ -1369,7 +1395,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  cleanupHeatmap()
+  if (!embedded.value) cleanupHeatmap()
   stopProviderStatsTimer()
   window.removeEventListener('app-settings-updated', handleAppSettingsUpdated)
   window.removeEventListener('providers-updated', handleProvidersUpdated)
@@ -1377,6 +1403,21 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.embedded-main-shell { min-height: 0; }
+.embedded-contrib-page { width: 100%; max-width: none; padding: 24px 0 34px; gap: 0; box-sizing: border-box; }
+.embedded-contrib-page .automation-section { margin-top: 0; }
+.embedded-contrib-page .section-header { display: flex; justify-content: flex-end; align-items: center; padding-top: 0; min-height: 36px; }
+.embedded-contrib-page .section-controls { flex: 0 0 auto; justify-content: flex-end; }
+.embedded-contrib-page .automation-list { padding-top: 10px; }
+@media (max-width: 700px) {
+  .embedded-contrib-page { padding: 18px 0 28px; }
+  .embedded-contrib-page .section-controls { width: 100%; justify-content: flex-end; }
+}
+.provider-modal-tabs { display: flex; gap: 3px; margin: -4px 0 12px; padding: 3px; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); overflow-x: auto; }
+.provider-modal-tabs button { min-height: 30px; flex: 1 0 auto; padding: 0 13px; border: 0; border-radius: 6px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.provider-modal-tabs button:hover { color: var(--mac-text); }
+.provider-modal-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 4px color-mix(in srgb, var(--mac-text) 12%, transparent); font-weight: 650; }
+.legacy-credential-field { min-height: 52px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--mac-accent) 28%, var(--mac-border)); border-radius: 7px; background: color-mix(in srgb, var(--mac-accent) 6%, transparent); }
 .oauth-import-menu { position: relative; }
 .oauth-import-items { position: absolute; top: calc(100% + 6px); right: 0; z-index: 80; display: grid; min-width: 168px; padding: 5px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .18); }
 .oauth-import-items button { width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--mac-text); padding: 8px 9px; font-size: .78rem; text-align: left; cursor: pointer; }.oauth-import-items button.active, .oauth-import-items button:hover { background: var(--mac-surface-strong); }

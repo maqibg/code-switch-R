@@ -20,6 +20,7 @@ type FrontendPreferences struct {
 	DismissedUpdateVersion string   `json:"dismissed_update_version"`
 	HomePlatformOrder      []string `json:"home_platform_order"`
 	PiPlatformOrder        []string `json:"pi_platform_order"`
+	HiddenPlatformPages    []string `json:"hidden_platform_pages"`
 }
 
 type FrontendPreferencesService struct {
@@ -32,12 +33,13 @@ func NewFrontendPreferencesService() *FrontendPreferencesService {
 
 func defaultFrontendPreferences() FrontendPreferences {
 	return FrontendPreferences{
-		Theme:             "dark",
-		Locale:            "zh",
-		SidebarCollapsed:  false,
-		VisitedPages:      []string{},
-		HomePlatformOrder: append([]string(nil), defaultHomePlatformOrder...),
-		PiPlatformOrder:   []string{},
+		Theme:               "dark",
+		Locale:              "zh",
+		SidebarCollapsed:    false,
+		VisitedPages:        []string{},
+		HomePlatformOrder:   append([]string(nil), defaultHomePlatformOrder...),
+		PiPlatformOrder:     []string{},
+		HiddenPlatformPages: []string{},
 	}
 }
 
@@ -72,7 +74,18 @@ func normalizeFrontendPreferences(prefs FrontendPreferences) FrontendPreferences
 	prefs.VisitedPages = filtered
 	prefs.HomePlatformOrder = normalizeHomePlatformOrder(prefs.HomePlatformOrder)
 	prefs.PiPlatformOrder = normalizePlatformOrder(prefs.PiPlatformOrder, nil)
+	prefs.HiddenPlatformPages = normalizePlatformOrder(prefs.HiddenPlatformPages, platformPageIDs)
 	return prefs
+}
+
+var platformPageIDs = map[string]struct{}{
+	"claude":   {},
+	"codex":    {},
+	"pi":       {},
+	"grok":     {},
+	"reasonix": {},
+	"gemini":   {},
+	"opencode": {},
 }
 
 func normalizeHomePlatformOrder(order []string) []string {

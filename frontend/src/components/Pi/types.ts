@@ -10,7 +10,7 @@ import type {
   ProviderRequestIdentity,
 } from '../../../bindings/codeswitch/services/models'
 
-export type PiWorkspaceTab = 'suppliers' | 'models' | 'builtin-models'
+export type PiWorkspaceTab = 'platform' | 'suppliers' | 'models' | 'builtin-models'
 
 export type ModelRoute = {
   external: string

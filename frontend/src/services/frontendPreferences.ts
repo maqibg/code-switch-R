@@ -15,6 +15,7 @@ export type FrontendPreferences = {
   dismissed_update_version: string
   home_platform_order: string[]
   pi_platform_order: string[]
+  hidden_platform_pages: string[]
 }
 
 export const fetchFrontendPreferences = async (): Promise<FrontendPreferences> => {

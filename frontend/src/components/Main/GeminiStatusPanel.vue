@@ -9,6 +9,9 @@
         <button class="icon-button" type="button" :disabled="busy" title="刷新状态" @click="loadAll">
           <RefreshCw :size="16" :class="{ spin: busy }" />
         </button>
+        <button v-if="mode === 'account'" class="icon-button" type="button" title="账号设置" @click="showAccountSettings = !showAccountSettings">
+          <Settings2 :size="16" />
+        </button>
         <button class="secondary-button" type="button" :disabled="busy" @click="startOAuthLogin">
           <KeyRound :size="15" />
           Gemini CLI 登录
@@ -21,7 +24,13 @@
       <span>{{ errorMessage }}</span>
     </div>
 
-    <div class="credential-grid">
+    <div v-if="mode === 'account' && showAccountSettings" class="account-settings-panel">
+      <div><span>CLI 状态</span><strong>{{ runtimeStatusText || '未读取' }}</strong></div>
+      <div><span>运行目录</span><strong>{{ accounts[0]?.runtimeRoot || '未发现账号' }}</strong></div>
+      <div><span>当前账号</span><strong>{{ accounts[0]?.applied ? '已应用' : '未应用' }}</strong></div>
+    </div>
+
+    <div v-if="mode === 'all'" class="credential-grid">
       <article v-for="provider in providers" :key="provider.id" class="credential-row">
         <div class="provider-heading">
           <strong>{{ provider.name }}</strong>
@@ -37,7 +46,7 @@
       <div v-if="providers.length === 0 && !busy" class="empty-state">暂无 Gemini Provider</div>
     </div>
 
-    <div class="catalog-section">
+    <div v-if="mode === 'all' || mode === 'catalog'" class="catalog-section">
       <div class="section-heading">
         <div>
           <h3>模型目录</h3>
@@ -68,7 +77,7 @@
       </div>
     </div>
 
-    <div class="account-section">
+    <div v-if="mode === 'all' || mode === 'account'" class="account-section">
       <div class="section-heading">
         <div><h3>Gemini CLI 账号</h3><span v-if="accounts.length">{{ accounts[0].runtimeRoot }}</span></div>
       </div>
@@ -94,10 +103,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Browser } from '@wailsio/runtime'
-import { CircleAlert, Database, KeyRound, RefreshCw } from 'lucide-vue-next'
+import { CircleAlert, Database, KeyRound, RefreshCw, Settings2 } from 'lucide-vue-next'
 import * as GeminiService from '../../../bindings/codeswitch/services/geminiservice'
 import * as GeminiCatalogService from '../../../bindings/codeswitch/services/geminicatalogservice'
 import * as GeminiCliAccountService from '../../../bindings/codeswitch/services/geminicliaccountservice'
+
+const props = withDefaults(defineProps<{ mode?: 'all' | 'account' | 'catalog' }>(), { mode: 'all' })
+const mode = computed(() => props.mode)
 
 type ProviderState = {
   id: string
@@ -143,6 +155,7 @@ const selectedProviderID = ref('')
 const busy = ref(false)
 const errorMessage = ref('')
 const catalogError = ref('')
+const showAccountSettings = ref(false)
 let pollTimer: number | undefined
 
 const selectedProvider = computed(() => providers.value.find((provider) => provider.id === selectedProviderID.value))
@@ -252,7 +265,9 @@ onUnmounted(() => { if (pollTimer) window.clearInterval(pollTimer) })
 </script>
 
 <style scoped>
-.gemini-status-panel { margin-top: 16px; border-top: 1px solid var(--mac-border); padding-top: 18px; }
+.gemini-status-panel { width: 100%; margin-top: 24px; padding: 20px; box-sizing: border-box; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface); }
+.account-settings-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 0 0; padding: 12px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-surface-strong); }
+.account-settings-panel div { display: grid; gap: 4px; min-width: 0; }.account-settings-panel span { color: var(--mac-text-secondary); font-size: .68rem; }.account-settings-panel strong { overflow: hidden; color: var(--mac-text); font-size: .74rem; text-overflow: ellipsis; white-space: nowrap; }
 .panel-header, .section-heading, .provider-heading, .account-row, .account-actions, .panel-actions { display: flex; align-items: center; }
 .panel-header, .section-heading, .account-row { justify-content: space-between; gap: 12px; }
 .panel-header h2, .section-heading h3 { margin: 0; color: var(--mac-text); }
@@ -260,9 +275,9 @@ onUnmounted(() => { if (pollTimer) window.clearInterval(pollTimer) })
 .panel-header p, .section-heading span, .account-main span { margin: 4px 0 0; color: var(--mac-text-secondary); font-size: .75rem; }
 .panel-actions, .account-actions { gap: 6px; }.secondary-button, .icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--mac-border); border-radius: 5px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; }
 .secondary-button { min-height: 32px; padding: 0 10px; font-size: .75rem; }.icon-button { width: 32px; height: 32px; }.icon-button:disabled, .secondary-button:disabled { cursor: not-allowed; opacity: .5; }
-.credential-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; margin-top: 12px; }
+.credential-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 16px; }
 .credential-row, .model-row { border: 1px solid var(--mac-border); border-radius: 6px; padding: 10px; background: var(--mac-surface); }.provider-heading { gap: 7px; font-size: .8rem; }.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; }.status-dot.enabled { background: #16a34a; }.credential-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 9px 0 0; }.credential-details div { min-width: 0; }.credential-details dt { color: var(--mac-text-secondary); font-size: .68rem; }.credential-details dd { overflow: hidden; margin: 2px 0 0; color: var(--mac-text); font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
-.catalog-section, .account-section { margin-top: 16px; }.section-heading select { min-width: 140px; max-width: 220px; padding: 6px 8px; border: 1px solid var(--mac-border); border-radius: 5px; background: var(--mac-surface); color: var(--mac-text); font-size: .75rem; }.model-grid { display: grid; gap: 6px; margin-top: 9px; }.model-row { display: flex; justify-content: space-between; gap: 12px; }.model-main { display: grid; min-width: 0; gap: 3px; }.model-main strong { overflow: hidden; color: var(--mac-text); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }.model-main code { overflow: hidden; color: var(--mac-text-secondary); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }.model-capabilities { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }.model-capabilities span { padding: 2px 5px; border-radius: 4px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); font-size: .65rem; white-space: nowrap; }
-.account-row { margin-top: 8px; border-bottom: 1px solid var(--mac-border); padding: 9px 0; }.account-main { display: grid; min-width: 0; gap: 3px; }.account-main strong { overflow: hidden; color: var(--mac-text); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }.account-meta { flex: 1; color: var(--mac-text-secondary); font-size: .72rem; }.quota-error, .panel-error, .catalog-error { color: var(--error, #dc2626); }.panel-error, .catalog-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; font-size: .75rem; line-height: 1.4; }.empty-state { padding: 14px; color: var(--mac-text-secondary); font-size: .75rem; text-align: center; }.spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 650px) { .panel-header, .section-heading, .account-row, .model-row { align-items: stretch; flex-direction: column; }.panel-actions, .account-actions { justify-content: flex-end; }.model-capabilities { justify-content: flex-start; }.section-heading select { max-width: none; width: 100%; } }
+.catalog-section, .account-section { margin-top: 22px; }.section-heading select { min-width: 140px; max-width: 220px; padding: 6px 8px; border: 1px solid var(--mac-border); border-radius: 5px; background: var(--mac-surface); color: var(--mac-text); font-size: .75rem; }.model-grid { display: grid; gap: 7px; margin-top: 10px; }.model-row { display: flex; justify-content: space-between; gap: 12px; min-width: 0; }.model-main { display: grid; min-width: 0; gap: 3px; }.model-main strong { overflow: hidden; color: var(--mac-text); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }.model-main code { overflow: hidden; color: var(--mac-text-secondary); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }.model-capabilities { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; min-width: 0; }.model-capabilities span { padding: 2px 5px; border-radius: 4px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); font-size: .65rem; white-space: nowrap; }
+.account-row { margin-top: 8px; border-bottom: 1px solid var(--mac-border); padding: 10px 0; }.account-main { display: grid; min-width: 0; gap: 3px; }.account-main strong { overflow: hidden; color: var(--mac-text); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }.account-meta { min-width: 0; flex: 1; color: var(--mac-text-secondary); font-size: .72rem; }.quota-error, .panel-error, .catalog-error { color: var(--error, #dc2626); }.panel-error, .catalog-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 12px; font-size: .75rem; line-height: 1.4; }.empty-state { padding: 18px; color: var(--mac-text-secondary); font-size: .75rem; text-align: center; }.spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 650px) { .gemini-status-panel { padding: 16px; }.panel-header, .section-heading, .account-row, .model-row { align-items: stretch; flex-direction: column; }.panel-actions, .account-actions { justify-content: flex-end; }.model-capabilities { justify-content: flex-start; }.section-heading select { max-width: none; width: 100%; }.account-settings-panel { grid-template-columns: 1fr; } }
 </style>

@@ -19,6 +19,7 @@ vi.mock('../../../bindings/codeswitch/services/pisettingsservice', () => ({
 
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
+  useRoute: () => ({ params: {} }),
   useRouter: () => ({ push: mocks.routerPush }),
 }))
 

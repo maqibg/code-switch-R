@@ -19,7 +19,7 @@ const isTray = computed(() => route.path === '/tray')
     <main class="main-content">
       <RouterView v-slot="{ Component }">
         <keep-alive :max="3">
-          <component :is="Component" />
+          <component :is="Component" :key="route.fullPath" />
         </keep-alive>
       </RouterView>
     </main>

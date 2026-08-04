@@ -10,8 +10,11 @@ export const VISITED_PAGES_KEY = 'visited-pages'
 export const DISMISSED_UPDATE_VERSION_KEY = 'dismissed-update-version'
 export const HOME_PLATFORM_ORDER_KEY = 'home-platform-order'
 export const PI_PLATFORM_ORDER_KEY = 'pi-platform-order'
+export const HIDDEN_PLATFORM_PAGES_KEY = 'hidden-platform-pages'
 
 export const DEFAULT_HOME_PLATFORM_ORDER = ['claude', 'codex', 'gemini', 'reasonix', 'grok', 'grok-oauth', 'others'] as const
+export const PLATFORM_PAGE_IDS = ['claude', 'codex', 'pi', 'grok', 'reasonix', 'gemini', 'opencode'] as const
+export type PlatformPageID = (typeof PLATFORM_PAGE_IDS)[number]
 
 export const normalizeThemeMode = (value: unknown): FrontendThemeMode => {
   if (value === 'light' || value === 'dark' || value === 'systemdefault') {
@@ -88,6 +91,13 @@ export const setStoredHomePlatformOrder = (order: string[]) => setStoredPlatform
 export const getStoredPiPlatformOrder = (): string[] => getStoredPlatformOrder(PI_PLATFORM_ORDER_KEY)
 export const setStoredPiPlatformOrder = (order: string[]) => setStoredPlatformOrder(PI_PLATFORM_ORDER_KEY, order)
 
+export const getStoredHiddenPlatformPages = (): PlatformPageID[] => {
+  const stored = getStoredPlatformOrder(HIDDEN_PLATFORM_PAGES_KEY)
+  return stored.filter((id): id is PlatformPageID => (PLATFORM_PAGE_IDS as readonly string[]).includes(id))
+}
+
+export const setStoredHiddenPlatformPages = (platforms: PlatformPageID[]) => setStoredPlatformOrder(HIDDEN_PLATFORM_PAGES_KEY, platforms)
+
 const buildPreferencesPayload = (patch: Partial<FrontendPreferences> = {}): FrontendPreferences => ({
   theme: getStoredThemeMode(),
   locale: getStoredLocale(),
@@ -96,6 +106,7 @@ const buildPreferencesPayload = (patch: Partial<FrontendPreferences> = {}): Fron
   dismissed_update_version: getStoredDismissedUpdateVersion(),
   home_platform_order: getStoredHomePlatformOrder(),
   pi_platform_order: getStoredPiPlatformOrder(),
+  hidden_platform_pages: getStoredHiddenPlatformPages(),
   ...patch,
 })
 
@@ -109,6 +120,7 @@ export const hydrateFrontendPreferences = async (): Promise<FrontendPreferences 
     setStoredDismissedUpdateVersion(prefs.dismissed_update_version || '')
     setStoredHomePlatformOrder(Array.isArray(prefs.home_platform_order) ? prefs.home_platform_order : [...DEFAULT_HOME_PLATFORM_ORDER])
     setStoredPiPlatformOrder(Array.isArray(prefs.pi_platform_order) ? prefs.pi_platform_order : [])
+    setStoredHiddenPlatformPages(Array.isArray(prefs.hidden_platform_pages) ? prefs.hidden_platform_pages as PlatformPageID[] : [])
     return prefs
   } catch (error) {
     console.warn('Failed to hydrate frontend preferences:', error)

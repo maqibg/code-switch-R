@@ -12,8 +12,6 @@ import { lobeIconKeys } from '../../../icons/lobeIconMap'
 import { saveCLIConfig, type CLIPlatform } from '../../../services/cliConfig'
 import { showToast } from '../../../utils/toast'
 import { extractErrorMessage } from '../../../utils/error'
-import { listOAuthAccounts, type OAuthPlatform } from '../../../services/oauthAccounts'
-import type { OAuthAccountSummary } from '../../../../bindings/codeswitch/services/models'
 import type { ProviderTab } from '../platformTabs'
 import type { MainState } from '../state'
 import { normalizeLevel, sortProvidersByLevel } from '../utils'
@@ -58,6 +56,8 @@ type UpstreamProtocolOption = {
   desc: string
   disabled?: boolean
 }
+
+type ProviderModalTab = 'basic' | 'auth' | 'routing' | 'advanced'
 
 export function useVendorModal(
   state: MainState,
@@ -124,9 +124,8 @@ export function useVendorModal(
       apiUrl: '',
     },
   })
+  const providerModalTab = ref<ProviderModalTab>('basic')
   const editingCard = ref<AutomationCard | null>(null)
-  const oauthAccounts = ref<OAuthAccountSummary[]>([])
-
   // Level 描述文本映射（1-10）
   const getLevelDescription = (level: number) => {
     const descriptions: Record<number, string> = {
@@ -177,39 +176,14 @@ export function useVendorModal(
   const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
   const isGrokProviderModal = computed(() => modalState.tabId === 'grok')
   const isGeminiProviderModal = computed(() => modalState.tabId === 'gemini')
-  const isOAuthPlatformModal = computed(() => modalState.tabId === 'claude' || modalState.tabId === 'codex')
-  const isOAuthCredential = computed(() => isOAuthPlatformModal.value && modalState.form.credentialType === 'oauth')
-  const oauthCredentialOptions = [
-    { value: 'api_key', label: 'API Key' },
-    { value: 'oauth', label: 'OAuth 账号' },
-    { value: 'none', label: '无认证' },
-  ]
-  const oauthAccountOptions = computed(() => oauthAccounts.value.map((account) => ({
-    value: account.id,
-    label: account.email || account.displayName || account.accountId || account.id,
-    status: account.status,
-  })))
-
-  const loadOAuthAccounts = async (tabId: ProviderTab) => {
-    if (tabId !== 'claude' && tabId !== 'codex') {
-      oauthAccounts.value = []
-      return
-    }
-    try {
-      oauthAccounts.value = await listOAuthAccounts(tabId as OAuthPlatform)
-    } catch (error) {
-      oauthAccounts.value = []
-      console.warn('加载 OAuth 账号失败:', error)
-    }
-  }
+  // 旧配置仍允许读取和原样保存；新界面不再提供 OAuth 选择，避免把账号管理混入供应商。
+  const isOAuthCredential = computed(() => ['oauth', 'gemini_native_oauth', 'gemini_cli_oauth'].includes(modalState.form.credentialType || ''))
   const geminiCredentialOptions = [
     { value: 'gemini_api_key', label: 'Gemini API Key' },
-    { value: 'gemini_native_oauth', label: 'Gemini Native OAuth' },
     { value: 'vertex_api_key', label: 'Vertex API Key' },
     { value: 'vertex_adc', label: 'Vertex ADC' },
     { value: 'vertex_service_account', label: 'Vertex Service Account' },
     { value: 'gemini_gateway', label: 'Gemini Gateway' },
-    { value: 'gemini_cli_oauth', label: 'Gemini CLI OAuth' },
   ]
   const geminiEndpointOptions = [
     { value: 'official', label: 'Google Gemini API' },
@@ -334,6 +308,7 @@ export function useVendorModal(
     const tabId = state.activeProviderTab.value
     if (!tabId) return
     modalState.tabId = tabId
+    providerModalTab.value = 'basic'
     modalState.editingId = null
     editingCard.value = null
     Object.assign(modalState.form, defaultFormValues())
@@ -346,13 +321,13 @@ export function useVendorModal(
     connectivityTestResult.value = null
     modalState.errors.apiUrl = ''
     modalState.open = true
-    void loadOAuthAccounts(tabId)
   }
 
   const openEditModal = (card: AutomationCard) => {
     const tabId = state.activeProviderTab.value
     if (!tabId) return
     modalState.tabId = tabId
+    providerModalTab.value = 'basic'
     modalState.editingId = card.id
     editingCard.value = card
     Object.assign(modalState.form, {
@@ -379,7 +354,6 @@ export function useVendorModal(
       customUserAgent: card.customUserAgent || '',
       modelsEndpoint: card.modelsEndpoint || '',
       credentialType: card.credentialType || (tabId === 'gemini' ? 'gemini_api_key' : 'api_key'),
-      credentialRef: card.credentialRef || '',
       endpointKind: card.endpointKind || 'official',
       apiVersion: card.apiVersion || 'v1beta',
       project: card.project || '',
@@ -405,7 +379,6 @@ export function useVendorModal(
     connectivityTestResult.value = null
     modalState.errors.apiUrl = ''
     modalState.open = true
-    void loadOAuthAccounts(tabId)
   }
 
   const configure = (card: AutomationCard) => {
@@ -449,11 +422,7 @@ export function useVendorModal(
     const submittedCredentialType = isGeminiProviderModal.value
       ? modalState.form.credentialType || 'gemini_api_key'
       : modalState.form.credentialType || 'api_key'
-    const submittedCredentialRef = isOAuthCredential.value ? (modalState.form.credentialRef || '').trim() : ''
-    if (isOAuthCredential.value && !submittedCredentialRef) {
-      showToast('请选择 OAuth 账号', 'error')
-      return false
-    }
+    const submittedCredentialRef = editingCard.value?.credentialRef || ''
 
     if (editingCard.value) {
       // 若 name 发生变化，先走独立 RenameProvider RPC（后端事务改名日志与黑名单行）。
@@ -611,6 +580,7 @@ export function useVendorModal(
 
   return {
     modalState,
+    providerModalTab,
     iconSearchQuery,
     filteredIconOptions,
     getLevelDescription,
@@ -621,10 +591,7 @@ export function useVendorModal(
     showUpstreamProtocolField,
     isGrokProviderModal,
     isGeminiProviderModal,
-    isOAuthPlatformModal,
     isOAuthCredential,
-    oauthCredentialOptions,
-    oauthAccountOptions,
     geminiCredentialOptions,
     geminiEndpointOptions,
     isCodexChatProtocol,

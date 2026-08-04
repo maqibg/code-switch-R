@@ -25,7 +25,14 @@ import { useI18n } from 'vue-i18n'
 import { extractErrorMessage } from '../../utils/error'
 import { applyTheme, getCurrentTheme } from '../../utils/ThemeManager'
 import { setupI18n } from '../../utils/i18n'
-import { getStoredLocale, hydrateFrontendPreferences } from '../../utils/frontendPreferences'
+import {
+  getStoredHiddenPlatformPages,
+  getStoredLocale,
+  hydrateFrontendPreferences,
+  persistFrontendPreferencesPatch,
+  setStoredHiddenPlatformPages,
+  type PlatformPageID,
+} from '../../utils/frontendPreferences'
 import { decimalMoney } from '../../utils/money'
 import Decimal from 'decimal.js'
 
@@ -105,8 +112,32 @@ const recordStorageInfo = ref<RecordStorageInfo | null>(null)
 const recordStorageLoading = ref(true)
 const recordStorageClearing = ref(false)
 
+type SettingsTab = 'general' | 'budget' | 'network' | 'records' | 'blacklist' | 'data' | 'appearance'
+const settingsTab = ref<SettingsTab>('general')
+const hiddenPlatformPages = ref<PlatformPageID[]>(getStoredHiddenPlatformPages())
+const platformVisibility = [
+  { id: 'claude', name: 'Claude Code' },
+  { id: 'codex', name: 'Codex' },
+  { id: 'pi', name: 'Pi' },
+  { id: 'grok', name: 'Grok Build' },
+  { id: 'reasonix', name: 'Reasonix' },
+  { id: 'gemini', name: 'Gemini' },
+  { id: 'opencode', name: 'OpenCode' },
+] as const
+
 const goBack = () => {
   router.push('/')
+}
+
+const setPlatformVisibility = (id: PlatformPageID, event: Event) => {
+  const visible = (event.target as HTMLInputElement).checked
+  const next = visible
+    ? hiddenPlatformPages.value.filter((item) => item !== id)
+    : [...hiddenPlatformPages.value.filter((item) => item !== id), id]
+  hiddenPlatformPages.value = next
+  setStoredHiddenPlatformPages(next)
+  void persistFrontendPreferencesPatch({ hidden_platform_pages: next })
+  window.dispatchEvent(new CustomEvent('platform-visibility-updated'))
 }
 
 const normalizeBudgetForecastMethod = (value: string) => {
@@ -612,24 +643,40 @@ onMounted(async () => {
 
 <template>
   <div class="main-shell general-shell">
-    <div class="global-actions">
-      <p class="global-eyebrow">{{ $t('components.general.title.application') }}</p>
-      <button class="ghost-icon" :aria-label="$t('components.general.buttons.back')" @click="goBack">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M15 18l-6-6 6-6"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
-    </div>
+    <header class="settings-page-header">
+      <div class="settings-header-row">
+        <h1>{{ $t('components.general.title.application') }}</h1>
+        <button class="ghost-icon" :aria-label="$t('components.general.buttons.back')" @click="goBack">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M15 18l-6-6 6-6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <nav class="settings-tabs" role="tablist" aria-label="设置分类">
+        <button v-for="tab in [
+          { id: 'general', label: '常规' },
+          { id: 'budget', label: '预算' },
+          { id: 'network', label: '网络' },
+          { id: 'records', label: '记录' },
+          { id: 'blacklist', label: '黑名单' },
+          { id: 'data', label: '数据' },
+          { id: 'appearance', label: '外观' },
+        ]" :key="tab.id" class="layout-tab" type="button" role="tab" :aria-selected="settingsTab === tab.id" :class="{ active: settingsTab === tab.id }" @click="settingsTab = tab.id as SettingsTab">
+          {{ tab.label }}
+        </button>
+      </nav>
+    </header>
 
     <div class="general-page">
-      <section>
+      <section v-if="settingsTab === 'general'">
         <h2 class="mac-section-title">{{ $t('components.general.title.application') }}</h2>
         <div class="mac-panel">
           <ListItem :label="$t('components.general.label.heatmap')">
@@ -696,7 +743,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section>
+      <section v-if="settingsTab === 'budget'">
         <h2 class="mac-section-title">{{ $t('components.general.title.trayPanel') }}</h2>
         <div class="mac-panel">
           <p class="panel-title">{{ $t('components.general.label.trayPanelClaude') }}</p>
@@ -952,7 +999,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section>
+      <section v-if="settingsTab === 'network'">
         <h2 class="mac-section-title">{{ $t('components.general.title.proxy') }}</h2>
         <div class="mac-panel">
           <ListItem :label="$t('components.general.label.globalProxyEnabled')">
@@ -1026,9 +1073,9 @@ onMounted(async () => {
       </section>
 
       <!-- Network & WSL Settings -->
-      <NetworkWslSettings />
+      <NetworkWslSettings v-if="settingsTab === 'network'" />
 
-      <section>
+      <section v-if="settingsTab === 'records'">
         <h2 class="mac-section-title">{{ $t('components.general.title.records') }}</h2>
         <p class="mac-section-description">{{ $t('components.general.records.sectionDesc') }}</p>
         <div class="records-grid">
@@ -1103,7 +1150,7 @@ onMounted(async () => {
         </article>
       </section>
 
-      <section>
+      <section v-if="settingsTab === 'blacklist'">
         <h2 class="mac-section-title">{{ $t('components.general.title.blacklist') }}</h2>
         <div class="mac-panel">
           <ListItem :label="$t('components.general.label.enableBlacklist')">
@@ -1172,7 +1219,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section>
+      <section v-if="settingsTab === 'data'">
         <h2 class="mac-section-title">{{ $t('components.general.title.dataImport') }}</h2>
         <p class="mac-section-description">{{ $t('components.general.transfer.sectionDesc') }}</p>
         <div class="transfer-overview-grid">
@@ -1279,7 +1326,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section>
+      <section v-if="settingsTab === 'appearance'">
         <h2 class="mac-section-title">{{ $t('components.general.title.exterior') }}</h2>
         <div class="mac-panel">
           <ListItem :label="$t('components.general.label.language')">
@@ -1289,12 +1336,37 @@ onMounted(async () => {
             <ThemeSetting />
           </ListItem>
         </div>
+        <div class="mac-panel platform-visibility-panel">
+          <div class="platform-visibility-heading">
+            <div>
+              <h3>平台页</h3>
+              <p>隐藏只影响侧边栏入口，不删除平台数据或关闭托管。</p>
+            </div>
+          </div>
+          <ListItem v-for="platform in platformVisibility" :key="platform.id" :label="platform.name">
+            <label class="mac-switch">
+              <input type="checkbox" :checked="!hiddenPlatformPages.includes(platform.id)" @change="setPlatformVisibility(platform.id, $event)" />
+              <span></span>
+            </label>
+          </ListItem>
+        </div>
       </section>
     </div>
   </div>
 </template>
 
 <style scoped>
+.settings-page-header { width: min(1180px, calc(100% - 56px)); margin: 0 auto; padding-top: 18px; }
+.settings-header-row { display: flex; align-items: center; justify-content: space-between; min-height: 36px; }
+.settings-header-row h1 { margin: 0; color: var(--mac-text); font-size: 16px; font-weight: 700; }
+.settings-tabs { display: flex; align-items: center; justify-content: center; gap: 2px; width: fit-content; max-width: 100%; margin: 14px auto 0; padding: 4px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); overflow-x: auto; }
+.settings-tabs button { min-height: 32px; padding: 0 15px; border: 0; border-radius: 7px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+.settings-tabs button:hover { color: var(--mac-text); background: color-mix(in srgb, var(--mac-text) 6%, transparent); }
+.settings-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 3px color-mix(in srgb, var(--mac-text) 12%, transparent); font-weight: 650; }
+.platform-visibility-panel { margin-top: 14px; }
+.platform-visibility-heading { padding: 14px 18px 8px; border-bottom: 1px solid var(--mac-divider); }
+.platform-visibility-heading h3 { margin: 0; font-size: 13px; }
+.platform-visibility-heading p { margin: 5px 0 0; color: var(--mac-text-secondary); font-size: 11px; }
 .mac-input {
   padding: 6px 12px;
   border: 1px solid var(--mac-border);
@@ -1761,5 +1833,10 @@ onMounted(async () => {
 
 :global(.dark) .mac-input {
   background: var(--mac-surface-strong);
+}
+
+@media (max-width: 760px) {
+  .settings-page-header { width: calc(100% - 32px); }
+  .settings-tabs { width: 100%; justify-content: flex-start; }
 }
 </style>

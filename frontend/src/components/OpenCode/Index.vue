@@ -1,23 +1,32 @@
 <template>
   <div class="main-shell opencode-shell">
-    <div class="global-actions opencode-actions">
-      <div class="page-identity">
-        <strong>OpenCode</strong>
-        <span>管理 OpenCode Provider、模型和本地 Relay</span>
+    <header class="opencode-page-header">
+      <div class="opencode-header-main">
+        <div class="page-identity">
+          <strong>OpenCode</strong>
+          <span>Provider、模型和本地 Relay</span>
+        </div>
+        <div class="opencode-action-group">
+          <BaseButton variant="outline" :disabled="busy" @click="refresh">
+            <RefreshCw :size="15" :class="{ spin: busy }" />刷新
+          </BaseButton>
+          <BaseButton v-if="activeTab !== 'settings'" variant="outline" :disabled="busy" @click="importProviders">
+            <Download :size="15" />导入 Provider
+          </BaseButton>
+          <BaseButton v-if="activeTab !== 'settings'" :disabled="busy" @click="startNewProvider">
+            <Plus :size="15" />新增 Provider
+          </BaseButton>
+        </div>
       </div>
-      <BaseButton variant="outline" :disabled="busy" @click="refresh">
-        <RefreshCw :size="15" :class="{ spin: busy }" />刷新
-      </BaseButton>
-      <BaseButton variant="outline" :disabled="busy" @click="importProviders">
-        <Download :size="15" />导入 live Provider
-      </BaseButton>
-      <BaseButton :disabled="busy" @click="startNewProvider">
-        <Plus :size="15" />新增 Provider
-      </BaseButton>
-    </div>
+      <nav class="opencode-tabs" role="tablist" aria-label="OpenCode 功能">
+        <button class="layout-tab" type="button" role="tab" :aria-selected="activeTab === 'providers'" :class="{ active: activeTab === 'providers' }" @click="selectTab('providers')">供应商</button>
+        <button class="layout-tab" type="button" role="tab" :aria-selected="activeTab === 'models'" :class="{ active: activeTab === 'models' }" @click="selectTab('models')">模型</button>
+        <button class="layout-tab" type="button" role="tab" :aria-selected="activeTab === 'settings'" :class="{ active: activeTab === 'settings' }" @click="selectTab('settings')">平台设置</button>
+      </nav>
+    </header>
 
     <main class="opencode-page">
-      <section class="path-band">
+      <section v-if="activeTab === 'settings'" class="path-band">
         <div class="path-copy">
           <span class="eyebrow">配置目标</span>
           <strong>{{ snapshot.config.path || '尚未解析' }}</strong>
@@ -41,14 +50,14 @@
         <Info :size="18" /><span>{{ snapshot.config.warning }}</span>
       </section>
 
-      <section class="defaults-band">
+      <section v-if="activeTab === 'settings'" class="defaults-band">
         <div class="defaults-copy"><span class="eyebrow">默认模型</span><strong>OpenCode 全局模型引用</strong><small>只接受已存在的 provider/model，保存时不会改动其他 Provider。</small></div>
         <label class="field default-field"><span>model</span><select v-model="defaultModelDraft" class="text-input"><option value="">不设置</option><option v-for="reference in modelReferences" :key="reference" :value="reference">{{ reference }}</option></select></label>
         <label class="field default-field"><span>small_model</span><select v-model="smallModelDraft" class="text-input"><option value="">不设置</option><option v-for="reference in modelReferences" :key="`small-${reference}`" :value="reference">{{ reference }}</option></select></label>
         <BaseButton variant="outline" :disabled="busy" @click="saveDefaultModels"><Save :size="15" />保存默认模型</BaseButton>
       </section>
 
-      <div class="opencode-layout">
+      <div v-if="activeTab === 'providers' || activeTab === 'models'" class="opencode-layout" :class="{ 'models-focus': activeTab === 'models' }">
         <section class="provider-column">
           <div class="section-heading">
             <div><span class="eyebrow">Provider map</span><h1>Provider</h1></div>
@@ -90,7 +99,7 @@
               </div>
             </div>
 
-            <div class="form-grid">
+            <div v-if="activeTab === 'providers'" class="form-grid">
               <label class="field"><span>Provider key</span><input v-model="draft.provider_key" class="text-input" /></label>
               <label class="field"><span>显示名称</span><input v-model="draft.name" class="text-input" /></label>
               <label class="field"><span>SDK npm</span><select v-model="draft.npm" class="text-input"><option value="@ai-sdk/anthropic">@ai-sdk/anthropic</option><option value="@ai-sdk/openai-compatible">@ai-sdk/openai-compatible</option><option value="@ai-sdk/openai">@ai-sdk/openai</option><option value="@ai-sdk/google">@ai-sdk/google</option></select></label>
@@ -105,12 +114,12 @@
               <label class="field field-wide"><span>Options 扩展 JSON</span><textarea v-model="draft.options_json" class="text-input json-input" placeholder="编辑未被结构化字段覆盖的 options"></textarea></label>
             </div>
 
-            <div class="mode-band">
+            <div v-if="activeTab === 'providers'" class="mode-band">
               <div><span class="eyebrow">运行模式</span><strong>{{ draft.mode === 'relay' ? '本地 Relay' : '直连上游' }}</strong><small>{{ draft.mode === 'relay' ? 'OpenCode 将使用本地 gateway URL 和 Relay Token。' : 'OpenCode 将直接访问上游 Base URL。' }}</small></div>
               <div class="segmented-control"><button type="button" :class="{ active: draft.mode === 'direct' }" @click="draft.mode = 'direct'">Direct</button><button type="button" :class="{ active: draft.mode === 'relay' }" @click="draft.mode = 'relay'">Relay</button></div>
             </div>
 
-            <div class="models-section">
+            <div v-if="activeTab === 'models'" class="models-section">
               <div class="section-heading compact"><div><span class="eyebrow">Model map</span><h2>模型目录</h2></div><BaseButton variant="outline" :disabled="busy" @click="addModel"><Plus :size="14" />模型</BaseButton></div>
               <div class="model-head"><span>模型 ID</span><span>显示名称</span><span>上下文</span><span>输入</span><span>输出</span><span>模态</span><span>能力</span><span></span></div>
               <div v-for="(model, index) in draft.models" :key="`${model.id}-${index}`" class="model-row">
@@ -128,7 +137,7 @@
               <div v-if="draft.models.length === 0" class="models-empty">暂无模型。保存后 OpenCode 仍可由 SDK 直接使用未声明模型，但 Relay 模型列表不会展示。</div>
             </div>
 
-            <div class="apply-band">
+            <div v-if="activeTab === 'providers'" class="apply-band">
               <div><span class="eyebrow">Live config</span><strong>{{ selectedProvider?.managed ? '已托管到外部配置' : '尚未写入外部配置' }}</strong><small>保存数据库后，使用下面按钮显式应用到 OpenCode 配置文件。</small></div>
               <div class="heading-actions"><BaseButton variant="outline" :disabled="busy || !selectedProvider?.managed" @click="restoreProvider"><RotateCcw :size="15" />恢复</BaseButton><BaseButton :disabled="busy || snapshot.config.conflict" @click="applyProvider"><Power :size="15" />应用 {{ draft.mode }}</BaseButton></div>
             </div>
@@ -136,7 +145,7 @@
         </section>
       </div>
 
-      <div class="tools-layout">
+      <div v-if="activeTab === 'settings'" class="tools-layout">
         <section class="tool-panel">
           <div class="section-heading compact"><div><span class="eyebrow">AGENTS.md</span><h2>全局提示词</h2></div><BaseButton :disabled="busy" @click="savePrompt"><Save :size="15" />保存</BaseButton></div>
           <div class="tool-path">{{ promptInfo.path || '尚未解析' }} · hash {{ promptInfo.hash || 'none' }}</div>
@@ -162,7 +171,7 @@
         </section>
       </div>
 
-      <section class="wsl-panel">
+      <section v-if="activeTab === 'settings'" class="wsl-panel">
         <div class="section-heading compact"><div><span class="eyebrow">Windows Subsystem for Linux</span><h2>WSL OpenCode 目标</h2></div><BaseButton variant="outline" :disabled="busy" @click="refresh"><RefreshCw :size="14" />刷新状态</BaseButton></div>
         <div v-if="wslTargets.length === 0" class="tools-empty">未检测到可用 WSL 发行版</div>
         <div v-for="target in wslTargets" :key="target.distro" class="wsl-row">
@@ -176,11 +185,28 @@
 
 <script setup lang="ts">
 import { Boxes, CircleAlert, Download, Info, Plus, Power, RefreshCw, RotateCcw, Save, Settings2, ShieldCheck, Trash2, Upload, Zap } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { OpenCodeConfigSnapshot, OpenCodeMCPServerInfo, OpenCodeMCPServerInput, OpenCodeModelInput, OpenCodePromptInfo, OpenCodeProviderInfo, OpenCodeProviderInput, OpenCodeWSLTargetInfo } from '../../../bindings/codeswitch/services/models'
 import BaseButton from '../common/BaseButton.vue'
 import { showToast } from '../../utils/toast'
 import { applyOpenCodeProvider, claimOpenCodeMCPServer, createOpenCodeModelInput, deleteOpenCodeMCPServer, deleteOpenCodeProvider, fetchOpenCodeMCPServers, fetchOpenCodePrompt, fetchOpenCodeSnapshot, fetchOpenCodeWSLTargets, importOpenCodeProviders, renameOpenCodeProvider, restoreOpenCodeProvider, saveOpenCodeMCPServer, saveOpenCodePrompt, saveOpenCodeProvider, setOpenCodeConfigPath, setOpenCodeDefaultModels, syncOpenCodeWSLConfig } from '../../services/opencode'
+
+type OpenCodeTab = 'providers' | 'models' | 'settings'
+
+const route = useRoute()
+const router = useRouter()
+const normalizeTab = (value: unknown): OpenCodeTab => value === 'models' || value === 'settings' ? value : 'providers'
+const activeTab = ref<OpenCodeTab>(normalizeTab(route.params.tab))
+
+const selectTab = (tab: OpenCodeTab) => {
+  activeTab.value = tab
+  void router.replace(`/platform/opencode/${tab}`)
+}
+
+watch(() => route.params.tab, (value) => {
+  activeTab.value = normalizeTab(value)
+})
 
 const snapshot = ref(new OpenCodeConfigSnapshot())
 const pathDraft = ref(snapshot.value.config.path)
@@ -402,8 +428,15 @@ onMounted(async () => {
 
 <style scoped>
 .opencode-shell { min-height: 100%; }
-.opencode-actions { align-items: center; }
-.opencode-page { padding: 0 28px 40px; }
+.opencode-page-header { padding: 16px 28px 12px; border-bottom: 1px solid var(--mac-border); background: var(--mac-surface); }
+.opencode-header-main { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: min(1180px, 100%); min-height: 38px; margin: 0 auto; }
+.opencode-action-group { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.opencode-action-group :deep(.btn) { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 11px; border-radius: 7px; font-size: .8rem; }
+.opencode-tabs { display: flex; align-items: center; justify-content: center; gap: 2px; width: fit-content; max-width: 100%; margin: 14px auto 0; padding: 4px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); overflow-x: auto; }
+.opencode-tabs button { min-height: 32px; padding: 0 15px; border: 0; border-radius: 7px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+.opencode-tabs button:hover { color: var(--mac-text); background: color-mix(in srgb, var(--mac-text) 6%, transparent); }
+.opencode-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 3px color-mix(in srgb, var(--mac-text) 12%, transparent); font-weight: 650; }
+.opencode-page { width: min(1180px, calc(100% - 56px)); margin: 0 auto; padding: 24px 0 40px; box-sizing: border-box; }
 .path-band, .mode-band, .apply-band { display: flex; align-items: center; gap: 18px; padding: 18px 20px; border: 1px solid var(--mac-border); background: var(--mac-surface); border-radius: 8px; }
 .path-band { margin-bottom: 16px; }
 .path-copy { min-width: 250px; display: grid; gap: 4px; }
@@ -451,7 +484,8 @@ onMounted(async () => {
 .segmented-control { display: flex; padding: 3px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-bg); }.segmented-control button { border: 0; padding: 6px 12px; border-radius: 5px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; }.segmented-control button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .models-section { border-top: 1px solid var(--mac-border); padding-top: 18px; }.model-head, .model-row { display: grid; grid-template-columns: minmax(110px, 1.4fr) minmax(100px, 1fr) 90px 80px minmax(130px, 1fr) 30px; gap: 8px; align-items: center; }.model-head { padding: 0 4px 7px; color: var(--mac-text-secondary); font-size: 11px; }.model-row { margin-bottom: 7px; }.model-capabilities { display: flex; gap: 8px; flex-wrap: wrap; color: var(--mac-text-secondary); font-size: 11px; }.model-capabilities label { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }.icon-button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 5px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; }.icon-button:hover { background: var(--mac-bg); }.danger-icon:hover { color: #b42318; }.models-empty { padding: 16px 4px; color: var(--mac-text-secondary); font-size: 12px; }.apply-band { margin-top: 20px; margin-bottom: 0; }
 @media (max-width: 980px) { .opencode-layout { grid-template-columns: 1fr; }.provider-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }.provider-column .section-heading { grid-column: 1 / -1; }.path-band, .mode-band, .apply-band { align-items: flex-start; flex-direction: column; }.path-editor { width: 100%; }.state-chip { align-self: flex-start; } }
-@media (max-width: 680px) { .opencode-page { padding: 0 12px 28px; }.form-grid { grid-template-columns: 1fr; }.field-wide { grid-column: auto; }.model-head { display: none; }.model-row { grid-template-columns: 1fr 1fr 80px 70px 1fr 30px; }.model-row .model-capabilities { grid-column: 1 / -1; }.provider-column { grid-template-columns: 1fr; }.heading-actions { flex-wrap: wrap; }.opencode-actions { flex-wrap: wrap; } }
+@media (max-width: 800px) { .opencode-page-header { padding-inline: 16px; }.opencode-header-main { align-items: flex-start; flex-direction: column; }.opencode-action-group { width: 100%; justify-content: flex-start; }.opencode-tabs { width: 100%; justify-content: flex-start; } .opencode-page { width: calc(100% - 32px); } }
+@media (max-width: 680px) { .opencode-page { padding-bottom: 28px; }.form-grid { grid-template-columns: 1fr; }.field-wide { grid-column: auto; }.model-head { display: none; }.model-row { grid-template-columns: 1fr 1fr 80px 70px 1fr 30px; }.model-row .model-capabilities { grid-column: 1 / -1; }.provider-column { grid-template-columns: 1fr; }.heading-actions { flex-wrap: wrap; } }
 .defaults-band { display: grid; grid-template-columns: minmax(220px, 1.3fr) minmax(180px, 1fr) minmax(180px, 1fr) auto; align-items: end; gap: 14px; padding: 16px 20px; margin-bottom: 16px; border: 1px solid var(--mac-border); background: var(--mac-surface); border-radius: 8px; }
 .defaults-copy { display: grid; gap: 4px; }.defaults-copy small { color: var(--mac-text-secondary); font-size: 12px; }
 .model-head, .model-row { grid-template-columns: minmax(110px, 1.35fr) minmax(100px, 1fr) 82px 72px 78px minmax(110px, 1fr) minmax(180px, 1.3fr) 30px; }
