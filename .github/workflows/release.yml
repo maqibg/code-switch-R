@@ -15,6 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Update version from tag
         id: version
         shell: pwsh
@@ -34,6 +38,10 @@ jobs:
           $info.fixed.file_version = $version
           $info.info.'0000'.ProductVersion = $version
           $info | ConvertTo-Json -Depth 10 | Set-Content build/windows/info.json -Encoding utf8
+
+      - name: Update embedded model pricing
+        shell: pwsh
+        run: python scripts/update-model-pricing.py resources/model-pricing/model_prices_and_context_window.json
 
       - uses: actions/setup-go@v5
         with:

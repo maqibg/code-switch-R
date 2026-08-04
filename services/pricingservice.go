@@ -304,7 +304,12 @@ func NewPricingService(appSettings *AppSettingsService, piSettings *PiSettingsSe
 		raw, source = snapshotRaw, snapshotSource
 		parsed = snapshotParsed
 	} else if !errors.Is(err, os.ErrNotExist) {
-		service.loadWarning = fmt.Sprintf("下载价格快照无效，已使用程序内置版本: %v", err)
+		if quarantinedPath, quarantineErr := quarantinePricingSnapshot(service.snapshotPath); quarantineErr != nil {
+			service.loadWarning = fmt.Sprintf("本地模型价格快照无效，已使用程序内置版本，且无法隔离旧文件: %v (原因: %v)", quarantineErr, err)
+			logWarn("模型价格快照无效，隔离失败，已使用内置价格表", "path", service.snapshotPath, "error", err, "quarantine_error", quarantineErr)
+		} else {
+			logWarn("模型价格快照无效，已隔离并使用内置价格表", "path", service.snapshotPath, "quarantined_path", quarantinedPath, "error", err)
+		}
 	}
 
 	rules, err := service.loadRules()
@@ -363,6 +368,39 @@ func (ps *PricingService) loadSnapshot() ([]byte, pricingSourceInfo, *parsedPric
 		Source: pricingSourceDownloaded, SourceURL: document.SourceURL,
 		SHA256: document.SHA256, UpdatedAt: document.DownloadedAt,
 	}, &parsedPricingCatalog{engine: engine, records: records, ordered: ordered}, nil
+}
+
+func quarantinePricingSnapshot(path string) (string, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		target := fmt.Sprintf("%s.invalid.%d", path, time.Now().UnixNano())
+		err := os.Rename(path, target)
+		if err == nil {
+			return target, nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		if errors.Is(err, os.ErrExist) {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		return "", fmt.Errorf("重命名无效价格快照失败: %w", err)
+	}
+	return "", fmt.Errorf("重命名无效价格快照失败: 目标文件名冲突")
+}
+
+func writePricingSnapshot(path string, document pricingSnapshotDocument) error {
+	if len(document.Models) == 0 || !json.Valid(document.Models) {
+		return fmt.Errorf("模型价格快照中的 models 不是有效 JSON")
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(document); err != nil {
+		return fmt.Errorf("JSON 序列化失败: %w", err)
+	}
+	return AtomicWriteBytes(path, encoded.Bytes())
 }
 
 func (ps *PricingService) loadRules() ([]PricingCustomRule, error) {
@@ -993,7 +1031,7 @@ func (ps *PricingService) UpdateBuiltinPricing() (PricingUpdateResult, error) {
 		DownloadedAt: downloadedAt, ETag: response.Header.Get("ETag"), SHA256: digest,
 		Models: json.RawMessage(raw),
 	}
-	if err := AtomicWriteJSON(ps.snapshotPath, document); err != nil {
+	if err := writePricingSnapshot(ps.snapshotPath, document); err != nil {
 		return PricingUpdateResult{}, fmt.Errorf("保存模型价格快照失败: %w", err)
 	}
 	ps.loadWarning = ""

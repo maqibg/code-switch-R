@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -263,7 +264,13 @@ func NewServiceFromData(pricingData, overlayData []byte) (*Service, error) {
 
 	pricing := make(map[string]*PricingEntry, len(raw))
 	normalized := make(map[string]string, len(raw))
-	for key, entry := range raw {
+	keys := make([]string, 0, len(raw))
+	for key := range raw {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		entry := raw[key]
 		item := entry
 		ensureCachePricing(&item)
 		pricing[key] = &item

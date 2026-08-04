@@ -67,6 +67,20 @@ func TestCalculateCostPreservesDecimalPrecision(t *testing.T) {
 	}
 }
 
+func TestNormalizedPricingCollisionUsesDeterministicKey(t *testing.T) {
+	service, err := NewServiceFromData([]byte(`{
+		"vendor/Model": {"input_cost_per_token": 0.000001},
+		"vendor/model": {"input_cost_per_token": 0.000009}
+	}`), []byte(`{"aliases":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := service.ResolvePricing("vendor_model")
+	if !ok || !entry.InputCostPerToken.Equal(price("0.000001")) {
+		t.Fatalf("归一化冲突应稳定选择字典序较小的键: ok=%v input=%s", ok, entry.InputCostPerToken)
+	}
+}
+
 func TestUnknownModelHasNoCost(t *testing.T) {
 	got := newTestService(t).CalculateCost("unknown-model-xyz", UsageSnapshot{InputTokens: 1000, OutputTokens: 500})
 	if got.HasPricing || !got.TotalCost.IsZero() {

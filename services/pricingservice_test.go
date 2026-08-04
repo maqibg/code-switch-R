@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -146,6 +147,62 @@ func TestUpdateBuiltinPricingValidatesAndAtomicallyActivatesSnapshot(t *testing.
 	}
 	if _, err := os.Stat(service.snapshotPath); err != nil {
 		t.Fatalf("快照未原子保存: %v", err)
+	}
+}
+
+func TestWritePricingSnapshotKeepsDigestStableWithHTMLCharacters(t *testing.T) {
+	raw := []byte(`{
+  "model-with-html": {
+    "description": "<input>&>\"",
+    "input_cost_per_token": 0.000001
+  }
+}`)
+	path := filepath.Join(t.TempDir(), pricingSnapshotFilename)
+	document := pricingSnapshotDocument{
+		SchemaVersion: pricingSchemaVersion,
+		SourceURL:     pricingSourceURL,
+		DownloadedAt:  "2026-08-03T00:00:00Z",
+		SHA256:        pricingDigest(raw),
+		Models:        raw,
+	}
+	if err := writePricingSnapshot(path, document); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded pricingSnapshotDocument
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := pricingDigest(loaded.Models), pricingDigest(raw); got != want {
+		t.Fatalf("快照写入后内容摘要变化: got=%s want=%s", got, want)
+	}
+	if strings.Contains(string(data), `\u003c`) || strings.Contains(string(data), `\u003e`) || strings.Contains(string(data), `\u0026`) {
+		t.Fatal("快照写入不应改变模型正文中的 HTML 字符")
+	}
+}
+
+func TestQuarantinePricingSnapshotRenamesInvalidFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), pricingSnapshotFilename)
+	content := []byte(`{"invalid":true}`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	quarantined, err := quarantinePricingSnapshot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("无效快照原文件仍存在: %v", err)
+	}
+	got, err := os.ReadFile(quarantined)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("隔离文件内容改变: got=%q want=%q", got, content)
 	}
 }
 
