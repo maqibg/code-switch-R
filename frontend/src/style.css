@@ -1050,6 +1050,10 @@ html.dark .mac-sidebar-item:hover {
   color: var(--mac-text-secondary);
 }
 
+.logs-table td {
+  text-align: center;
+}
+
 .logs-table td.code {
   font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
 }
