@@ -192,9 +192,10 @@ const save = async () => {
 .editor-state { padding: 28px; color: var(--mac-text-secondary); font-size: .875rem; text-align: center; }
 .editor-error { display: grid; justify-items: center; gap: 12px; }.editor-error p { margin: 0; color: var(--error); overflow-wrap: anywhere; }
 .platform-editor { display: grid; width: 100%; min-width: 0; gap: 14px; }
-.editor-tabs { display: flex; width: 100%; min-width: 0; gap: 4px; padding: 3px; border-radius: 8px; background: var(--mac-surface-strong); box-sizing: border-box; }
-.editor-tabs button { flex: 1 1 0; min-width: 0 !important; min-height: 40px; border: 0; border-radius: 6px; background: transparent; color: var(--mac-text-secondary); font-size: .875rem; cursor: pointer; }
-.editor-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 2px color-mix(in srgb, var(--mac-text) 8%, transparent); font-weight: 600; }
+.editor-tabs { display: flex; gap: 4px; width: 100%; min-width: 0; padding: 4px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--mac-accent) 18%, var(--mac-border)); background: color-mix(in srgb, var(--mac-surface) 62%, transparent); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 46%, transparent); box-sizing: border-box; }
+.editor-tabs button { flex: 1 1 0; min-width: 0; min-height: 36px; margin: 0 !important; padding: 0 18px !important; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 13px; font-weight: 550; white-space: nowrap; cursor: pointer; box-sizing: border-box; opacity: .62; transition: opacity .2s ease, background-color .2s ease, color .2s ease; }
+.editor-tabs button:hover { opacity: 1; color: var(--mac-text); background: color-mix(in srgb, var(--mac-accent) 9%, transparent); }
+.editor-tabs button.active { opacity: 1; color: #fff; background: var(--mac-accent); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent); font-weight: 650; }
 .form-pane { display: grid; min-width: 0; gap: 13px; min-height: 330px; align-content: start; }
 .form-pane > *, .form-pane label { min-width: 0; }
 .form-pane label { display: grid; gap: 6px; }

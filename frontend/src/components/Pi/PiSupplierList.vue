@@ -12,33 +12,61 @@
       <span>{{ t('piPage.suppliers.directWarning') }}</span>
       <BaseButton variant="outline" :disabled="busy" @click="$emit('enable-management')">{{ t('piPage.managed.enable') }}</BaseButton>
     </div>
-    <div v-if="suppliers.length" class="supplier-list" @dragover.prevent>
-      <article v-for="supplier in suppliers" :key="supplier.id" :class="['supplier-row', { disabled: !supplier.enabled, dragging: draggingId === supplier.id }]" :draggable="!busy" @dragstart="onDragStart(supplier.id)" @dragend="onDragEnd" @drop.prevent="onDrop(supplier.id)">
-        <GripVertical class="drag-handle" :size="16" />
-        <div class="route-rank">L{{ supplier.level || 1 }}</div>
-        <div class="supplier-copy">
-          <div>
-            <strong>{{ supplier.name }}</strong>
-            <span :class="['state-label', { enabled: supplier.enabled }]">{{ supplier.enabled ? t('piPage.provider.enabled') : t('piPage.provider.disabled') }}</span>
-          </div>
-          <p>
-            <span>{{ t('piPage.suppliers.routeCount', { count: supplier.modelCount }) }}</span>
-            <span>{{ supplier.urlHost || (supplier.urlConfigured ? t('piPage.runtime.configured') : t('piPage.suppliers.noUrl')) }}</span>
-            <span>{{ supplier.protocol || t('piPage.platforms.inherited') }}</span>
-            <span>{{ supplier.keyConfigured ? t('piPage.runtime.credentialReady') : t('piPage.runtime.credentialMissing') }}</span>
-            <span v-if="supplier.identityName" class="identity-pill">{{ supplier.identityName }}<small v-if="supplier.modelIdentityCount">+{{ supplier.modelIdentityCount }}</small></span>
-          </p>
+
+    <div v-if="suppliers.length" class="supplier-table" @dragover.prevent>
+      <!-- 表头 -->
+      <div class="supplier-table-head">
+        <div class="th-rank">Lv</div>
+        <div class="th-name">{{ t('piPage.suppliers.name', '供应商') }}</div>
+        <div class="th-meta">{{ t('piPage.suppliers.detail', '详情') }}</div>
+        <div class="th-actions"></div>
+      </div>
+
+      <article
+        v-for="supplier in suppliers"
+        :key="supplier.id"
+        :class="['supplier-row', { disabled: !supplier.enabled, dragging: draggingId === supplier.id }]"
+        :draggable="!busy"
+        @dragstart="onDragStart(supplier.id)"
+        @dragend="onDragEnd"
+        @drop.prevent="onDrop(supplier.id)"
+      >
+        <div class="td-rank">
+          <span :class="['rank-badge', { on: supplier.enabled }]">L{{ supplier.level || 1 }}</span>
         </div>
-        <div class="supplier-actions">
+
+        <div class="td-name">
+          <div class="name-line">
+            <strong>{{ supplier.name }}</strong>
+            <span :class="['state-pill', { on: supplier.enabled }]">
+              {{ supplier.enabled ? t('piPage.provider.enabled') : t('piPage.provider.disabled') }}
+            </span>
+          </div>
+        </div>
+
+        <div class="td-meta">
+          <span class="info-item">
+            {{ t('piPage.suppliers.routeCount', { count: supplier.modelCount }) }}
+          </span>
+          <span class="info-item mono">{{ supplier.urlHost || (supplier.urlConfigured ? t('piPage.runtime.configured') : t('piPage.suppliers.noUrl')) }}</span>
+          <span class="info-item">{{ supplier.protocol || t('piPage.platforms.inherited') }}</span>
+          <span :class="['info-item', 'cred', supplier.keyConfigured ? 'ok' : 'miss']">
+            {{ supplier.keyConfigured ? t('piPage.runtime.credentialReady') : t('piPage.runtime.credentialMissing') }}
+          </span>
+          <span v-if="supplier.identityName" class="identity-pill">{{ supplier.identityName }}<small v-if="supplier.modelIdentityCount">+{{ supplier.modelIdentityCount }}</small></span>
+        </div>
+
+        <div class="td-actions">
           <label class="mac-switch sm" :title="t('piPage.actions.toggle')">
             <input type="checkbox" :checked="supplier.enabled" :disabled="busyId === supplier.id" @change="$emit('toggle', supplier)" />
             <span></span>
           </label>
-          <button type="button" :title="t('piPage.actions.edit')" :aria-label="t('piPage.actions.edit')" :disabled="busyId === supplier.id" @click="$emit('edit', supplier)"><Pencil :size="16" /></button>
-          <button type="button" class="danger" :title="t('piPage.actions.delete')" :aria-label="t('piPage.actions.delete')" :disabled="busyId === supplier.id" @click="$emit('delete', supplier)"><Trash2 :size="16" /></button>
+          <button type="button" class="row-btn" :title="t('piPage.actions.edit')" :aria-label="t('piPage.actions.edit')" :disabled="busyId === supplier.id" @click="$emit('edit', supplier)"><Pencil :size="15" /></button>
+          <button type="button" class="row-btn danger" :title="t('piPage.actions.delete')" :aria-label="t('piPage.actions.delete')" :disabled="busyId === supplier.id" @click="$emit('delete', supplier)"><Trash2 :size="15" /></button>
         </div>
       </article>
     </div>
+
     <button v-else type="button" class="empty-supplier" :disabled="busy" @click="$emit('add')">
       <PlusCircle :size="22" />
       <span><strong>{{ t('piPage.suppliers.empty') }}</strong><small>{{ t('piPage.suppliers.emptyHint') }}</small></span>
@@ -47,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { GripVertical, Pencil, Plus, PlusCircle, RouteOff, Trash2 } from 'lucide-vue-next'
+import { Pencil, Plus, PlusCircle, RouteOff, Trash2 } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseButton from '../common/BaseButton.vue'
@@ -89,39 +117,153 @@ const onDrop = (targetId: number) => {
 
 <style scoped>
 .supplier-view { display: grid; gap: 14px; }
-.direct-warning { display: flex; align-items: center; gap: 10px; padding: 12px 13px; border: 1px solid color-mix(in srgb, var(--warning, #d58a00) 28%, var(--mac-border)); border-radius: 8px; background: color-mix(in srgb, var(--warning, #d58a00) 7%, transparent); color: var(--warning, #936000); font-size: .875rem; line-height: 1.5; }.direct-warning span { flex: 1; }
+.direct-warning { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--warning, #d58a00) 28%, var(--mac-border)); border-radius: 12px; background: color-mix(in srgb, var(--warning, #d58a00) 8%, var(--mac-surface)); color: var(--warning, #936000); font-size: .875rem; line-height: 1.5; }.direct-warning span { flex: 1; }
 .section-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.section-title h2 { margin: 0; font-size: 1.04rem; }
+.section-title h2 { margin: 0; font-size: 1.05rem; }
 .section-title p { max-width: 720px; margin: 5px 0 0; color: var(--mac-text-secondary); font-size: .875rem; line-height: 1.5; }
-.section-title :deep(.btn) { display: inline-flex; align-items: center; gap: 6px; flex: none; }
-.supplier-list { display: grid; border: 1px solid var(--mac-border); border-radius: 7px; overflow: hidden; background: var(--mac-surface); }
-.supplier-row { display: grid; grid-template-columns: 18px 38px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 66px; padding: 9px 12px 9px 7px; }
-.supplier-row + .supplier-row { border-top: 1px solid var(--mac-border); }
-.supplier-row.disabled { opacity: .62; }
+.section-title :deep(.btn) { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 36px; border-radius: 10px; }
+
+/* ── 表格型卡片（参考 cockpit-tools instances-list） ── */
+.supplier-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mac-border);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--mac-surface);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--mac-text) 6%, transparent);
+}
+.supplier-table-head {
+  display: grid;
+  grid-template-columns: 56px minmax(160px, .7fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 18px;
+  background: var(--mac-surface-strong);
+  color: var(--mac-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  border-bottom: 1px solid var(--mac-border);
+}
+.supplier-row {
+  display: grid;
+  grid-template-columns: 56px minmax(160px, .7fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 62px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--mac-divider);
+  background: transparent;
+  transition: background .15s ease;
+}
+.supplier-row:last-child { border-bottom: none; }
+.supplier-row:nth-child(even) { background: color-mix(in srgb, var(--mac-bg) 40%, var(--mac-surface)); }
+.supplier-row:hover { background: color-mix(in srgb, var(--mac-accent) 5%, var(--mac-surface)); }
 .supplier-row.dragging { opacity: .42; }
-.drag-handle { color: var(--mac-text-secondary); cursor: grab; }
-.route-rank { display: inline-grid; place-items: center; width: 36px; height: 30px; border-radius: 6px; background: color-mix(in srgb, var(--mac-accent) 9%, var(--mac-surface-strong)); color: var(--mac-accent); font: 600 .8rem ui-monospace, monospace; }
-.supplier-copy { display: grid; min-width: 0; gap: 5px; }
-.supplier-copy > div { display: flex; align-items: center; gap: 7px; }
-.supplier-copy strong { overflow: hidden; font-size: .9rem; text-overflow: ellipsis; white-space: nowrap; }
-.state-label { min-height: 22px; padding: 3px 7px; border-radius: 5px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); font-size: .8125rem; }
-.state-label.enabled { color: var(--success, #16825d); background: color-mix(in srgb, var(--success, #16825d) 9%, transparent); }
-.supplier-copy p { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0; color: var(--mac-text-secondary); font-size: .8125rem; }
-.identity-pill { display: inline-flex; align-items: center; gap: 4px; min-height: 20px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--mac-accent) 9%, var(--mac-surface-strong)); color: var(--mac-accent); }.identity-pill small { font-size: .75rem; }
-.supplier-actions { display: flex; align-items: center; gap: 6px; }
-.supplier-actions button { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; }
-.supplier-actions button:hover:not(:disabled) { background: var(--mac-surface-strong); color: var(--mac-text); }
-.supplier-actions button.danger:hover:not(:disabled) { color: var(--error); }
-.supplier-actions button:disabled { opacity: .4; }
-.empty-supplier { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 110px; border: 1px dashed var(--mac-border); border-radius: 7px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; }
+.supplier-row.disabled { opacity: .62; }
+
+.td-rank { display: flex; align-items: center; }
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--mac-surface-strong);
+  color: var(--mac-text-secondary);
+  font: 700 10px ui-monospace, monospace;
+  letter-spacing: .03em;
+}
+.rank-badge.on { background: color-mix(in srgb, var(--mac-accent) 12%, var(--mac-surface)); color: var(--mac-accent); }
+
+.td-name { min-width: 0; }
+.name-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.name-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .92rem; font-weight: 600; }
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--mac-border);
+  background: var(--mac-surface-strong);
+  color: var(--mac-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  flex-shrink: 0;
+}
+.state-pill.on {
+  background: color-mix(in srgb, var(--success, #22c55e) 12%, var(--mac-surface));
+  border-color: color-mix(in srgb, var(--success, #22c55e) 25%, var(--mac-border));
+  color: var(--success, #16825d);
+}
+
+.td-meta { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.info-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--mac-text-secondary) 7%, var(--mac-surface));
+  border: 1px solid color-mix(in srgb, var(--mac-text-secondary) 10%, var(--mac-border));
+  color: var(--mac-text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.info-item.mono { font-family: ui-monospace, monospace; }
+.info-item.cred.ok { color: var(--success, #16825d); }
+.info-item.cred.miss { color: var(--warning, #936000); }
+.identity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mac-accent) 10%, var(--mac-surface));
+  color: var(--mac-accent);
+  font-size: 10px;
+}.identity-pill small { font-size: 9px; opacity: .8; }
+
+.td-actions { display: flex; align-items: center; gap: 4px; }
+.row-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--mac-text-secondary);
+  cursor: pointer;
+  transition: all .2s ease;
+}
+.row-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--mac-accent) 12%, var(--mac-surface)); color: var(--mac-accent); }
+.row-btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error, #ef4444) 12%, var(--mac-surface)); color: var(--error, #ef4444); }
+.row-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+.empty-supplier { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 110px; border: 1px dashed var(--mac-border); border-radius: 16px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; }
 .empty-supplier:hover { border-color: var(--mac-accent); color: var(--mac-accent); }
 .empty-supplier span { display: grid; gap: 3px; text-align: left; }
 .empty-supplier strong { color: var(--mac-text); font-size: .9rem; }
-.empty-supplier small { font-size: .8125rem; }
+.empty-supplier small { font-size: .8rem; }
+
+@media (max-width: 860px) {
+  .supplier-table-head, .supplier-row { grid-template-columns: 52px minmax(0, 1fr) auto; }
+  .th-meta, .td-meta { display: none; }
+}
 @media (max-width: 600px) {
   .section-title { align-items: stretch; flex-direction: column; }
   .section-title :deep(.btn) { justify-content: center; }
-  .supplier-row { grid-template-columns: 18px 36px minmax(0, 1fr); }
-  .supplier-actions { grid-column: 3; justify-content: flex-end; }
+  .supplier-table-head { display: none; }
+  .supplier-row { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 12px 14px; }
+  .th-name, .td-rank { display: none; }
 }
 </style>

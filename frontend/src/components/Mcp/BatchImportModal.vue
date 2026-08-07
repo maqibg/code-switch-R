@@ -430,4 +430,6 @@ const doImport = async () => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+:global(html.dark) .badge.new { color: #4ade80; }
+:global(html.dark) .badge.conflict { color: #fbbf24; }
 </style>

@@ -130,13 +130,14 @@
             :key="tab.id"
             class="tab-pill"
             :class="{ active: selectedIndex === idx }"
+            :data-platform="tab.id"
             role="tab"
             :aria-selected="selectedIndex === idx"
             type="button"
             @click="onTabChange(idx)"
             @contextmenu.prevent.stop="openPlatformOrderMenu($event, tab)"
           >
-            {{ tab.label }}
+            <span>{{ tab.label }}</span>
           </button>
         </div>
         <div class="section-controls">
@@ -222,15 +223,7 @@
         </div>
       </div>
 
-      <GrokRuntimeBar
-        v-if="isGrokPlatformTab"
-        :status="grokRuntime"
-        :busy="grokRuntimeBusy"
-        @save-directory="(directory) => runGrokRuntimeAction(() => setGrokCustomDirectory(directory))"
-        @disable="runGrokRuntimeAction(disableGrokManagement)"
-        @reapply="runGrokRuntimeAction(reapplyGrokManagement)"
-        @abandon="runGrokRuntimeAction(abandonGrokManagement)"
-      />
+
 
       <GrokOAuthPanel
         v-if="isGrokOAuthTab"
@@ -264,19 +257,9 @@
             ✓ {{ t('components.main.providers.lastUsed') }}
           </span>
           <div class="card-leading">
-            <div class="card-icon" :style="{ backgroundColor: card.tint, color: card.accent }">
-              <span
-                v-if="!iconSvg(card.icon)"
-                class="icon-fallback"
-              >
-                {{ vendorInitials(card.name) }}
-              </span>
-              <span
-                v-else
-                class="icon-svg"
-                v-html="iconSvg(card.icon)"
-                aria-hidden="true"
-              ></span>
+            <div class="card-icon" :style="{ '--card-accent': platformCardBg }">
+              <span v-if="platformIcon" class="icon-svg" v-html="platformIcon" aria-hidden="true"></span>
+              <span v-else class="icon-fallback">{{ vendorInitials(card.name) }}</span>
             </div>
             <div class="card-text">
               <div class="card-title-row">
@@ -498,8 +481,6 @@
       <form class="vendor-form" @submit.prevent="submitModal">
                 <div class="provider-modal-tabs" role="tablist" aria-label="供应商设置分类">
                   <button type="button" role="tab" :aria-selected="providerModalTab === 'basic'" :class="{ active: providerModalTab === 'basic' }" @click="providerModalTab = 'basic'">基本信息</button>
-                  <button type="button" role="tab" :aria-selected="providerModalTab === 'auth'" :class="{ active: providerModalTab === 'auth' }" @click="providerModalTab = 'auth'">认证方式</button>
-                  <button type="button" role="tab" :aria-selected="providerModalTab === 'routing'" :class="{ active: providerModalTab === 'routing' }" @click="providerModalTab = 'routing'">请求路由</button>
                   <button type="button" role="tab" :aria-selected="providerModalTab === 'advanced'" :class="{ active: providerModalTab === 'advanced' }" @click="providerModalTab = 'advanced'">高级设置</button>
                 </div>
                 <label v-show="providerModalTab === 'basic'" class="form-field">
@@ -537,7 +518,7 @@
                   />
                 </label>
 
-                <label v-if="!isOAuthCredential" v-show="providerModalTab === 'auth'" class="form-field">
+                <label v-if="!isOAuthCredential" v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.apiKey') }}</span>
                   <BaseInput
                     v-model="modalState.form.apiKey"
@@ -546,32 +527,31 @@
                   />
                 </label>
 
-                <div v-if="!isGeminiProviderModal && isOAuthCredential" v-show="providerModalTab === 'auth'" class="form-field legacy-credential-field">
+                <div v-if="!isGeminiProviderModal && isOAuthCredential" v-show="providerModalTab === 'basic'" class="form-field legacy-credential-field">
                   <span>当前凭据</span>
-                  <span class="field-hint">当前供应商仍保存 OAuth 凭据。账号登录、刷新和应用请前往账号页；保存时会保留此配置。</span>
+                  <span class="field-hint">OAuth 账号在账号页管理，保存时保留此凭据。</span>
                 </div>
 
-                <div v-if="isGeminiProviderModal && isOAuthCredential" v-show="providerModalTab === 'auth'" class="form-field legacy-credential-field">
+                <div v-if="isGeminiProviderModal && isOAuthCredential" v-show="providerModalTab === 'basic'" class="form-field legacy-credential-field">
                   <span>当前凭据</span>
-                  <span class="field-hint">当前供应商仍保存 OAuth 凭据。账号登录、刷新和应用请前往 Gemini 的账号页；保存时会保留此配置。</span>
+                  <span class="field-hint">OAuth 账号在 Gemini 账号页管理，保存时保留此凭据。</span>
                 </div>
 
-                <div v-else-if="isGeminiProviderModal" v-show="providerModalTab === 'auth'" class="form-field">
+                <div v-else-if="isGeminiProviderModal" v-show="providerModalTab === 'basic'" class="form-field">
                   <span>Credential 类型</span>
                   <select v-model="modalState.form.credentialType" class="gemini-select">
                     <option v-for="option in geminiCredentialOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                   </select>
-                  <span class="field-hint">Gemini CLI OAuth 在账号页管理；这里仅配置 API 供应商认证。</span>
                 </div>
 
-                <div v-if="isGeminiProviderModal" v-show="providerModalTab === 'routing'" class="form-field">
+                <div v-if="isGeminiProviderModal" v-show="providerModalTab === 'basic'" class="form-field">
                   <span>Gemini 端点类型</span>
                   <select v-model="modalState.form.endpointKind" class="gemini-select">
                     <option v-for="option in geminiEndpointOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                   </select>
                 </div>
 
-                <div v-if="isGeminiProviderModal" v-show="providerModalTab === 'routing'" class="gemini-inline-fields">
+                <div v-if="isGeminiProviderModal" v-show="providerModalTab === 'basic'" class="gemini-inline-fields">
                   <label class="form-field">
                     <span>API 版本</span>
                     <select v-model="modalState.form.apiVersion" class="gemini-select">
@@ -590,7 +570,7 @@
                 </div>
 
                 <!-- API 端点（可选）-->
-                <label v-show="providerModalTab === 'routing'" class="form-field">
+                <label v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.apiEndpoint') }}</span>
                   <BaseInput
                     v-model="modalState.form.apiEndpoint"
@@ -601,7 +581,7 @@
                 </label>
 
                 <!-- 上游协议类型 -->
-                <div v-if="showUpstreamProtocolField" v-show="providerModalTab === 'routing'" class="form-field">
+                <div v-if="showUpstreamProtocolField" v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.upstreamProtocol') }}</span>
                   <Listbox v-model="modalState.form.upstreamProtocol" v-slot="{ open }">
                     <div class="level-select">
@@ -632,7 +612,7 @@
                   <span class="field-hint">{{ upstreamProtocolHint }}</span>
                 </div>
 
-                <div v-if="isGrokProviderModal" v-show="providerModalTab === 'routing'" class="form-field">
+                <div v-if="isGrokProviderModal" v-show="providerModalTab === 'basic'" class="form-field">
                   <GrokUpstreamModelField
                     v-model="modalState.form.grokUpstreamModel"
                     :provider="modelDiscoveryProvider"
@@ -640,53 +620,8 @@
                   <span class="field-hint">{{ t('grok.form.upstreamModelHint') }}</span>
                 </div>
 
-                <div v-if="modalState.tabId === 'codex'" v-show="providerModalTab === 'routing'" class="form-field switch-field">
-                  <span>{{ t('components.main.form.labels.codexReasoningContinue') }}</span>
-                  <div class="switch-inline">
-                    <label class="mac-switch">
-                      <input
-                        type="checkbox"
-                        v-model="modalState.form.codexReasoningContinueEnabled"
-                        :disabled="isCodexChatProtocol"
-                      />
-                      <span></span>
-                    </label>
-                    <span class="switch-text">
-                      {{ modalState.form.codexReasoningContinueEnabled ? t('components.main.form.switch.on') : t('components.main.form.switch.off') }}
-                    </span>
-                  </div>
-                  <span class="field-hint">{{ t('components.main.form.hints.codexReasoningContinue') }}</span>
-                </div>
-
-                <div v-if="modalState.tabId === 'codex'" v-show="providerModalTab === 'routing'" class="form-field switch-field">
-                  <span>{{ t('components.main.form.labels.codexReasoningContinueLog') }}</span>
-                  <div class="switch-inline">
-                    <label class="mac-switch">
-                      <input
-                        type="checkbox"
-                        v-model="modalState.form.codexReasoningContinueLogEnabled"
-                        :disabled="
-                          isCodexChatProtocol ||
-                          !modalState.form.codexReasoningContinueEnabled
-                        "
-                      />
-                      <span></span>
-                    </label>
-                    <span class="switch-text">
-                      {{
-                        modalState.form.codexReasoningContinueEnabled &&
-                        !isCodexChatProtocol &&
-                        modalState.form.codexReasoningContinueLogEnabled
-                          ? t('components.main.form.switch.on')
-                          : t('components.main.form.switch.off')
-                      }}
-                    </span>
-                  </div>
-                  <span class="field-hint">{{ t('components.main.form.hints.codexReasoningContinueLog') }}</span>
-                </div>
-
                 <!-- 认证方式 -->
-                <div v-show="providerModalTab === 'auth'" class="form-field">
+                <div v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.connectivityAuthType') }}</span>
                   <Listbox v-model="selectedAuthType" v-slot="{ open }">
                     <div class="level-select">
@@ -721,7 +656,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.connectivityAuthType') }}</span>
                 </div>
 
-                <label v-show="providerModalTab === 'routing'" class="form-field">
+                <label v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.modelsEndpoint') }}</span>
                   <BaseInput
                     v-model="modalState.form.modelsEndpoint"
@@ -767,47 +702,6 @@
 
                 <div v-show="providerModalTab === 'advanced'" class="form-field">
                   <HeaderEditor v-model="modalState.form.headers" />
-                </div>
-
-                <div v-show="providerModalTab === 'basic'" class="form-field">
-                  <span>{{ t('components.main.form.labels.icon') }}</span>
-                  <Listbox v-model="modalState.form.icon" v-slot="{ open }" class="w-full">
-                    <div class="icon-select">
-                      <ListboxButton class="icon-select-button">
-                        <span class="icon-preview" v-html="iconSvg(modalState.form.icon)" aria-hidden="true"></span>
-                        <span class="icon-select-label">{{ modalState.form.icon }}</span>
-                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-                        </svg>
-                      </ListboxButton>
-                      <ListboxOptions v-if="open" class="icon-select-options">
-                        <div class="icon-search-wrapper">
-                          <input
-                            v-model="iconSearchQuery"
-                            type="text"
-                            class="icon-search-input"
-                            :placeholder="t('components.main.form.placeholders.searchIcon')"
-                            @click.stop
-                            @keydown.stop
-                          />
-                        </div>
-                        <ListboxOption
-                          v-for="iconName in filteredIconOptions"
-                          :key="iconName"
-                          :value="iconName"
-                          v-slot="{ active, selected }"
-                        >
-                          <div :class="['icon-option', { active, selected }]">
-                            <span class="icon-preview" v-html="iconSvg(iconName)" aria-hidden="true"></span>
-                            <span class="icon-name">{{ iconName }}</span>
-                          </div>
-                        </ListboxOption>
-                        <div v-if="filteredIconOptions.length === 0" class="icon-no-results">
-                          {{ t('components.main.form.noIconResults') }}
-                        </div>
-                      </ListboxOptions>
-                    </div>
-                  </Listbox>
                 </div>
 
                 <div v-show="providerModalTab === 'basic'" class="form-field">
@@ -989,13 +883,16 @@ import HeaderEditor from '../common/HeaderEditor.vue'
 import CLIConfigEditor from '../common/CLIConfigEditor.vue'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
 import type { CLIPlatform } from '../../services/cliConfig'
+import claudeIcon from '../../assets/icons/claude.svg?raw'
+import codexIcon from '../../assets/icons/codex.svg?raw'
+import geminiIcon from '../../assets/icons/gemini.svg?raw'
+import grokIcon from '../../assets/icons/grok.svg?raw'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
 import { showToast } from '../../utils/toast'
 import { createMainState } from './state'
 import { providerTabIds, type ProviderTab } from './platformTabs'
 import {
   formatOfficialSite,
-  iconSvg,
   openOfficialSite,
   vendorInitials,
 } from './utils'
@@ -1033,6 +930,22 @@ const props = withDefaults(defineProps<{
 const { t, locale } = useI18n()
 const router = useRouter()
 const embedded = computed(() => Boolean(props.embedded))
+
+// 供应商卡片的品牌图标与背景：按当前平台统一使用平台主题色
+const platformIconMap: Record<string, string> = {
+  claude: claudeIcon,
+  codex: codexIcon,
+  gemini: geminiIcon,
+  grok: grokIcon,
+  reasonix: '',
+}
+const platformIcon = computed(() => platformIconMap[props.platform || ''] || '')
+const platformCardBg = computed(() => {
+  const base: Record<string, string> = {
+    claude: '#b76645', codex: '#277b71', gemini: '#3d70c9', grok: '#000000', reasonix: '#82633f',
+  }
+  return base[props.platform || ''] || 'var(--mac-accent)'
+})
 
 // ---------- 主题与导航 ----------
 
@@ -1263,8 +1176,6 @@ const { highlightedProvider, isLastUsedProvider, scrollToCard } = useLastUsed(st
 const {
   modalState,
   providerModalTab,
-  iconSearchQuery,
-  filteredIconOptions,
   getLevelDescription,
   selectedAuthType,
   customAuthHeader,
@@ -1276,7 +1187,6 @@ const {
   isOAuthCredential,
   geminiCredentialOptions,
   geminiEndpointOptions,
-  isCodexChatProtocol,
   effectiveUpstreamProtocolOptions,
   upstreamProtocolHint,
   modelDiscoveryProvider,
@@ -1413,10 +1323,12 @@ onUnmounted(() => {
   .embedded-contrib-page { padding: 18px 0 28px; }
   .embedded-contrib-page .section-controls { width: 100%; justify-content: flex-end; }
 }
-.provider-modal-tabs { display: flex; gap: 3px; margin: -4px 0 12px; padding: 3px; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); overflow-x: auto; }
-.provider-modal-tabs button { min-height: 30px; flex: 1 0 auto; padding: 0 13px; border: 0; border-radius: 6px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
-.provider-modal-tabs button:hover { color: var(--mac-text); }
-.provider-modal-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 4px color-mix(in srgb, var(--mac-text) 12%, transparent); font-weight: 650; }
+.provider-modal-tabs { display: flex; gap: 4px; width: 100%; min-width: 0; padding: 4px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--mac-accent) 18%, var(--mac-border)); background: color-mix(in srgb, var(--mac-surface) 62%, transparent); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 46%, transparent); box-sizing: border-box; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: none; }
+.provider-modal-tabs::-webkit-scrollbar { display: none; }
+.provider-modal-tabs button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1 1 0; min-width: 0; margin: 0 !important; height: 36px; padding: 0 18px !important; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 13px; font-weight: 550; white-space: nowrap; cursor: pointer; box-sizing: border-box; opacity: .62; transition: opacity .2s ease, background-color .2s ease, color .2s ease; }
+.provider-modal-tabs button:hover { opacity: 1; color: var(--mac-text); background: color-mix(in srgb, var(--mac-accent) 9%, transparent); }
+.provider-modal-tabs button.active { opacity: 1; color: #fff; background: var(--platform-color, var(--mac-accent)); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent); font-weight: 650; }
+.provider-modal-tabs button:focus-visible { outline: 2px solid color-mix(in srgb, var(--platform-color, var(--mac-accent)) 60%, transparent); outline-offset: 1px; }
 .legacy-credential-field { min-height: 52px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--mac-accent) 28%, var(--mac-border)); border-radius: 7px; background: color-mix(in srgb, var(--mac-accent) 6%, transparent); }
 .oauth-import-menu { position: relative; }
 .oauth-import-items { position: absolute; top: calc(100% + 6px); right: 0; z-index: 80; display: grid; min-width: 168px; padding: 5px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .18); }
@@ -1744,7 +1656,7 @@ onUnmounted(() => {
 
 .level-option.selected {
   background: rgba(10, 132, 255, 0.12); /* fallback for old WebKit */
-  background: color-mix(in srgb, var(--mac-accent) 12%, transparent);
+  background: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 12%, transparent);
   font-weight: 500;
 }
 
@@ -1765,7 +1677,7 @@ onUnmounted(() => {
 }
 
 .level-option.selected .level-name {
-  color: var(--mac-accent);
+  color: var(--platform-color, var(--mac-accent));
 }
 
 /* 黑名单横幅 */
@@ -2235,9 +2147,9 @@ onUnmounted(() => {
 }
 
 .direct-apply-btn.is-active {
-  border: 1px solid #10b981;
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  border: 1px solid var(--platform-color, #10b981);
+  background: color-mix(in srgb, var(--platform-color, #10b981) 10%, transparent);
+  color: var(--platform-color, #10b981);
   width: auto;
   padding: 0 8px;
   border-radius: 6px;
@@ -2251,9 +2163,9 @@ onUnmounted(() => {
 }
 
 :global(.dark) .direct-apply-btn.is-active {
-  border-color: #34d399;
-  background: rgba(52, 211, 153, 0.15);
-  color: #34d399;
+  border-color: var(--platform-color, #34d399);
+  background: color-mix(in srgb, var(--platform-color, #34d399) 15%, transparent);
+  color: var(--platform-color, #34d399);
 }
 
 /* 当前使用徽章 */
@@ -2265,12 +2177,12 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: var(--platform-color, #10b981);
   color: white;
-  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--platform-color, #10b981) 20%, transparent);
 }
 
 :global(.dark) .current-use-badge {
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  background: var(--platform-color, #059669);
 }
 </style>

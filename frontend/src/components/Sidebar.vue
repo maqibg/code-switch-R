@@ -3,13 +3,18 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { fetchCurrentVersion } from '../services/version'
+import claudeIcon from '../assets/icons/claude.svg?raw'
+import codexIcon from '../assets/icons/codex.svg?raw'
+import geminiIcon from '../assets/icons/gemini.svg?raw'
+import grokIcon from '../assets/icons/grok.svg?raw'
+import piIcon from '../assets/icons/pi.svg?raw'
+import opencodeIcon from '../assets/icons/opencode.svg?raw'
+import reasonixIcon from '../assets/icons/reasonix.svg?raw'
 import {
   getStoredHiddenPlatformPages,
   getStoredSidebarCollapsed,
-  getStoredVisitedPages,
   persistFrontendPreferencesPatch,
   setStoredSidebarCollapsed,
-  setStoredVisitedPages,
   type PlatformPageID,
 } from '../utils/frontendPreferences'
 
@@ -21,16 +26,15 @@ const appVersion = ref('...')
 const isCollapsed = ref(false)
 const platformGroupOpen = ref(true)
 const hiddenPlatforms = ref<PlatformPageID[]>([])
-const visitedPages = ref<Set<string>>(new Set())
 
-const platforms: Array<{ id: PlatformPageID; name: string; mark: string }> = [
-  { id: 'claude', name: 'Claude Code', mark: 'C' },
-  { id: 'codex', name: 'Codex', mark: 'X' },
-  { id: 'pi', name: 'Pi', mark: 'P' },
-  { id: 'grok', name: 'Grok Build', mark: 'G' },
-  { id: 'reasonix', name: 'Reasonix', mark: 'R' },
-  { id: 'gemini', name: 'Gemini', mark: 'G' },
-  { id: 'opencode', name: 'OpenCode', mark: 'O' },
+const platforms: Array<{ id: PlatformPageID; name: string; mark: string; icon?: string; iconSrc?: string; color?: string }> = [
+  { id: 'claude', name: 'Claude Code', mark: 'C', icon: claudeIcon, color: '#b76645' },
+  { id: 'codex', name: 'Codex', mark: 'X', icon: codexIcon, color: 'var(--mac-text)' },
+  { id: 'pi', name: 'Pi', mark: 'P', icon: piIcon, color: 'var(--mac-text)' },
+  { id: 'grok', name: 'Grok Build', mark: 'G', icon: grokIcon, color: 'var(--mac-text)' },
+  { id: 'reasonix', name: 'Reasonix', mark: 'R', icon: reasonixIcon, color: '#6c7cff' },
+  { id: 'gemini', name: 'Gemini', mark: 'G', icon: geminiIcon, color: '#3d70c9' },
+  { id: 'opencode', name: 'OpenCode', mark: 'O', icon: opencodeIcon, color: 'var(--mac-text)' },
 ]
 
 const primaryItems = [
@@ -52,15 +56,6 @@ const currentPath = computed(() => route.path)
 const loadPreferences = () => {
   isCollapsed.value = getStoredSidebarCollapsed()
   hiddenPlatforms.value = getStoredHiddenPlatformPages()
-  visitedPages.value = new Set(getStoredVisitedPages())
-}
-
-const markAsVisited = (path: string) => {
-  if (visitedPages.value.has(path)) return
-  visitedPages.value.add(path)
-  const pages = [...visitedPages.value]
-  setStoredVisitedPages(pages)
-  void persistFrontendPreferencesPatch({ visited_pages: pages })
 }
 
 const isActive = (path: string) => {
@@ -69,7 +64,6 @@ const isActive = (path: string) => {
 }
 
 const isPlatformActive = (id: PlatformPageID) => currentPath.value === `/platform/${id}` || currentPath.value.startsWith(`/platform/${id}/`)
-const shouldShowNew = (path: string) => path !== '/logs' && !visitedPages.value.has(path)
 
 const navigate = (path: string) => { void router.push(path) }
 
@@ -85,7 +79,6 @@ const handleVisibilityChanged = () => { hiddenPlatforms.value = getStoredHiddenP
 
 onMounted(async () => {
   loadPreferences()
-  markAsVisited(route.path)
   window.addEventListener('platform-visibility-updated', handleVisibilityChanged)
   try {
     appVersion.value = await fetchCurrentVersion()
@@ -93,8 +86,6 @@ onMounted(async () => {
     appVersion.value = 'v?.?.?'
   }
 })
-
-watch(() => route.path, (path) => markAsVisited(path))
 
 onUnmounted(() => window.removeEventListener('platform-visibility-updated', handleVisibilityChanged))
 </script>
@@ -146,8 +137,10 @@ onUnmounted(() => window.removeEventListener('platform-visibility-updated', hand
             :title="isCollapsed ? platform.name : ''"
             @click="navigate(`/platform/${platform.id}`)"
           >
-            <span class="platform-mark" :data-platform="platform.id">{{ platform.mark }}</span>
-            <span v-if="!isCollapsed" class="nav-label">{{ platform.name }}</span>
+            <span v-if="platform.icon" class="platform-mark" v-html="platform.icon" :style="{ '--platform-color': platform.color }"></span>
+            <img v-else-if="platform.iconSrc" class="platform-mark platform-mark-img" :src="platform.iconSrc" alt="" />
+            <span v-else class="platform-mark" :data-platform="platform.id">{{ platform.mark }}</span>
+            <span class="nav-label">{{ platform.name }}</span>
           </button>
         </div>
       </div>
@@ -169,7 +162,6 @@ onUnmounted(() => window.removeEventListener('platform-visibility-updated', hand
         <svg v-else-if="item.icon === 'pricing'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2v20M17 6.5C16 5.5 14.6 5 12.8 5 10 5 8 6.5 8 8.7c0 2.5 2.4 3.4 5 4.1 2.6.7 5 1.6 5 4.1 0 2.2-2 3.7-4.8 3.7-1.9 0-3.5-.5-4.7-1.6" /></svg>
         <svg v-else-if="item.icon === 'console'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 7 5 5-5 5M13 17h6" /></svg>
         <span class="nav-label" v-if="!isCollapsed">{{ t(item.labelKey) }}</span>
-        <span v-if="!isCollapsed && shouldShowNew(item.path)" class="new-badge">NEW</span>
       </button>
     </div>
 
@@ -178,9 +170,9 @@ onUnmounted(() => window.removeEventListener('platform-visibility-updated', hand
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5.4 15H5a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 10.85 5H11a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.6 11H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
         <span class="nav-label">{{ t('sidebar.settings') }}</span>
       </button>
-      <div class="sidebar-meta"><span class="status-dot"></span><span>Relay 运行中</span><span class="version">{{ appVersion }}</span></div>
+      <div class="sidebar-meta"><span class="version">{{ appVersion }}</span></div>
     </div>
-    <div v-else class="sidebar-footer collapsed-footer"><span class="status-dot"></span></div>
+    <div v-else class="sidebar-footer collapsed-footer"></div>
   </nav>
 </template>
 
@@ -199,7 +191,7 @@ onUnmounted(() => window.removeEventListener('platform-visibility-updated', hand
 .nav-section-label-spaced { margin-top: 12px; }
 .nav-item, .platform-item, .nav-group-heading { width: 100%; display: flex; align-items: center; gap: 9px; min-height: 34px; margin: 1px 0; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; font-weight: 550; text-align: left; cursor: pointer; transition: background .15s ease, color .15s ease; }
 .nav-item.active, .platform-item.active { background: color-mix(in srgb, var(--mac-accent) 14%, transparent); color: var(--mac-text); }
-.nav-item.active .nav-icon, .platform-item.active .platform-mark { color: var(--mac-accent); }
+.nav-item.active .nav-icon { color: var(--mac-accent); }
 .nav-icon { width: 16px; height: 16px; flex: 0 0 auto; }
 .nav-label { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
 .nav-group-heading { justify-content: space-between; color: var(--mac-text); font-size: 11px; font-weight: 700; }
@@ -208,14 +200,13 @@ onUnmounted(() => window.removeEventListener('platform-visibility-updated', hand
 .group-caret.rotated { transform: rotate(-90deg); }
 .platform-list { display: grid; gap: 1px; padding: 2px 0 4px 10px; }
 .platform-item { min-height: 32px; }
-.platform-mark { display: inline-grid; width: 20px; height: 20px; place-items: center; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--platform-color, var(--mac-accent)) 35%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 11%, transparent); color: var(--platform-color, var(--mac-accent)); font-size: 10px; font-weight: 750; }
-.platform-mark[data-platform="claude"] { --platform-color: #b76645; }.platform-mark[data-platform="codex"] { --platform-color: #277b71; }.platform-mark[data-platform="pi"] { --platform-color: #89507d; }.platform-mark[data-platform="grok"] { --platform-color: #506b80; }.platform-mark[data-platform="reasonix"] { --platform-color: #82633f; }.platform-mark[data-platform="gemini"] { --platform-color: #3d70c9; }.platform-mark[data-platform="opencode"] { --platform-color: #5c7580; }
-.new-badge { color: var(--mac-accent); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.platform-mark { display: inline-grid; width: 20px; height: 20px; place-items: center; flex: 0 0 auto; color: var(--platform-color, var(--mac-accent)); overflow: hidden; }
+.platform-mark svg { width: 18px; height: 18px; display: block; }.platform-mark[data-platform="claude"] { --platform-color: #b76645; }.platform-mark[data-platform="codex"] { --platform-color: #277b71; }.platform-mark[data-platform="pi"] { --platform-color: #89507d; }.platform-mark[data-platform="grok"] { --platform-color: #506b80; }.platform-mark[data-platform="reasonix"] { --platform-color: #82633f; }.platform-mark[data-platform="gemini"] { --platform-color: #3d70c9; }.platform-mark[data-platform="opencode"] { --platform-color: #5c7580; }
+.platform-mark-img { border-radius: 5px; object-fit: contain; }
 .sidebar-footer { padding: 8px 8px 14px; border-top: 1px solid var(--mac-sidebar-border); }
 .footer-settings { margin-bottom: 8px; }
 .sidebar-meta { display: flex; align-items: center; gap: 6px; padding: 4px 10px; color: var(--mac-text-secondary); font-size: 10px; }
-.status-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: #2eaa67; box-shadow: 0 0 0 3px color-mix(in srgb, #2eaa67 14%, transparent); }
-.version { margin-left: auto; opacity: .65; }
+.version { opacity: .65; }
 .collapsed-footer { display: grid; place-items: center; padding: 13px 0; }
 .mac-sidebar.collapsed .sidebar-header { justify-content: center; padding: 24px 0 10px; }
 .mac-sidebar.collapsed .collapse-btn { margin: 0; }

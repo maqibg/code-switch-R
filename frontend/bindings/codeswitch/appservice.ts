@@ -20,3 +20,10 @@ export function SetApp(app: application$0.App | null): $CancellablePromise<void>
 export function SetTrayWindowHeight(height: number): $CancellablePromise<void> {
     return $Call.ByID(3935785145, height);
 }
+
+/**
+ * SetWindowDarkTheme 把原生窗口标题栏同步为应用内主题，前端主题切换时调用。
+ */
+export function SetWindowDarkTheme(dark: boolean): $CancellablePromise<void> {
+    return $Call.ByID(616365435, dark);
+}

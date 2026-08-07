@@ -39,6 +39,9 @@ export const deleteOpenCodeMCPServer = async (key: string) => OpenCodeAPI.Delete
 export const fetchOpenCodeWSLTargets = async () => OpenCodeAPI.ListWSLTargets()
 export const syncOpenCodeWSLConfig = async (distro: string, configPath = '') => OpenCodeAPI.SyncWSLConfig({ distro, config_path: configPath })
 
+export const startOpenCode = async () => OpenCodeAPI.Start()
+export const stopOpenCode = async () => OpenCodeAPI.Stop()
+
 export const createOpenCodeModelInput = (model: Partial<OpenCodeModelInput> = {}) =>
   new OpenCodeModelInput({
     id: model.id ?? '',

@@ -295,11 +295,6 @@ function readImportFile(event: Event) {
   input.value = ''
 }
 
-function formatExpiry(value: number) {
-  if (!value) return '未提供'
-  return new Date(value).toLocaleString()
-}
-
 onMounted(() => { void loadAccounts() })
 watch(() => props.initialPlatform, (next) => {
   if (!next || platform.value === next) return
@@ -398,14 +393,19 @@ onBeforeUnmount(stopDevicePolling)
         <article v-for="account in filteredAccounts" :key="account.id" class="account-card" :class="{ applied: appliedAccountId === account.id, attention: account.status !== 'active' || !!account.refreshError || !!account.quotaError }">
           <div class="account-card-top">
             <div class="account-avatar"><KeyRound :size="18" /></div>
-            <div class="account-main"><div class="account-title"><strong>{{ account.email || account.displayName || account.accountId || '未命名账号' }}</strong><span :class="['status', account.status]">{{ statusLabel(account.status) }}</span><span v-if="appliedAccountId === account.id" class="current-account">当前 CLI</span></div><div class="account-meta">{{ account.planType || 'OAuth' }} · {{ account.source || '本地账号' }} · 到期 {{ formatExpiry(account.accessTokenExpiresAt) }}</div></div>
-            <span class="account-id">{{ account.id.slice(0, 12) }}</span>
+            <div class="account-main"><div class="account-title"><strong>{{ account.email || account.displayName || account.accountId || '未命名账号' }}</strong><span v-if="appliedAccountId === account.id" class="current-account">当前 CLI</span></div><div class="account-meta">{{ account.planType || 'OAuth' }} · {{ account.source || '本地账号' }}</div></div>
+            <span :class="['status', account.status]">{{ statusLabel(account.status) }}</span>
           </div>
           <div class="quota-grid">
             <div v-for="item in quotaItems(account)" :key="item.key" class="quota-item"><div class="quota-label"><span>{{ item.label }}</span><strong>{{ quotaLabel(item.value) }}</strong></div><div class="quota-track"><span :style="{ width: `${item.value ?? 0}%` }"></span></div></div>
           </div>
           <div v-if="account.refreshError || account.quotaError" class="account-error"><AlertTriangle :size="14" />{{ account.refreshError || account.quotaError }}</div>
-          <div class="account-card-actions"><BaseButton variant="outline" :disabled="!!action" @click="refreshAccount(account)"><RefreshCw :size="14" />刷新凭据</BaseButton><BaseButton variant="outline" :disabled="!!action" @click="refreshQuota(account)"><CheckCircle2 :size="14" />刷新额度</BaseButton><BaseButton :disabled="!!action" @click="applyAccount(account)"><KeyRound :size="14" />{{ appliedAccountId === account.id ? '已应用' : '应用 CLI' }}</BaseButton><button class="danger-icon" title="删除账号" :disabled="!!action" @click="removeAccount(account)"><Trash2 :size="15" /></button></div>
+          <div class="account-card-actions">
+            <button class="card-action-btn" title="刷新凭据" :disabled="!!action" @click="refreshAccount(account)"><RefreshCw :size="15" /></button>
+            <button class="card-action-btn" title="刷新额度" :disabled="!!action" @click="refreshQuota(account)"><CheckCircle2 :size="15" /></button>
+            <button class="card-action-btn success" title="应用 CLI" :disabled="!!action" @click="applyAccount(account)"><KeyRound :size="15" /></button>
+            <button class="card-action-btn danger" title="删除账号" :disabled="!!action" @click="removeAccount(account)"><Trash2 :size="15" /></button>
+          </div>
         </article>
       </div>
     </section>
@@ -432,22 +432,22 @@ h1, h2, p { margin: 0; } h1 { font-size: 1.55rem; letter-spacing: 0; } h2 { font
 .header-actions :deep(.btn), .login-actions :deep(.btn), .account-actions :deep(.btn), .callback-row :deep(.btn), .import-footer :deep(.btn) { display: inline-flex; align-items: center; gap: 6px; }
 .platform-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--mac-border); margin-top: 22px; }
 .platform-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--mac-text-secondary); padding: 10px 2px; cursor: pointer; font-size: .86rem; }
-.platform-tabs button.active { color: var(--mac-text); border-bottom-color: var(--mac-accent); }
+.platform-tabs button.active { color: var(--mac-text); border-bottom-color: var(--platform-color, var(--mac-accent)); }
 .login-strip, .login-session, .import-section { border: 1px solid var(--mac-border); background: var(--mac-surface); border-radius: 8px; }
 .login-strip { justify-content: space-between; gap: 16px; padding: 15px 18px; margin-top: 20px; }
-.login-copy { display: flex; align-items: center; gap: 10px; } .login-copy > svg { color: var(--mac-accent); } .login-copy div { display: grid; gap: 3px; }
+.login-copy { display: flex; align-items: center; gap: 10px; } .login-copy > svg { color: var(--platform-color, var(--mac-accent)); } .login-copy div { display: grid; gap: 3px; }
 .login-session { display: grid; gap: 12px; padding: 15px 18px; margin-top: 12px; background: var(--mac-surface-strong); }
 .session-top { justify-content: space-between; gap: 16px; } .session-top div { display: grid; gap: 4px; } .session-top span { color: var(--mac-text-secondary); font-size: .78rem; }
 .icon-button, .danger-icon { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--mac-text-secondary); cursor: pointer; padding: 6px; } .danger-icon { color: #dc2626; } .icon-button:hover { color: var(--mac-text); }
-.session-link { display: inline-flex; gap: 6px; align-items: center; color: var(--mac-accent); font-size: .8rem; text-decoration: none; } code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.session-link { display: inline-flex; gap: 6px; align-items: center; color: var(--platform-color, var(--mac-accent)); font-size: .8rem; text-decoration: none; } code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .callback-row { gap: 8px; } .callback-row :deep(input) { flex: 1; min-width: 220px; } .poll-status { display: flex; align-items: center; gap: 7px; color: var(--mac-text-secondary); font-size: .8rem; }
 .accounts-section { margin-top: 28px; } .section-heading { justify-content: space-between; gap: 12px; margin-bottom: 12px; } .section-heading > div { display: grid; gap: 4px; }
 .account-list { display: grid; gap: 8px; } .account-row { gap: 14px; border: 1px solid var(--mac-border); border-radius: 7px; padding: 13px 14px; background: var(--mac-surface); }
-.account-avatar { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; color: var(--mac-accent); border: 1px solid var(--mac-border); border-radius: 50%; }
+.account-avatar { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; color: var(--platform-color, var(--mac-accent)); border: 1px solid var(--mac-border); border-radius: 50%; }
 .account-main { min-width: 0; flex: 1; display: grid; gap: 5px; } .account-title { gap: 8px; min-width: 0; } .account-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
 .status { border-radius: 999px; padding: 2px 7px; font-size: .67rem; background: rgba(16, 185, 129, .12); color: #059669; } .status.refresh_failed, .status.expired { background: rgba(220, 38, 38, .1); color: #dc2626; }
 .account-meta { color: var(--mac-text-secondary); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .account-error { display: flex; align-items: center; gap: 5px; color: #b91c1c; font-size: .74rem; }
-.import-section { margin-top: 30px; padding: 17px 18px; } .file-button { display: inline-flex; align-items: center; gap: 6px; color: var(--mac-accent); cursor: pointer; font-size: .78rem; } .file-button input { display: none; }
+.import-section { margin-top: 30px; padding: 17px 18px; } .file-button { display: inline-flex; align-items: center; gap: 6px; color: var(--platform-color, var(--mac-accent)); cursor: pointer; font-size: .78rem; } .file-button input { display: none; }
 .import-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .import-toolbar { justify-content: space-between; gap: 12px; margin-bottom: 9px; } select { border: 1px solid var(--mac-border); background: var(--mac-surface); color: var(--mac-text); border-radius: 5px; padding: 7px 9px; font-size: .78rem; } .import-toolbar span { display: inline-flex; align-items: center; gap: 5px; color: var(--mac-text-secondary); font-size: .75rem; }
 textarea { display: block; width: 100%; min-height: 150px; resize: vertical; border: 1px solid var(--mac-border); border-radius: 6px; background: var(--mac-bg); color: var(--mac-text); padding: 11px; font: .76rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; box-sizing: border-box; } .import-footer { justify-content: space-between; gap: 12px; margin-top: 10px; }
@@ -462,14 +462,19 @@ textarea { display: block; width: 100%; min-height: 150px; resize: vertical; bor
  .account-select select { min-height: 30px; padding: 0 2px; border: 0; outline: 0; background: transparent; color: var(--mac-text); font: inherit; font-size: .72rem; }
  .account-flow { margin-top: 12px; padding: 14px; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); }
  .flow-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }.flow-heading > div { display: grid; gap: 4px; }.flow-heading strong { font-size: .88rem; }.flow-heading span { color: var(--mac-text-secondary); font-size: .74rem; }
- .flow-tabs { display: flex; gap: 2px; margin: 12px 0 0; padding: 3px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-surface); }.flow-tabs button { min-height: 29px; flex: 1; border: 0; border-radius: 5px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: .76rem; cursor: pointer; }.flow-tabs button.active { background: var(--mac-surface-strong); color: var(--mac-text); font-weight: 650; }
+ .flow-tabs { display: flex; gap: 4px; width: 100%; min-width: 0; margin: 12px 0 0; padding: 4px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--platform-color, var(--mac-accent)) 18%, var(--mac-border)); background: color-mix(in srgb, var(--mac-surface) 62%, transparent); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 46%, transparent); box-sizing: border-box; }.flow-tabs button { flex: 1 1 0; min-width: 0; min-height: 36px; margin: 0 !important; padding: 0 18px !important; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 13px; font-weight: 550; white-space: nowrap; cursor: pointer; box-sizing: border-box; opacity: .62; transition: opacity .2s ease, background-color .2s ease, color .2s ease; }.flow-tabs button:hover { opacity: 1; color: var(--mac-text); background: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 9%, transparent); }.flow-tabs button.active { opacity: 1; color: #fff; background: var(--platform-color, var(--mac-accent)); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent); font-weight: 650; }
  .account-flow .login-strip { margin-top: 10px; }.flow-import-section { margin-top: 10px; background: var(--mac-surface); }
- .account-list { display: grid; gap: 8px; margin-top: 12px; border-top: 0; }
- .account-card { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-surface); }.account-card.applied { border-color: color-mix(in srgb, #0ea5e9 55%, var(--mac-border)); box-shadow: inset 3px 0 #0ea5e9; }.account-card.attention { border-color: color-mix(in srgb, #dc2626 30%, var(--mac-border)); }
- .account-card-top { display: flex; align-items: center; gap: 11px; min-width: 0; }.account-card-top .account-main { min-width: 0; flex: 1; }.account-id { color: var(--mac-text-secondary); font: .68rem ui-monospace, SFMono-Regular, Consolas, monospace; }
- .current-account { padding: 2px 6px; border-radius: 4px; background: rgba(14, 165, 233, .12); color: #0369a1; font-size: .66rem; font-weight: 650; white-space: nowrap; }
- .quota-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 10px 0; border-top: 1px solid var(--mac-border); border-bottom: 1px solid var(--mac-border); }.quota-item { min-width: 0; }.quota-label { display: flex; justify-content: space-between; gap: 8px; color: var(--mac-text-secondary); font-size: .7rem; }.quota-label strong { color: var(--mac-text); font-size: .7rem; font-weight: 600; }.quota-track { height: 5px; margin-top: 6px; overflow: hidden; border-radius: 99px; background: var(--mac-surface-strong); }.quota-track span { display: block; height: 100%; border-radius: inherit; background: var(--mac-accent); transition: width .2s ease; }
- .account-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }.account-card-actions :deep(.btn) { display: inline-flex; align-items: center; gap: 5px; }.account-card-actions .danger-icon { margin-left: 2px; }
+ .account-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin-top: 12px; }
+ .account-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid color-mix(in srgb, var(--mac-text) 5%, transparent); border-radius: 12px; background: var(--mac-surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02), 0 4px 16px rgba(0, 0, 0, 0.02); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }.account-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 12px 24px rgba(0, 0, 0, 0.04); border-color: color-mix(in srgb, var(--mac-text) 10%, transparent); }.account-card.applied { border: 1px solid var(--platform-color, var(--mac-accent)); box-shadow: 0 4px 12px color-mix(in srgb, var(--platform-color, var(--mac-accent)) 18%, transparent); }.account-card.attention { border-color: color-mix(in srgb, #dc2626 30%, var(--mac-border)); }
+ .account-card-top { display: flex; align-items: center; gap: 11px; min-width: 0; }.account-card-top .account-main { min-width: 0; flex: 1; }.status { flex: 0 0 auto; border-radius: 999px; padding: 2px 7px; font-size: .67rem; background: rgba(16, 185, 129, .12); color: #059669; white-space: nowrap; }.status.refresh_failed, .status.expired { background: rgba(220, 38, 38, .1); color: #dc2626; }
+ .current-account { padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 12%, transparent); color: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 86%, var(--mac-text)); font-size: .66rem; font-weight: 650; white-space: nowrap; }
+ .quota-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; padding: 10px; border: 1px solid color-mix(in srgb, var(--mac-text) 4%, transparent); border-radius: 8px; background: var(--mac-surface-strong); }.quota-item { min-width: 0; }.quota-label { display: flex; justify-content: space-between; gap: 8px; color: var(--mac-text-secondary); font-size: .7rem; }.quota-label strong { color: var(--mac-text); font-size: .7rem; font-weight: 600; }.quota-track { height: 5px; margin-top: 6px; overflow: hidden; border-radius: 99px; background: color-mix(in srgb, var(--mac-text) 8%, transparent); }.quota-track span { display: block; height: 100%; border-radius: inherit; background: var(--platform-color, var(--mac-accent)); transition: width .2s ease; }
+ .account-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 1px; padding-top: 4px; }.card-action-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; color: var(--mac-text-secondary); background: transparent; border: 0; cursor: pointer; transition: all 0.2s; }.card-action-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--mac-text) 6%, transparent); color: var(--mac-text); }.card-action-btn.success:hover:not(:disabled) { background: rgba(34, 197, 94, 0.1); color: var(--success, #16a34a); }.card-action-btn.danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.1); color: var(--danger, #ef4444); }.card-action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
  @media (max-width: 760px) { .oauth-page { padding: 24px 18px 40px; } .page-header, .login-strip, .import-footer { align-items: flex-start; flex-direction: column; } .embedded-account-toolbar { align-items: flex-start; flex-direction: column; }.account-toolbar-filters { align-items: stretch; flex-wrap: wrap; }.account-search { flex-basis: 100%; }.account-select { flex: 1; justify-content: space-between; }.header-actions { width: 100%; }.account-card-actions { justify-content: flex-start; }.account-card-actions :deep(.btn) { flex: 1; justify-content: center; }.danger-icon { align-self: center; } }
  @media (max-width: 480px) { .account-card-top { align-items: flex-start; }.account-id { display: none; }.quota-grid { grid-template-columns: 1fr; gap: 8px; }.account-card-actions :deep(.btn) { flex-basis: calc(50% - 4px); } }
+:global(html.dark) .status { color: #34d399; }
+:global(html.dark) .status.refresh_failed, :global(html.dark) .status.expired { color: #f87171; }
+:global(html.dark) .import-result li.created, :global(html.dark) .import-result li.updated { color: #34d399; }
+:global(html.dark) .import-result li.failed { color: #f87171; }
+:global(html.dark) .current-account { color: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 55%, #fff); }
 </style>

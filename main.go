@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -36,10 +37,25 @@ type AppService struct {
 	TrayWindow application.Window
 }
 
+// currentWindowsTheme 保存原生窗口标题栏主题（值与 application.Theme 一致：
+// 0=SystemDefault 1=Dark 2=Light）。启动时按前端偏好初始化，前端切换主题时
+// 经 AppService.SetWindowDarkTheme 更新，新开窗口（如 Logs）按当前值创建。
+var currentWindowsTheme atomic.Int32
+
 func defaultWindowsWindowTheme() application.WindowsWindow {
 	return application.WindowsWindow{
-		Theme: application.Dark,
+		Theme: application.Theme(currentWindowsTheme.Load()),
 	}
+}
+
+// SetWindowDarkTheme 把原生窗口标题栏同步为应用内主题，前端主题切换时调用。
+func (a *AppService) SetWindowDarkTheme(dark bool) {
+	if dark {
+		currentWindowsTheme.Store(int32(application.Dark))
+	} else {
+		currentWindowsTheme.Store(int32(application.Light))
+	}
+	applyNativeWindowTheme(dark)
 }
 
 func runtimeSetting(key, fallback string) string {
@@ -169,6 +185,17 @@ func main() {
 	}
 	networkService := services.NewNetworkService(providerRelay, claudeSettings, codexSettings, geminiService)
 	frontendPreferencesService := services.NewFrontendPreferencesService()
+
+	// 原生窗口标题栏主题按前端偏好初始化：light→Light、dark→Dark、systemdefault→跟随系统。
+	// 不初始化则保持零值 SystemDefault。
+	if prefs, err := frontendPreferencesService.GetPreferences(); err == nil {
+		switch prefs.Theme {
+		case "light":
+			currentWindowsTheme.Store(int32(application.Light))
+		case "dark":
+			currentWindowsTheme.Store(int32(application.Dark))
+		}
+	}
 
 	if err := services.RefreshManagedRelayCredentials(
 		claudeSettings,

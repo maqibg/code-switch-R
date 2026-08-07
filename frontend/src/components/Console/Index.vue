@@ -288,4 +288,7 @@ html.dark .console-content {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+:global(html.dark) .log-info .log-level { color: #4ec9b0; }
+:global(html.dark) .log-warn .log-level { color: #dcdcaa; }
+:global(html.dark) .log-error .log-level { color: #f48771; }
 </style>

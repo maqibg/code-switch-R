@@ -81,21 +81,26 @@
       <div class="section-heading">
         <div><h3>Gemini CLI 账号</h3><span v-if="accounts.length">{{ accounts[0].runtimeRoot }}</span></div>
       </div>
-      <div v-for="account in accounts" :key="account.id" class="account-row">
-        <div class="account-main">
-          <strong>{{ account.email || account.id }}</strong>
-          <span>{{ account.hasRefreshToken ? '可刷新' : '缺少 refresh token' }} · {{ account.applied ? '当前已应用' : '未应用' }}</span>
-        </div>
-        <div class="account-meta">
-          <span v-if="account.quota">额度 {{ quotaText(account.quota.remainingPercent) }}</span>
-          <span v-if="account.quota?.error" class="quota-error">{{ account.quota.error }}</span>
-        </div>
-        <div class="account-actions">
-          <button class="icon-button" type="button" title="刷新 Token" :disabled="busy" @click="refreshToken(account.id)"><KeyRound :size="15" /></button>
-          <button class="icon-button" type="button" title="刷新额度" :disabled="busy" @click="refreshQuota(account.id)"><RefreshCw :size="15" /></button>
-        </div>
+      <div v-if="accounts.length" class="account-list">
+        <article v-for="account in accounts" :key="account.id" class="account-card" :class="{ applied: account.applied }">
+          <div class="account-card-top">
+            <div class="account-avatar"><KeyRound :size="18" /></div>
+            <div class="account-main">
+              <div class="account-title"><strong>{{ account.email || account.id }}</strong><span v-if="account.applied" class="current-account">当前已应用</span></div>
+              <div class="account-meta">{{ account.hasRefreshToken ? '可刷新' : '缺少 refresh token' }}</div>
+            </div>
+          </div>
+          <div class="quota-grid">
+            <div class="quota-item"><div class="quota-label"><span>额度</span><strong>{{ account.quota ? quotaText(account.quota.remainingPercent) : '未读取' }}</strong></div></div>
+          </div>
+          <div class="account-card-actions">
+            <button class="card-action-btn" type="button" title="刷新 Token" :disabled="busy" @click="refreshToken(account.id)"><KeyRound :size="15" /></button>
+            <button class="card-action-btn" type="button" title="刷新额度" :disabled="busy" @click="refreshQuota(account.id)"><RefreshCw :size="15" /></button>
+          </div>
+          <p v-if="account.quota?.error" class="account-error">{{ account.quota.error }}</p>
+        </article>
       </div>
-      <div v-if="accounts.length === 0 && !busy" class="empty-state">未发现 Gemini CLI OAuth 账号</div>
+      <div v-else-if="!busy" class="empty-state">未发现 Gemini CLI OAuth 账号</div>
     </div>
   </section>
 </template>
@@ -278,6 +283,6 @@ onUnmounted(() => { if (pollTimer) window.clearInterval(pollTimer) })
 .credential-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 16px; }
 .credential-row, .model-row { border: 1px solid var(--mac-border); border-radius: 6px; padding: 10px; background: var(--mac-surface); }.provider-heading { gap: 7px; font-size: .8rem; }.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; }.status-dot.enabled { background: #16a34a; }.credential-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 9px 0 0; }.credential-details div { min-width: 0; }.credential-details dt { color: var(--mac-text-secondary); font-size: .68rem; }.credential-details dd { overflow: hidden; margin: 2px 0 0; color: var(--mac-text); font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
 .catalog-section, .account-section { margin-top: 22px; }.section-heading select { min-width: 140px; max-width: 220px; padding: 6px 8px; border: 1px solid var(--mac-border); border-radius: 5px; background: var(--mac-surface); color: var(--mac-text); font-size: .75rem; }.model-grid { display: grid; gap: 7px; margin-top: 10px; }.model-row { display: flex; justify-content: space-between; gap: 12px; min-width: 0; }.model-main { display: grid; min-width: 0; gap: 3px; }.model-main strong { overflow: hidden; color: var(--mac-text); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }.model-main code { overflow: hidden; color: var(--mac-text-secondary); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }.model-capabilities { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; min-width: 0; }.model-capabilities span { padding: 2px 5px; border-radius: 4px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); font-size: .65rem; white-space: nowrap; }
-.account-row { margin-top: 8px; border-bottom: 1px solid var(--mac-border); padding: 10px 0; }.account-main { display: grid; min-width: 0; gap: 3px; }.account-main strong { overflow: hidden; color: var(--mac-text); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }.account-meta { min-width: 0; flex: 1; color: var(--mac-text-secondary); font-size: .72rem; }.quota-error, .panel-error, .catalog-error { color: var(--error, #dc2626); }.panel-error, .catalog-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 12px; font-size: .75rem; line-height: 1.4; }.empty-state { padding: 18px; color: var(--mac-text-secondary); font-size: .75rem; text-align: center; }.spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+.account-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin-top: 12px; }.account-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid color-mix(in srgb, var(--mac-text) 5%, transparent); border-radius: 12px; background: var(--mac-surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02), 0 4px 16px rgba(0, 0, 0, 0.02); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }.account-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 12px 24px rgba(0, 0, 0, 0.04); border-color: color-mix(in srgb, var(--mac-text) 10%, transparent); }.account-card.applied { border: 1px solid var(--platform-color, var(--mac-accent)); box-shadow: 0 4px 12px color-mix(in srgb, var(--platform-color, var(--mac-accent)) 18%, transparent); }.account-card-top { display: flex; align-items: center; gap: 11px; min-width: 0; }.account-avatar { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; color: var(--platform-color, var(--mac-accent)); border: 1px solid var(--mac-border); border-radius: 50%; }.account-main { min-width: 0; flex: 1; display: grid; gap: 5px; }.account-title { display: flex; align-items: center; gap: 8px; min-width: 0; }.account-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }.account-meta { color: var(--mac-text-secondary); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.current-account { padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 12%, transparent); color: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 86%, var(--mac-text)); font-size: .66rem; font-weight: 650; white-space: nowrap; }.quota-grid { display: grid; grid-template-columns: 1fr; gap: 10px 12px; padding: 10px; border: 1px solid color-mix(in srgb, var(--mac-text) 4%, transparent); border-radius: 8px; background: var(--mac-surface-strong); }.quota-item { min-width: 0; }.quota-label { display: flex; justify-content: space-between; gap: 8px; color: var(--mac-text-secondary); font-size: .7rem; }.quota-label strong { color: var(--mac-text); font-size: .7rem; font-weight: 600; }.account-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 1px; padding-top: 4px; }.card-action-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; color: var(--mac-text-secondary); background: transparent; border: 0; cursor: pointer; transition: all 0.2s; }.card-action-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--mac-text) 6%, transparent); color: var(--mac-text); }.card-action-btn:disabled { opacity: 0.35; cursor: not-allowed; }.account-error { margin: -4px 0 0; color: #dc2626; font-size: .75rem; }.panel-error, .catalog-error { color: var(--error, #dc2626); }.panel-error, .catalog-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 12px; font-size: .75rem; line-height: 1.4; }.empty-state { padding: 18px; color: var(--mac-text-secondary); font-size: .75rem; text-align: center; }.spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 650px) { .gemini-status-panel { padding: 16px; }.panel-header, .section-heading, .account-row, .model-row { align-items: stretch; flex-direction: column; }.panel-actions, .account-actions { justify-content: flex-end; }.model-capabilities { justify-content: flex-start; }.section-heading select { max-width: none; width: 100%; }.account-settings-panel { grid-template-columns: 1fr; } }
 </style>

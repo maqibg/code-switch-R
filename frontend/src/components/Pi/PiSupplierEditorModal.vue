@@ -403,9 +403,10 @@ const save = async () => {
 .supplier-editor { display: grid; gap: 14px; }
 .external-change { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warning, #d58a00) 30%, var(--mac-border)); border-radius: 8px; color: var(--warning, #9a6200); font-size: .875rem; }
 .external-change button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: .8125rem; text-decoration: underline; }
-.editor-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--mac-surface-strong); }
-.editor-tabs button { flex: 1; min-height: 38px; border: 0; border-radius: 6px; background: transparent; color: var(--mac-text-secondary); font-size: .875rem; cursor: pointer; }
-.editor-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 2px color-mix(in srgb, var(--mac-text) 8%, transparent); font-weight: 600; }
+.editor-tabs { display: flex; gap: 4px; width: 100%; min-width: 0; padding: 4px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--mac-accent) 18%, var(--mac-border)); background: color-mix(in srgb, var(--mac-surface) 62%, transparent); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 46%, transparent); box-sizing: border-box; }
+.editor-tabs button { flex: 1 1 0; min-width: 0; min-height: 36px; margin: 0 !important; padding: 0 18px !important; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 13px; font-weight: 550; white-space: nowrap; cursor: pointer; box-sizing: border-box; opacity: .62; transition: opacity .2s ease, background-color .2s ease, color .2s ease; }
+.editor-tabs button:hover { opacity: 1; color: var(--mac-text); background: color-mix(in srgb, var(--mac-accent) 9%, transparent); }
+.editor-tabs button.active { opacity: 1; color: #fff; background: var(--mac-accent); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent); font-weight: 650; }
 .form-pane { display: grid; gap: 13px; min-height: 350px; align-content: start; }
 .form-pane label { display: grid; gap: 6px; min-width: 0; }
 .form-pane label > span:first-child { color: var(--mac-text-secondary); font-size: .875rem; font-weight: 600; }

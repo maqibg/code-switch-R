@@ -8,7 +8,6 @@ import { computed, reactive, ref } from 'vue'
 import type { AutomationCard } from '../../../data/cards'
 import { RenameProvider } from '../../../../bindings/codeswitch/services/providerservice'
 import { TestProviderManual } from '../../../../bindings/codeswitch/services/connectivitytestservice'
-import { lobeIconKeys } from '../../../icons/lobeIconMap'
 import { saveCLIConfig, type CLIPlatform } from '../../../services/cliConfig'
 import { showToast } from '../../../utils/toast'
 import { extractErrorMessage } from '../../../utils/error'
@@ -70,17 +69,6 @@ export function useVendorModal(
 ) {
   const { t, persistProviders, refreshDirectAppliedStatus, applyProviderToCli } = deps
 
-  // ---------- 图标 ----------
-
-  const iconOptions = lobeIconKeys
-  const defaultIconKey = iconOptions[0] ?? 'aicoding'
-  const iconSearchQuery = ref('')
-  const filteredIconOptions = computed(() => {
-    const query = iconSearchQuery.value.toLowerCase().trim()
-    if (!query) return iconOptions
-    return iconOptions.filter((name) => name.toLowerCase().includes(query))
-  })
-
   // ---------- 表单 ----------
 
   const defaultFormValues = (): VendorForm => ({
@@ -88,7 +76,7 @@ export function useVendorModal(
     apiUrl: '',
     apiKey: '',
     officialSite: '',
-    icon: defaultIconKey,
+    icon: 'aicoding',
     level: 1,
     enabled: true,
     proxyEnabled: false,
@@ -172,7 +160,7 @@ export function useVendorModal(
 
   // ---------- 上游协议 ----------
 
-  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'grok'])
+  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'grok', 'gemini'])
   const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
   const isGrokProviderModal = computed(() => modalState.tabId === 'grok')
   const isGeminiProviderModal = computed(() => modalState.tabId === 'gemini')
@@ -190,44 +178,36 @@ export function useVendorModal(
     { value: 'gateway', label: '第三方 Gemini 网关' },
     { value: 'vertex', label: 'Vertex AI' },
   ]
-  const isCodexChatProtocol = computed(
-    () => modalState.tabId === 'codex' && modalState.form.upstreamProtocol === 'openai_chat',
-  )
 
   const upstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => [
     { value: 'auto', label: t('components.main.form.upstreamProtocol.auto'), desc: t('components.main.form.upstreamProtocol.autoDesc') },
     { value: 'anthropic', label: t('components.main.form.upstreamProtocol.anthropic'), desc: t('components.main.form.upstreamProtocol.anthropicDesc') },
-    { value: 'openai_chat', label: t('components.main.form.upstreamProtocol.openaiChat'), desc: t('components.main.form.upstreamProtocol.openaiChatDesc') },
     { value: 'openai_responses', label: t('components.main.form.upstreamProtocol.openaiResponses'), desc: t('components.main.form.upstreamProtocol.openaiResponsesDesc') },
+    { value: 'openai_chat', label: t('components.main.form.upstreamProtocol.openaiChat'), desc: t('components.main.form.upstreamProtocol.openaiChatDesc') },
+    { value: 'google', label: t('components.main.form.upstreamProtocol.google'), desc: t('components.main.form.upstreamProtocol.googleDesc') },
   ])
+  // 各平台置顶协议：自动检测永远第一，随后按平台习惯排序
+  const protocolOrderMap: Record<string, string[]> = {
+    claude: ['auto', 'anthropic', 'openai_responses', 'openai_chat', 'google'],
+    codex: ['auto', 'openai_responses', 'openai_chat', 'anthropic', 'google'],
+    gemini: ['auto', 'google', 'openai_responses', 'openai_chat', 'anthropic'],
+    grok: ['auto', 'openai_chat', 'openai_responses', 'anthropic', 'google'],
+    reasonix: ['auto', 'openai_chat', 'openai_responses', 'anthropic', 'google'],
+  }
   const effectiveUpstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => {
-    if (modalState.tabId === 'grok') {
-      return upstreamProtocolOptions.value.filter((option) => option.value !== 'auto')
-    }
-    if (modalState.tabId !== 'codex') return upstreamProtocolOptions.value
-    return [
-      {
-        value: 'auto',
-        label: t('components.main.form.upstreamProtocol.codexResponses'),
-        desc: t('components.main.form.upstreamProtocol.codexResponsesDesc'),
-      },
-      {
-        value: 'openai_responses',
-        label: t('components.main.form.upstreamProtocol.codexResponses'),
-        desc: t('components.main.form.upstreamProtocol.codexResponsesDesc'),
-      },
-      {
-        value: 'openai_chat',
-        label: t('components.main.form.upstreamProtocol.openaiChat'),
-        desc: t('components.main.form.upstreamProtocol.codexOpenAIChatDesc'),
-      },
-    ]
+    const order = protocolOrderMap[modalState.tabId]
+    if (!order) return upstreamProtocolOptions.value
+    const byValue = new Map(upstreamProtocolOptions.value.map((option) => [option.value, option]))
+    return order.map((value) => byValue.get(value)).filter((option): option is UpstreamProtocolOption => Boolean(option))
   })
-  const upstreamProtocolHint = computed(() =>
-    modalState.tabId === 'codex'
-      ? t('components.main.form.hints.upstreamProtocolCodex')
-      : t('components.main.form.hints.upstreamProtocol'),
-  )
+  const upstreamProtocolHint = computed(() => {
+    const protocol = modalState.form.upstreamProtocol
+    if (protocol === 'anthropic') return t('components.main.form.upstreamProtocol.anthropicHint')
+    if (protocol === 'openai_responses') return t('components.main.form.upstreamProtocol.openaiResponsesHint')
+    if (protocol === 'openai_chat') return t('components.main.form.upstreamProtocol.openaiChatHint')
+    if (protocol === 'google') return t('components.main.form.upstreamProtocol.googleHint')
+    return t('components.main.form.upstreamProtocol.autoHint')
+  })
 
   const resolveSubmittedUpstreamProtocol = () =>
     showUpstreamProtocolField.value
@@ -398,7 +378,7 @@ export function useVendorModal(
     const apiUrl = modalState.form.apiUrl.trim()
     const apiKey = modalState.form.apiKey.trim()
     const officialSite = modalState.form.officialSite.trim()
-    const icon = (modalState.form.icon || defaultIconKey).toString().trim().toLowerCase() || defaultIconKey
+    const icon = (modalState.form.icon || 'aicoding').toString().trim().toLowerCase() || 'aicoding'
     modalState.errors.apiUrl = ''
     try {
       const parsed = new URL(apiUrl)
@@ -423,6 +403,8 @@ export function useVendorModal(
       ? modalState.form.credentialType || 'gemini_api_key'
       : modalState.form.credentialType || 'api_key'
     const submittedCredentialRef = editingCard.value?.credentialRef || ''
+    const submittedReasoningContinueEnabled = false
+    const submittedReasoningContinueLogEnabled = false
 
     if (editingCard.value) {
       // 若 name 发生变化，先走独立 RenameProvider RPC（后端事务改名日志与黑名单行）。
@@ -455,14 +437,8 @@ export function useVendorModal(
         cliConfig: modalState.form.cliConfig || {},
         apiEndpoint: modalState.form.apiEndpoint || '',
         upstreamProtocol: submittedUpstreamProtocol,
-        codexReasoningContinueEnabled:
-          modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-            ? !!modalState.form.codexReasoningContinueEnabled
-            : false,
-        codexReasoningContinueLogEnabled:
-          modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-            ? !!modalState.form.codexReasoningContinueLogEnabled
-            : false,
+        codexReasoningContinueEnabled: submittedReasoningContinueEnabled,
+        codexReasoningContinueLogEnabled: submittedReasoningContinueLogEnabled,
         connectivityAuthType: resolveEffectiveAuthType(),
         authScheme: resolveAuthScheme(),
         authHeader: customAuthHeader.value.trim(),
@@ -503,14 +479,8 @@ export function useVendorModal(
         cliConfig: modalState.form.cliConfig || {},
         apiEndpoint: modalState.form.apiEndpoint || '',
         upstreamProtocol: submittedUpstreamProtocol,
-        codexReasoningContinueEnabled:
-          modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-            ? !!modalState.form.codexReasoningContinueEnabled
-            : false,
-        codexReasoningContinueLogEnabled:
-          modalState.tabId === 'codex' && submittedUpstreamProtocol !== 'openai_chat'
-            ? !!modalState.form.codexReasoningContinueLogEnabled
-            : false,
+        codexReasoningContinueEnabled: submittedReasoningContinueEnabled,
+        codexReasoningContinueLogEnabled: submittedReasoningContinueLogEnabled,
         connectivityAuthType: resolveEffectiveAuthType(),
         authScheme: resolveAuthScheme(),
         authHeader: customAuthHeader.value.trim(),
@@ -581,8 +551,6 @@ export function useVendorModal(
   return {
     modalState,
     providerModalTab,
-    iconSearchQuery,
-    filteredIconOptions,
     getLevelDescription,
     selectedAuthType,
     customAuthHeader,
@@ -594,7 +562,6 @@ export function useVendorModal(
     isOAuthCredential,
     geminiCredentialOptions,
     geminiEndpointOptions,
-    isCodexChatProtocol,
     effectiveUpstreamProtocolOptions,
     upstreamProtocolHint,
     modelDiscoveryProvider,

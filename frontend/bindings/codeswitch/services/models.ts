@@ -1269,6 +1269,7 @@ export class FrontendPreferences {
     "dismissed_update_version": string;
     "home_platform_order": string[];
     "pi_platform_order": string[];
+    "hidden_platform_pages": string[];
 
     /** Creates a new FrontendPreferences instance. */
     constructor($$source: Partial<FrontendPreferences> = {}) {
@@ -1293,6 +1294,9 @@ export class FrontendPreferences {
         if (!("pi_platform_order" in $$source)) {
             this["pi_platform_order"] = [];
         }
+        if (!("hidden_platform_pages" in $$source)) {
+            this["hidden_platform_pages"] = [];
+        }
 
         Object.assign(this, $$source);
     }
@@ -1304,6 +1308,7 @@ export class FrontendPreferences {
         const $$createField3_0 = $$createType18;
         const $$createField5_0 = $$createType18;
         const $$createField6_0 = $$createType18;
+        const $$createField7_0 = $$createType18;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("visited_pages" in $$parsedSource) {
             $$parsedSource["visited_pages"] = $$createField3_0($$parsedSource["visited_pages"]);
@@ -1313,6 +1318,9 @@ export class FrontendPreferences {
         }
         if ("pi_platform_order" in $$parsedSource) {
             $$parsedSource["pi_platform_order"] = $$createField6_0($$parsedSource["pi_platform_order"]);
+        }
+        if ("hidden_platform_pages" in $$parsedSource) {
+            $$parsedSource["hidden_platform_pages"] = $$createField7_0($$parsedSource["hidden_platform_pages"]);
         }
         return new FrontendPreferences($$parsedSource as Partial<FrontendPreferences>);
     }

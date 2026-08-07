@@ -3,32 +3,10 @@
     <header class="pi-page-header">
       <div class="pi-header-main">
         <div class="page-identity">
-          <strong>{{ t('piPage.title') }}</strong>
-          <span>{{ t('piPage.description') }}</span>
-        </div>
-        <div class="pi-action-group">
-          <label class="debug-toggle" :title="`${t('piPage.debug.hint')} ${t('piPage.debug.privacy')}`">
-            <Bug :size="15" />
-            <span>{{ t('piPage.debug.label') }}</span>
-            <span class="mac-switch sm">
-              <input type="checkbox" :checked="page.runtime.value.debugLogging" :disabled="debugBusy" @change="toggleDebugLogging" />
-              <span></span>
-            </span>
-          </label>
-          <BaseButton type="button" variant="outline" :title="t('piPage.debug.openConsole')" @click="router.push('/console')">
-            <Terminal :size="15" />{{ t('piPage.debug.openConsole') }}
-          </BaseButton>
-          <BaseButton type="button" variant="outline" :disabled="page.loading.value" @click="page.refresh">
-            <RefreshCw :class="{ spin: page.loading.value }" :size="15" />{{ t('piPage.actions.refresh') }}
-          </BaseButton>
-          <BaseButton type="button" :disabled="!page.runtime.value.initialized" @click="openCreatePlatform">
-            <Plus :size="15" />{{ t('piPage.actions.addPlatform') }}
-          </BaseButton>
+          <span class="pi-title-icon" v-html="piIcon"></span>
+          <strong>Pi</strong>
         </div>
       </div>
-      <nav class="pi-top-tabs" role="tablist" aria-label="Pi 功能">
-        <button v-for="tab in piTabs" :key="tab.id" class="layout-tab" type="button" role="tab" :aria-selected="workspaceTab === tab.id" :class="{ active: workspaceTab === tab.id }" @click="selectWorkspaceTab(tab.id)">{{ tab.label }}</button>
-      </nav>
     </header>
 
     <main class="pi-page">
@@ -47,7 +25,7 @@
       <section v-else class="runtime-shell">
         <div v-if="page.runtime.value.legacyGatewayTracked" class="legacy-banner"><History :size="17" /><span>{{ t('piPage.runtime.legacyGateway') }}</span><BaseButton variant="outline" :disabled="operationBusy" @click="migrateLegacy">{{ t('piPage.runtime.migrate') }}</BaseButton></div>
         <div class="runtime-layout">
-          <PiPlatformRail :platforms="page.runtime.value.platforms" :active-id="page.activePlatformId.value" :busy="operationBusy" @select="page.activePlatformId.value = $event" @add="openCreatePlatform" @reorder="reorderPlatforms" />
+          <PiPlatformRail :platforms="page.runtime.value.platforms" :active-id="page.activePlatformId.value" :busy="operationBusy" :refreshing="page.loading.value" @select="page.activePlatformId.value = $event" @refresh="page.refresh" @add="openCreatePlatform" @reorder="reorderPlatforms" />
           <PiPlatformWorkspace
             v-if="page.activePlatform.value"
             v-model:tab="workspaceTab"
@@ -141,7 +119,8 @@
 </template>
 
 <script setup lang="ts">
-import { Boxes, Bug, CircleAlert, FilePlus2, FileWarning, FolderSearch, History, Plus, RefreshCw, Terminal } from 'lucide-vue-next'
+import { Boxes, Bug, CircleAlert, FilePlus2, FileWarning, FolderSearch, History, LayoutGrid, Plus, RefreshCw, Server, Sparkles } from 'lucide-vue-next'
+import piIcon from '../../assets/icons/pi.svg?raw'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -174,13 +153,8 @@ const piTabs = [
 ]
 const validWorkspaceTab = (value: unknown): PiWorkspaceTab => piTabs.some((tab) => tab.id === value) ? value as PiWorkspaceTab : 'suppliers'
 const workspaceTab = ref<PiWorkspaceTab>(validWorkspaceTab(route.params.tab))
-const selectWorkspaceTab = (tab: PiWorkspaceTab) => {
-  workspaceTab.value = tab
-  void router.replace(`/platform/pi/${tab}`)
-}
 watch(() => route.params.tab, (value) => { workspaceTab.value = validWorkspaceTab(value) })
 const operationBusy = ref(false)
-const debugBusy = ref(false)
 const busySupplierId = ref<number | null>(null)
 const addingBuiltinModelKey = ref('')
 const platformEditorOpen = ref(false)
@@ -202,19 +176,6 @@ const finishConfirm = (confirmed: boolean) => {
   current?.resolve(confirmed)
 }
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
-
-const toggleDebugLogging = async (event: Event) => {
-  const enabled = (event.target as HTMLInputElement).checked
-  debugBusy.value = true
-  try {
-    await page.setDebugLogging(enabled)
-    showToast(t(enabled ? 'piPage.debug.enabled' : 'piPage.debug.disabled'))
-  } catch (error) {
-    showToast(errorMessage(error), 'error')
-  } finally {
-    debugBusy.value = false
-  }
-}
 
 const openCreatePlatform = () => { editingPlatformId.value = undefined; platformEditorOpen.value = true }
 const openEditPlatform = () => {
@@ -380,30 +341,29 @@ onBeforeRouteLeave(async () => {
 
 <style scoped>
 .pi-shell { min-width: 0; color: var(--mac-text); padding-bottom: 0; }
-.pi-page-header { padding: 16px 28px 12px; border-bottom: 1px solid var(--mac-border); background: var(--mac-surface); }
+.pi-page-header { padding: 16px 28px 12px; border-bottom: 1px solid var(--mac-border); background: var(--mac-bg); }
 .pi-header-main { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: min(1180px, 100%); min-height: 38px; margin: 0 auto; }
-.pi-action-group { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.pi-action-group { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; width: auto; }
 .pi-action-group :deep(.btn) { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 11px; border-radius: 7px; font-size: .8rem; }
-.page-identity { display: grid; min-width: 0; margin-right: auto; gap: 3px; }.page-identity strong { font-size: 1rem; }.page-identity span { overflow: hidden; color: var(--mac-text-secondary); font-size: .8125rem; text-overflow: ellipsis; white-space: nowrap; }
-.pi-top-tabs { display: flex; align-items: center; justify-content: center; gap: 2px; width: fit-content; max-width: 100%; margin: 14px auto 0; padding: 4px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); overflow-x: auto; }
-.pi-top-tabs button { min-height: 32px; padding: 0 15px; border: 0; border-radius: 7px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
-.pi-top-tabs button:hover { color: var(--mac-text); background: color-mix(in srgb, var(--mac-text) 6%, transparent); }.pi-top-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 3px color-mix(in srgb, var(--mac-text) 12%, transparent); font-weight: 650; }
-.runtime-shell :deep(.workspace-tabs) { display: none; }
+.page-identity { display: flex; align-items: center; gap: 8px; min-width: 0; margin-right: auto; }.page-identity strong { font-size: 1rem; }.page-identity span { overflow: hidden; color: var(--mac-text-secondary); font-size: .8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.page-identity .pi-title-icon { display: inline-grid; place-items: center; color: var(--mac-text); flex: 0 0 auto; }
+.pi-title-icon :deep(svg) { width: 26px; height: 26px; display: block; }
+
+.runtime-shell :deep(.workspace-tabs) { display: flex; }
 .pi-platform-overview { display: grid; gap: 18px; min-height: 220px; align-content: start; }
 .pi-overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .pi-overview-grid > div { display: grid; gap: 6px; padding: 13px; border: 1px solid var(--mac-border); border-radius: 7px; background: var(--mac-surface-strong); }
 .pi-overview-grid span { color: var(--mac-text-secondary); font-size: 11px; }.pi-overview-grid strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .pi-overview-actions { display: flex; gap: 8px; }
-.debug-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; border: 1px solid var(--mac-border); border-radius: 7px; color: var(--mac-text-secondary); font-size: .8125rem; cursor: pointer; }.debug-toggle:hover { background: var(--mac-surface-strong); color: var(--mac-text); }.debug-toggle:has(input:disabled) { cursor: wait; opacity: .62; }
-.pi-page { display: grid; width: min(1180px, calc(100% - 56px)); margin: 0 auto; flex: 1; min-height: 0; }
+.pi-page { display: grid; width: min(1180px, calc(100% - 56px)); margin: 0 auto; padding-top: 16px; flex: 1; min-height: 0; }
 .runtime-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
-.runtime-layout { display: grid; grid-template-columns: minmax(210px, 250px) minmax(0, 1fr); min-height: 0; }
+.runtime-layout { display: grid; grid-template-columns: minmax(210px, 250px) minmax(0, 1fr); gap: 16px; min-height: 0; }
 .legacy-banner { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 8px 18px; border-bottom: 1px solid color-mix(in srgb, var(--warning, #d58a00) 30%, var(--mac-border)); background: color-mix(in srgb, var(--warning, #d58a00) 7%, var(--mac-surface)); color: var(--warning, #936000); font-size: .875rem; }.legacy-banner span { flex: 1; }
 .page-state { align-self: center; justify-self: center; display: grid; grid-template-columns: 36px minmax(0, 540px) auto; align-items: center; gap: 14px; width: min(760px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface); }.page-state > svg { color: var(--mac-accent); }.page-state h1 { margin: 0; font-size: 1rem; }.page-state p { margin: 5px 0; color: var(--mac-text-secondary); font-size: .875rem; line-height: 1.55; }.page-state code { overflow-wrap: anywhere; color: var(--mac-text-secondary); font-size: .8125rem; }.error-state { border-color: color-mix(in srgb, var(--error) 30%, var(--mac-border)); }.error-state > svg { color: var(--error); }
 .no-platform { display: grid; align-content: center; justify-items: center; gap: 10px; min-height: 320px; color: var(--mac-text-secondary); }.no-platform strong { font-size: .9rem; }
 .spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 800px) {
-  .pi-page-header { padding-inline: 16px; }.pi-header-main { align-items: flex-start; flex-direction: column; }.pi-action-group { width: 100%; justify-content: flex-start; }.pi-top-tabs { width: 100%; justify-content: flex-start; }.pi-page { width: calc(100% - 32px); }
+  .pi-page-header { padding-inline: 16px; }.pi-header-main { align-items: flex-start; flex-direction: column; }.pi-page { width: calc(100% - 32px); }
 }
 @media (max-width: 760px) {
   .runtime-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }.page-state { grid-template-columns: 32px minmax(0, 1fr); }.page-state :deep(.btn) { grid-column: 2; justify-self: start; }.pi-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

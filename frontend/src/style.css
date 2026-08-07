@@ -6,17 +6,18 @@
   color-scheme: light;
   --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
   --mac-surface: #ffffff;
-  --mac-surface-strong: #f5f5f7;
-  --mac-bg: #eef1f6;
+  --mac-surface-strong: #f5f6fa;
+  --mac-bg: #f5f6fa;
   --mac-border: rgba(15, 23, 42, 0.12);
   --mac-divider: rgba(15, 23, 42, 0.12);
-  --mac-sidebar: #f2f3f5;
+  --mac-sidebar: #f5f6fa;
   --mac-sidebar-border: rgba(15, 23, 42, 0.08);
   --mac-text: #1d1d1f;
   --mac-text-secondary: #6e6e73;
   --mac-accent: #0a84ff;
   --mac-toggle-thumb: #ffffff;
-  --app-background: linear-gradient(180deg, #f6f7fb 0%, #eef1f7 50%, #e7ebf5 100%);
+  --platform-color: var(--mac-accent);
+  --app-background: #f5f6fa;
   --contrib-surface: #f6f8fa;
   --contrib-text: #0f1116;
   --contrib-muted: rgba(15, 23, 42, 0.6);
@@ -97,9 +98,9 @@ body {
 .base-input:focus,
 .base-textarea:focus {
   outline: none;
-  border-color: var(--mac-accent);
+  border-color: var(--platform-color, var(--mac-accent));
   box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25); /* fallback for old WebKit */
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mac-accent) 25%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, var(--mac-accent)) 25%, transparent);
   background: var(--mac-surface);
 }
 
@@ -193,9 +194,9 @@ html.dark .mac-sidebar-item:hover {
 
 .mac-select:focus {
   outline: none;
-  border-color: var(--mac-accent);
+  border-color: var(--platform-color, var(--mac-accent));
   box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25); /* fallback for old WebKit */
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mac-accent) 25%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, var(--mac-accent)) 25%, transparent);
 }
 
 .mac-switch {
@@ -235,7 +236,7 @@ html.dark .mac-sidebar-item:hover {
 }
 
 .mac-switch input:checked + span {
-  background: var(--mac-accent);
+  background: var(--platform-color, var(--mac-accent));
 }
 
 .mac-switch input:checked + span::after {
@@ -1178,15 +1179,25 @@ html.dark .mac-sidebar-item:hover {
   font-size: 1.1rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  /* 供应商图标统一用平台主题色作背景，同平台卡片色调一致 */
+  background: color-mix(in srgb, var(--card-accent, var(--mac-accent)) 14%, transparent);
 }
 
 .card-icon .icon-fallback {
   text-transform: uppercase;
 }
 
+.card-icon .icon-svg {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--mac-text);
+}
 .card-icon .icon-svg svg {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
+  color: var(--mac-text);
 }
 
 .card-text {
@@ -1580,9 +1591,9 @@ html.dark .btn-outline:focus-visible {
 }
 
 .btn-primary {
-  background: var(--mac-accent);
+  background: var(--platform-color, var(--mac-accent));
   color: #fff;
-  box-shadow: 0 6px 15px rgba(10, 132, 255, 0.35);
+  box-shadow: 0 6px 15px color-mix(in srgb, var(--platform-color, var(--mac-accent)) 35%, transparent);
 }
 
 .btn-danger {
@@ -1842,7 +1853,7 @@ html.dark .secondary-btn:active:not(:disabled) {
 }
 
 /* 全局按钮样式修复 - 防止 Tailwind Preflight 导致的布局问题 */
-button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.layout-tab):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button)) {
+button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.layout-tab):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button):not(.platform-tabs button):not(.settings-tabs button):not(.provider-modal-tabs button):not(.editor-tabs button):not(.flow-tabs button):not(.card-action-btn)) {
   display: inline-flex !important;
   flex-direction: row !important;
   align-items: center !important;
@@ -1861,9 +1872,119 @@ button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab
 }
 
 /* 修复按钮内 SVG 被 Tailwind preflight 设置为 display:block 导致的布局问题 */
-button svg {
+button:not(.layout-tab):not(.tab-pill) svg {
   width: 16px !important;
   height: 16px !important;
   flex-shrink: 0 !important;
   display: inline-block !important;
+}
+.layout-tab svg, .tab-pill svg {
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* ==========================================================================
+   全新多平台超感 Segemented Control 胶囊选项卡 (.tab-group & .tab-pill)
+   ========================================================================== */
+/* ==========================================================================
+   全新 macOS 像素级对称 Segemented Control 选项卡 (.tab-group & .tab-pill)
+   ========================================================================== */
+/* ==========================================================================
+   cc-switch 风格极简经典蓝底 Segemented Control 选项卡
+   ========================================================================== */
+.tab-group {
+  display: grid !important;
+  grid-auto-flow: column !important;
+  grid-auto-columns: 1fr !important;
+  gap: 2px !important;
+  padding: 3px !important;
+  border-radius: 8px !important;
+  border: 1px solid color-mix(in srgb, var(--mac-text) 10%, transparent) !important;
+  background: color-mix(in srgb, var(--mac-text) 5%, transparent) !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.tab-pill {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  height: 30px !important;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  color: var(--mac-text-secondary) !important;
+  opacity: 0.6 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  box-sizing: border-box !important;
+}
+
+.tab-pill:hover {
+  opacity: 1 !important;
+  background: color-mix(in srgb, var(--mac-text) 8%, transparent) !important;
+  color: var(--mac-text) !important;
+}
+
+.tab-pill.active {
+  opacity: 1 !important;
+  background: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.35) !important;
+  font-weight: 600 !important;
+}
+
+/* 修复顶部栏（新增供应商、刷新按钮等）悬浮提示向上弹出时被视口/容器顶部截断的问题 */
+.section-controls .ghost-icon[data-tooltip]::after,
+.platform-header .ghost-icon[data-tooltip]::after,
+.mac-tabs-bar .ghost-icon[data-tooltip]::after {
+  bottom: auto !important;
+  top: calc(100% + 8px) !important;
+  z-index: 1000 !important;
+}
+
+.section-controls .ghost-icon[data-tooltip]:hover::after,
+.section-controls .ghost-icon[data-tooltip]:focus-visible::after,
+.platform-header .ghost-icon[data-tooltip]:hover::after,
+.platform-header .ghost-icon[data-tooltip]:focus-visible::after,
+.mac-tabs-bar .ghost-icon[data-tooltip]:hover::after,
+.mac-tabs-bar .ghost-icon[data-tooltip]:focus-visible::after {
+  transform: translateX(-50%) translateY(2px) !important;
+}
+
+/* ==========================================================================
+   账号卡片深色模式（对齐 cockpit-tools：深色下卡片/配额区/进度条/操作按钮换深色）
+   ========================================================================== */
+html.dark .account-card {
+  background: #1e293b;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+html.dark .account-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+html.dark .account-card .account-avatar {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+html.dark .account-card .account-meta,
+html.dark .account-card .account-title strong {
+  color: #e2e8f0;
+}
+html.dark .account-card .quota-grid {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .account-card .quota-track {
+  background: rgba(255, 255, 255, 0.12);
+}
+html.dark .account-card .card-action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }

@@ -1359,10 +1359,12 @@ onMounted(async () => {
 .settings-page-header { width: min(1180px, calc(100% - 56px)); margin: 0 auto; padding-top: 18px; }
 .settings-header-row { display: flex; align-items: center; justify-content: space-between; min-height: 36px; }
 .settings-header-row h1 { margin: 0; color: var(--mac-text); font-size: 16px; font-weight: 700; }
-.settings-tabs { display: flex; align-items: center; justify-content: center; gap: 2px; width: fit-content; max-width: 100%; margin: 14px auto 0; padding: 4px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); overflow-x: auto; }
-.settings-tabs button { min-height: 32px; padding: 0 15px; border: 0; border-radius: 7px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
-.settings-tabs button:hover { color: var(--mac-text); background: color-mix(in srgb, var(--mac-text) 6%, transparent); }
-.settings-tabs button.active { background: var(--mac-surface); color: var(--mac-text); box-shadow: 0 1px 3px color-mix(in srgb, var(--mac-text) 12%, transparent); font-weight: 650; }
+.settings-tabs { display: flex; align-items: center; gap: 4px; width: 100%; max-width: 100%; margin: 12px 0 0; padding: 4px; border: 1px solid color-mix(in srgb, var(--mac-accent) 18%, var(--mac-border)); border-radius: 10px; background: color-mix(in srgb, var(--mac-surface) 62%, transparent); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 46%, transparent); box-sizing: border-box; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: none; }
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tabs button { flex: 1 1 0; min-width: 0; min-height: 36px; margin: 0 !important; padding: 0 18px !important; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 13px; font-weight: 550; white-space: nowrap; cursor: pointer; opacity: .62; transition: opacity .2s ease, background-color .2s ease, color .2s ease; }
+.settings-tabs button:hover { opacity: 1; color: var(--mac-text); background: color-mix(in srgb, var(--mac-accent) 9%, transparent); }
+.settings-tabs button.active { opacity: 1; color: #fff; background: var(--mac-accent); box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent); font-weight: 650; }
+.settings-tabs button:focus-visible { outline: 2px solid color-mix(in srgb, var(--mac-accent) 60%, transparent); outline-offset: 1px; }
 .platform-visibility-panel { margin-top: 14px; }
 .platform-visibility-heading { padding: 14px 18px 8px; border-bottom: 1px solid var(--mac-divider); }
 .platform-visibility-heading h3 { margin: 0; font-size: 13px; }

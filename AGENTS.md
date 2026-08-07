@@ -44,13 +44,13 @@
 
 ## 持久化位置
 
-当前代码的项目数据目录是可执行文件目录下的 `.code-switch-R`，由 `services/userhome.go` 的 `getAppConfigDir()` 决定。不要沿用旧文档中的 `~/.code-switch` 或 `%USERPROFILE%\.code-switch` 作为当前数据目录，除非代码里明确在做旧数据导入或迁移。
+当前代码的项目数据目录是可执行文件目录下的 `.code-switch-R`，由 `internal/infra/userhome.go` 的 `GetAppConfigDir()` 决定。不要沿用旧文档中的 `~/.code-switch` 或 `%USERPROFILE%\.code-switch` 作为当前数据目录，除非代码里明确在做旧数据导入或迁移。
 
 重要文件和数据：
 
 | 文件或目录 | 用途 |
 |---|---|
-| `.code-switch-R/app.db` | `request_log`、`relay_attempt`、`provider_blacklist`、`provider_alias`、`app_settings` 等 SQLite 表 |
+| `.code-switch-R/app.db` | SQLite 主库：`provider`（供应商主数据，含 Gemini）、`request_log`、`relay_attempt`、`provider_blacklist`、`app_settings`、`schema_version` |
 | `.code-switch-R/suidemo.db` | 快捷键数据库，旧路径来自用户配置目录下的 `SuiNest` |
 | `.code-switch-R/claude-code.json` | Claude Code provider 配置 |
 | `.code-switch-R/codex.json` | Codex provider 配置 |
@@ -74,9 +74,9 @@
 - `ProviderRelayService`：代理核心，在 `internal/relay/providerrelay.go`。负责 Token 验证、路由注册、Provider 选择、Level 分组、轮询、失败降级、黑名单集成、请求转发、日志写入和模型列表代理。
 - `ProviderService`：Provider JSON 文件读写、迁移、验证、复制、删除清理和改名，并维护 Pi 协议模板 CRUD。单独改名走 `RenameProvider()`；编辑页需要同时保存字段和改名时走 `SaveProvidersWithRename()`，由后端统一回滚配置文件、数据库和 Pi 网关。Pi 模板 ID 创建后不可修改，仍被供应商引用的模板不得删除；同一协议模板下标准化后的相同 API URL 只能对应一个供应商。
 - `PiSettingsService`：只自动检测当前用户的 `~/.pi/agent`。目录存在但 `models.json` 缺失或没有 Provider 时写入脱敏默认平台；已有 Provider 原样解析为 Pi 平台。每个平台可独立托管：开启时备份该 Provider 及同名 `auth.json` 条目，导入原始 URL 和有效 API Key 为平台首个网关供应商，再把该平台改到 `/pi/providers/{provider}`；关闭时只恢复该平台。`ModelsCatalog()` 返回脱敏目录、托管状态与外部修改冲突，不得暴露 API Key 或请求头。
-- `provider_delete.go`：删除 provider 时清理 `request_log`、`relay_attempt`、`provider_blacklist`、`provider_alias`。清理失败会回滚 provider JSON，避免配置和数据库状态分裂。
-- `provider_rename.go`：改名时事务更新历史表，并写入 48 小时 `provider_alias`，用于承接仍使用旧名的 in-flight 请求。禁止 48 小时内链式改名。
-- `Protocol Adapter`：`services/protocol_matrix_adapter.go` 与 `services/protocol_matrix_stream.go` 负责 Anthropic Messages、OpenAI Chat Completions 和 OpenAI Responses 的双向矩阵转换。无法保持 reasoning、工具选择或流式事件语义时必须显式失败；流式响应一旦提交就不得再切换 Provider 或追加 JSON 错误。
+- `provider_delete.go`：删除 provider 时清理 `request_log`、`relay_attempt`、`provider_blacklist`。主数据已入 SQLite，保存失败没有 JSON 补偿窗口；仅 Pi 网关同步失败时才回滚 provider 表，避免配置和数据库状态分裂。
+- `provider_rename.go`：`RenameProvider()` 在单个 IMMEDIATE 事务内保存并改名，同时更新历史表 name 列（仅展示）。日志、黑名单、请求都按 `provider_id` 关联，改名瞬间的 in-flight 写入靠 ID 落到同一行，因此不再写 `provider_alias`、不再禁止链式改名。
+- `Protocol Adapter`：`internal/relay/protocol_matrix_adapter.go`、`protocol_matrix_stream.go` 与 `protocol_matrix_gemini.go` 负责 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses 和 Gemini Native 的双向矩阵转换（协议枚举在 `services/protocol` 子包）。无法保持 reasoning、工具选择或流式事件语义时必须显式失败；流式响应一旦提交就不得再切换 Provider 或追加 JSON 错误。
 - `BlacklistService`：管理请求失败拉黑和过期自动恢复。
 - `LogService` 与 `resources/model-pricing`：读取请求日志、聚合统计、热力图、成本估算、模型定价匹配。
 - `MCPService`：管理 Claude、Codex、Gemini、Reasonix 的 MCP 配置；只同步应用拥有的条目，外部修改冲突时拒绝覆盖。
@@ -250,7 +250,7 @@ GitHub Release 由 `.github/workflows/release.yml` 在推送 `v*` tag 时触发�
 - 修改前先查当前实现，不只看 README、历史方案文档或 `CLAUDE.md`。
 - 只改当前任务需要的文件，不顺手重构、重排格式或更新无关文档。
 - Go 文件修改后运行 `gofmt`；Vue/TypeScript 保持现有组合式 API 和服务封装风格。
-- 数据库写入优先使用既有队列：高频 `request_log` 插入走 `GlobalDBQueueLogs` 批量队列，其他设置、黑名单、alias 等写入走 `GlobalDBQueue`。不要在高频路径直接 `db.Exec`。
+- 数据库写入没有队列：WAL + DSN 级 busy_timeout + 同步短事务（见 `internal/dbcore/dbwrite.go`）。读改写用 `BEGIN IMMEDIATE` 事务，相关一组写入用 `ExecStatements` 原子提交；不要重新引入队列或后台批量缓冲。
 - SQLite 查询和命令必须参数化，禁止字符串拼接用户输入。只有受控表名等内部白名单场景才可用显式校验后的拼接。
 - JSON、TOML、ENV 和用户 CLI 配置写入必须走现有原子写入或专用服务方法，避免破坏用户配置。
 - 代理配置启用/停用必须保留用户原有配置和备份状态，禁止用模板整体覆盖用户文件。

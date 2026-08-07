@@ -1,35 +1,5 @@
 <template>
-  <section class="grok-runtime" :class="{ conflict: status?.conflict }">
-    <div class="runtime-summary">
-      <span :class="['mode-dot', status?.mode ?? 'unmanaged']" aria-hidden="true"></span>
-      <div>
-        <strong>{{ t(`grok.mode.${status?.mode ?? 'unmanaged'}`) }}</strong>
-        <span>{{ status?.configPath || t('grok.loading') }}</span>
-        <span v-if="status?.authPath">{{ status.authPath }}</span>
-      </div>
-    </div>
-    <div class="runtime-actions">
-      <BaseButton v-if="status?.conflict" variant="outline" :disabled="busy" @click="emit('reapply')">
-        <RefreshCw :size="15" />{{ t('grok.actions.reapply') }}
-      </BaseButton>
-      <BaseButton v-if="status?.conflict" variant="danger" :disabled="busy" @click="emit('abandon')">
-        <ShieldAlert :size="15" />{{ t('grok.actions.abandon') }}
-      </BaseButton>
-      <BaseButton v-else-if="status?.managed" variant="outline" :disabled="busy" @click="emit('disable')">
-        <Square :size="14" />{{ t('grok.actions.disable') }}
-      </BaseButton>
-    </div>
-  </section>
-  <p v-if="status?.conflictMessage" class="conflict-message">{{ status.conflictMessage }}</p>
-  <div v-if="status && !status.managed" class="directory-row">
-    <label>
-      <span>{{ t('grok.build.directory') }}</span>
-      <BaseInput v-model="directory" :placeholder="t('grok.build.directoryPlaceholder')" :disabled="busy" />
-    </label>
-    <BaseButton variant="outline" :disabled="busy || directory === (status.customDirectory ?? '')" @click="emit('save-directory', directory)">
-      {{ t('grok.actions.save') }}
-    </BaseButton>
-  </div>
+  <!-- 已依要求移除 grok.mode 与 Grok 配置目录显示 -->
 </template>
 
 <script setup lang="ts">
