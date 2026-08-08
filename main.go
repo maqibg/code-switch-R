@@ -160,7 +160,7 @@ func main() {
 	pricingService := services.NewPricingService(appSettings, piSettings)
 	providerRelay := relay.NewProviderRelayService(providerService, blacklistService, notificationService, appSettings, pricingService, relayAddr)
 	providerRelay.SetOAuthAccountService(oauthAccountService)
-	openCodeService := services.NewOpenCodeService(providerService, providerRelay.Addr())
+	openCodeService := services.NewOpenCodeService(providerService, appSettings, pricingService)
 	grokBuildService := services.NewGrokBuildService(providerRelay.Addr(), appSettings, providerService)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
@@ -210,6 +210,9 @@ func main() {
 
 	if err := providerRelay.Start(); err != nil {
 		log.Fatalf("启动 Provider Relay 失败: %v", err)
+	}
+	if err := openCodeService.Start(); err != nil {
+		log.Printf("启动 OpenCode 配置同步失败，应用将继续启动: %v", err)
 	}
 	if err := services.RefreshManagedWSLRelayCredentials(networkService); err != nil {
 		log.Printf("刷新 WSL CLI Relay 凭据失败，请在网络设置中重试: %v", err)
@@ -322,6 +325,7 @@ func main() {
 		// 3. 停止代理服务器
 		_ = grokBuildService.Stop()
 		_ = providerRelay.Stop()
+		_ = openCodeService.Stop()
 
 		// 4. 关闭数据库连接
 		// 写入不再经过队列，所有写都是同步短事务，进程退出时没有待排空的缓冲。

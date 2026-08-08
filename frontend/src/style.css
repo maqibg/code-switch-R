@@ -1867,6 +1867,56 @@ button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab
   white-space: nowrap !important;
 }
 
+/* 统一供应商下拉选项：避免按钮全局规则把选项压成多列。 */
+.level-select {
+  display: block;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.level-select-button {
+  align-self: stretch;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.level-select-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+.level-select-options .level-option {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+}
+
+.level-select-options button.level-option {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 36px !important;
+  padding: 8px 10px !important;
+  white-space: nowrap !important;
+}
+
 @media (max-width: 760px) {
   .general-page { width: calc(100% - 32px); padding-bottom: 36px; }
 }

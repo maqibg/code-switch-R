@@ -47,30 +47,78 @@ func TestOpenCodeJSONCReadPreservesUnknownFields(t *testing.T) {
 	}
 }
 
-func TestOpenCodeProviderWithModeOnlyChangesOwnedOptions(t *testing.T) {
+func TestFormatOpenCodeConfigJSONKeepsCompleteProviderConfiguration(t *testing.T) {
+	formatted, err := formatOpenCodeConfigJSON(json.RawMessage(`{"npm":"@ai-sdk/openai-compatible","options":{"apiKey":"visible-key","futureOption":true}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(formatted, `"apiKey": "visible-key"`) || !strings.Contains(formatted, `"futureOption": true`) {
+		t.Fatalf("完整 Provider 配置未保留: %s", formatted)
+	}
+	if _, err := formatOpenCodeConfigJSON(json.RawMessage(`[]`)); err == nil {
+		t.Fatal("数组不应被接受为 Provider 配置对象")
+	}
+}
+
+func TestOpenCodeProviderExportDocumentValidatesEntriesAndKeepsConfig(t *testing.T) {
+	document := OpenCodeProviderExportDocument{
+		Version:  openCodeProviderExportVersion,
+		Platform: openCodePlatform,
+		Providers: []OpenCodeProviderExportEntry{{
+			ProviderKey: "my-provider",
+			ConfigJSON:  `{"npm":"@ai-sdk/openai-compatible","options":{"apiKey":"visible-key"},"future":true}`,
+		}},
+	}
+	normalized, err := normalizeOpenCodeProviderExportDocument(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(normalized.Providers[0].ConfigJSON, `"apiKey": "visible-key"`) || !strings.Contains(normalized.Providers[0].ConfigJSON, `"future": true`) {
+		t.Fatalf("导出配置未完整保留: %s", normalized.Providers[0].ConfigJSON)
+	}
+
+	document.Providers = append(document.Providers, document.Providers[0])
+	if _, err := normalizeOpenCodeProviderExportDocument(document); err == nil {
+		t.Fatal("重复供应商标识不应被接受")
+	}
+	document.Providers = document.Providers[:1]
+	document.Platform = "claude"
+	if _, err := normalizeOpenCodeProviderExportDocument(document); err == nil {
+		t.Fatal("非 OpenCode 导出文件不应被接受")
+	}
+}
+
+func TestOpenCodeProviderImportDecisionsRequireKnownActions(t *testing.T) {
+	decisions, err := openCodeProviderImportDecisions([]OpenCodeProviderImportDecision{{ProviderKey: "same-key", Action: "replace"}, {ProviderKey: "skip-key", Action: "skip"}, {ProviderKey: "copy-key", Action: "rename"}})
+	if err != nil || decisions["same-key"] != "replace" || decisions["skip-key"] != "skip" || decisions["copy-key"] != "rename" {
+		t.Fatalf("重复供应商处理方式解析错误: %#v, %v", decisions, err)
+	}
+	if _, err := openCodeProviderImportDecisions([]OpenCodeProviderImportDecision{{ProviderKey: "same-key", Action: "other"}}); err == nil {
+		t.Fatal("未知处理方式不应被接受")
+	}
+}
+
+func TestNextOpenCodeProviderImportKeyUsesFirstFreeCopyNumber(t *testing.T) {
+	used := map[string]struct{}{"demo": {}, "demo-2": {}, "demo-3": {}}
+	if got := nextOpenCodeProviderImportKey("demo", used); got != "demo-4" {
+		t.Fatalf("副本短名称错误: %s", got)
+	}
+}
+
+func TestOpenCodeProviderConfigKeepsCompleteOptions(t *testing.T) {
 	raw := map[string]json.RawMessage{}
 	setRawString(raw, "npm", "@ai-sdk/anthropic", false)
 	raw["options"] = json.RawMessage(`{"baseURL":"https://direct.example","apiKey":"secret","headers":{"X-Test":"keep"}}`)
 	raw["future"] = json.RawMessage(`{"keep":true}`)
-	provider := &Provider{APIURL: "https://direct.example", APIKey: "secret", openCode: &openCodeProviderPayload{GatewayKey: "anthropic"}}
-
-	data, err := openCodeProviderWithMode(raw, provider, "relay", "127.0.0.1:18100")
-	if err != nil {
-		// RelayToken 可能尚未在纯单元测试中初始化；只验证 direct 分支的字段归属。
-		data, err = openCodeProviderWithMode(raw, provider, "direct", "127.0.0.1:18100")
-	}
+	options, err := optionsRawMap(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]json.RawMessage
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
+	if string(raw["future"]) != `{"keep":true}` {
+		t.Fatalf("未知 Provider 字段被修改: %s", raw["future"])
 	}
-	if string(result["future"]) != `{"keep":true}` {
-		t.Fatalf("未知 Provider 字段被修改: %s", result["future"])
-	}
-	if !strings.Contains(string(result["options"]), "X-Test") {
-		t.Fatalf("options 未保留用户 Header: %s", result["options"])
+	if string(options["baseURL"]) != `"https://direct.example"` || string(options["apiKey"]) != `"secret"` || !strings.Contains(string(options["headers"]), "X-Test") {
+		t.Fatalf("options 未保留完整直连配置: %#v", options)
 	}
 }
 

@@ -233,8 +233,6 @@ func cloneOpenCodeState(state openCodeStateFile) openCodeStateFile {
 		cloned.Targets[key] = value
 	}
 	for key, value := range state.Managed {
-		value.OriginalProvider = cloneRaw(value.OriginalProvider)
-		value.InjectedProvider = cloneRaw(value.InjectedProvider)
 		cloned.Managed[key] = value
 	}
 	for key, value := range state.MCP {
@@ -260,6 +258,21 @@ func providerRawMap(raw json.RawMessage) (map[string]json.RawMessage, error) {
 		value = make(map[string]json.RawMessage)
 	}
 	return value, nil
+}
+
+func formatOpenCodeConfigJSON(raw json.RawMessage) (string, error) {
+	if len(raw) > 0 && !strings.HasPrefix(strings.TrimSpace(string(raw)), "{") {
+		return "", fmt.Errorf("OpenCode Provider 配置必须是 JSON 对象")
+	}
+	value, err := providerRawMap(raw)
+	if err != nil {
+		return "", err
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func mergeOpenCodeJSONExtension(target map[string]json.RawMessage, rawValue, fieldName string) error {
@@ -314,17 +327,6 @@ func openCodeTargetInfo(path, source, format, hash string, exists bool, warning 
 }
 
 func openCodeTimeNow() string { return time.Now().UTC().Format(time.RFC3339Nano) }
-
-func openCodeRelayRootURL(addr, gateway string) string {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
-		addr = "127.0.0.1:18100"
-	}
-	if !strings.Contains(addr, "://") {
-		addr = "http://" + addr
-	}
-	return strings.TrimRight(addr, "/") + openCodeRelayPathPrefix + gateway
-}
 
 func openCodeProviderModelMap(rawProvider map[string]json.RawMessage) (map[string]json.RawMessage, error) {
 	raw := rawProvider["models"]

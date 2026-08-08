@@ -10,25 +10,267 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type OpenCodeService struct {
 	mu            sync.Mutex
 	providerStore *ProviderService
-	relayAddr     string
+	appSettings   *AppSettingsService
+	pricing       *PricingService
+	usageState    OpenCodeUsageLoggingState
+	stopOnce      sync.Once
+	stopCh        chan struct{}
 }
 
-func NewOpenCodeService(providerStore *ProviderService, relayAddr string) *OpenCodeService {
-	return &OpenCodeService{providerStore: providerStore, relayAddr: relayAddr}
+func NewOpenCodeService(providerStore *ProviderService, appSettings *AppSettingsService, pricing *PricingService) *OpenCodeService {
+	return &OpenCodeService{
+		providerStore: providerStore,
+		appSettings:   appSettings,
+		pricing:       pricing,
+		stopCh:        make(chan struct{}),
+	}
 }
 
-func (s *OpenCodeService) Start() error { return nil }
-func (s *OpenCodeService) Stop() error  { return nil }
+// Start 负责首次同步外部配置，并按用户设置定期读取 OpenCode 已完成会话。
+// OpenCode 请求始终直连上游，本服务不会启动或控制任何 OpenCode Relay。
+func (s *OpenCodeService) Start() error {
+	s.mu.Lock()
+	_, syncErr := s.syncLiveProvidersLocked()
+	if s.usageLoggingEnabledLocked() {
+		_, _ = s.syncUsageLocked()
+	}
+	s.mu.Unlock()
+	go s.runUsageSyncLoop()
+	return syncErr
+}
+
+func (s *OpenCodeService) Stop() error {
+	s.stopOnce.Do(func() { close(s.stopCh) })
+	return nil
+}
+
+func (s *OpenCodeService) runUsageSyncLoop() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.mu.Lock()
+			if s.usageLoggingEnabledLocked() {
+				_, _ = s.syncUsageLocked()
+			}
+			s.mu.Unlock()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
 
 func (s *OpenCodeService) Snapshot() (OpenCodeConfigSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, err := s.syncLiveProvidersLocked(); err != nil {
+		return OpenCodeConfigSnapshot{}, err
+	}
 	return s.snapshotLocked()
+}
+
+// SetUsageLoggingEnabled 持久化使用记录读取开关。关闭仅停止后续读取，不删除历史记录。
+func (s *OpenCodeService) SetUsageLoggingEnabled(enabled bool) (OpenCodeUsageLoggingState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.appSettings == nil {
+		return OpenCodeUsageLoggingState{}, fmt.Errorf("应用设置服务未初始化")
+	}
+	settings, err := s.appSettings.GetAppSettings()
+	if err != nil {
+		return OpenCodeUsageLoggingState{}, err
+	}
+	settings.OpenCodeUsageLoggingEnabled = enabled
+	if _, err := s.appSettings.SaveAppSettings(settings); err != nil {
+		return OpenCodeUsageLoggingState{}, err
+	}
+	if enabled {
+		_, _ = s.syncUsageLocked()
+	}
+	s.usageState.Enabled = enabled
+	return s.usageState, nil
+}
+
+// SyncUsageNow 供日志页进入和手动刷新时调用；开关关闭时不访问 OpenCode 数据库。
+func (s *OpenCodeService) SyncUsageNow() (OpenCodeUsageSyncResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.usageLoggingEnabledLocked() {
+		return OpenCodeUsageSyncResult{Enabled: false, Errors: []string{}}, nil
+	}
+	return s.syncUsageLocked()
+}
+
+// ExportProviders 返回当前 OpenCode 页面全部供应商的可导出内容。
+// 配置 JSON 按原文保留，便于在另一台设备完整恢复。
+func (s *OpenCodeService) ExportProviders() (OpenCodeProviderExportDocument, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	snapshot, err := s.snapshotLocked()
+	if err != nil {
+		return OpenCodeProviderExportDocument{}, err
+	}
+	document := OpenCodeProviderExportDocument{
+		Version:   openCodeProviderExportVersion,
+		Platform:  openCodePlatform,
+		Providers: make([]OpenCodeProviderExportEntry, 0, len(snapshot.Providers)),
+	}
+	for _, provider := range snapshot.Providers {
+		document.Providers = append(document.Providers, openCodeProviderExportEntryFromInfo(provider))
+	}
+	sort.Slice(document.Providers, func(i, j int) bool {
+		return document.Providers[i].ProviderKey < document.Providers[j].ProviderKey
+	})
+	return document, nil
+}
+
+// SaveProviderExport 把用户在导出弹窗中看到的内容保存到所选 JSON 文件。
+func (s *OpenCodeService) SaveProviderExport(path string, document OpenCodeProviderExportDocument) error {
+	target, err := normalizeOpenCodeProviderJSONPath(path)
+	if err != nil {
+		return err
+	}
+	normalized, err := normalizeOpenCodeProviderExportDocument(document)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(normalized, "", "  ")
+	if err != nil {
+		return fmt.Errorf("生成供应商导出文件失败: %w", err)
+	}
+	if err := atomicWriteFile(target, append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("保存供应商导出文件失败: %w", err)
+	}
+	return nil
+}
+
+// ReadProviderImportFile 读取并校验用户选择的供应商 JSON 文件。
+func (s *OpenCodeService) ReadProviderImportFile(path string) (OpenCodeProviderExportDocument, error) {
+	text, err := s.ReadProviderImportText(path)
+	if err != nil {
+		return OpenCodeProviderExportDocument{}, fmt.Errorf("读取供应商导入文件失败: %w", err)
+	}
+	var document OpenCodeProviderExportDocument
+	if err := json.Unmarshal([]byte(text), &document); err != nil {
+		return OpenCodeProviderExportDocument{}, fmt.Errorf("供应商导入文件不是有效 JSON: %w", err)
+	}
+	return normalizeOpenCodeProviderExportDocument(document)
+}
+
+// ReadProviderImportText 只读取用户选择的 JSON 文本，不提前解析；前端需要在编辑区展示并标记无效内容。
+func (s *OpenCodeService) ReadProviderImportText(path string) (string, error) {
+	target, err := normalizeOpenCodeProviderJSONPath(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", fmt.Errorf("读取供应商导入文件失败: %w", err)
+	}
+	if info.Size() > 8<<20 {
+		return "", fmt.Errorf("供应商导入文件不能超过 8 MB")
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return "", fmt.Errorf("读取供应商导入文件失败: %w", err)
+	}
+	return strings.TrimPrefix(string(data), "\ufeff"), nil
+}
+
+// ImportProviders 按用户逐项选择的结果写入供应商资料。
+// 导入不会自动应用到 OpenCode，避免修改用户正在使用的配置。
+func (s *OpenCodeService) ImportProviders(request OpenCodeProviderImportRequest) (OpenCodeProviderImportResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.providerStore == nil {
+		return OpenCodeProviderImportResult{}, fmt.Errorf("OpenCode 供应商存储服务未初始化")
+	}
+	document, err := normalizeOpenCodeProviderExportDocument(OpenCodeProviderExportDocument{
+		Version: openCodeProviderExportVersion, Platform: openCodePlatform, Providers: request.Providers,
+	})
+	if err != nil {
+		return OpenCodeProviderImportResult{}, err
+	}
+	decisions, err := openCodeProviderImportDecisions(request.Decisions)
+	if err != nil {
+		return OpenCodeProviderImportResult{}, err
+	}
+	existing, err := s.providerStore.LoadProviders(openCodePlatform)
+	if err != nil {
+		return OpenCodeProviderImportResult{}, err
+	}
+	existingKeys := make(map[string]struct{}, len(existing))
+	for _, provider := range existing {
+		if provider.openCode != nil {
+			existingKeys[provider.openCode.ProviderKey] = struct{}{}
+		}
+	}
+	usedKeys := make(map[string]struct{}, len(existingKeys))
+	for key := range existingKeys {
+		usedKeys[key] = struct{}{}
+	}
+
+	result := OpenCodeProviderImportResult{}
+	for _, entry := range document.Providers {
+		action, decided := decisions[entry.ProviderKey]
+		_, originalExists := existingKeys[entry.ProviderKey]
+		if _, alreadyImported := usedKeys[entry.ProviderKey]; alreadyImported && !originalExists {
+			return OpenCodeProviderImportResult{}, fmt.Errorf("导入处理后出现重复的供应商标识: %s", entry.ProviderKey)
+		}
+		if decided && action == "skip" {
+			// 前端也会把只存在于 OpenCode 配置文件中的同名项放进冲突列表。
+			// 即使它尚未保存到本项目，也必须尊重用户选择的“保留当前”。
+			result.Skipped++
+			continue
+		}
+		if decided && action == "rename" {
+			originalKey := entry.ProviderKey
+			entry.ProviderKey = nextOpenCodeProviderImportKey(originalKey, usedKeys)
+			entry.Name = strings.TrimSpace(entry.Name)
+			if entry.Name == "" {
+				entry.Name = originalKey
+			}
+			entry.Name += " (副本)"
+			result.Imported++
+		} else if originalExists {
+			if !decided {
+				return OpenCodeProviderImportResult{}, fmt.Errorf("供应商 %q 与现有供应商重复，请选择处理方式", entry.ProviderKey)
+			}
+			result.Replaced++
+		} else {
+			result.Imported++
+		}
+		if _, err := s.saveProviderLocked(entry.toInput()); err != nil {
+			if rollbackErr := s.saveOpenCodeProviders(cloneOpenCodeProviders(existing)); rollbackErr != nil {
+				return OpenCodeProviderImportResult{}, fmt.Errorf("导入供应商 %q 失败，且无法恢复原有供应商: %v（恢复失败: %w）", entry.ProviderKey, err, rollbackErr)
+			}
+			return OpenCodeProviderImportResult{}, fmt.Errorf("导入供应商 %q 失败，已恢复原有供应商: %w", entry.ProviderKey, err)
+		}
+		usedKeys[entry.ProviderKey] = struct{}{}
+	}
+	return result, nil
+}
+
+func (s *OpenCodeService) OpenProviderExportDirectory(path string) error {
+	target, err := normalizeOpenCodeProviderJSONPath(path)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(target); err != nil {
+		return fmt.Errorf("导出文件不存在: %w", err)
+	}
+	if err := OpenInExplorer(filepath.Dir(target)); err != nil {
+		return fmt.Errorf("打开导出文件夹失败: %w", err)
+	}
+	return nil
 }
 
 func (s *OpenCodeService) GetConfigPathInfo() (OpenCodeConfigInfo, error) {
@@ -54,33 +296,6 @@ func (s *OpenCodeService) SetConfigPath(input OpenCodePathInput) (OpenCodeConfig
 	}
 	snapshot, err := s.snapshotLocked()
 	return snapshot.Config, err
-}
-
-func (s *OpenCodeService) SetDefaultModels(input OpenCodeDefaultModelsInput) (OpenCodeConfigSnapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.providerStore == nil {
-		return OpenCodeConfigSnapshot{}, fmt.Errorf("OpenCode Provider 存储服务未初始化")
-	}
-	path, format, original, document, _, state, err := s.readDocumentForWriteLocked()
-	if err != nil {
-		return OpenCodeConfigSnapshot{}, err
-	}
-	for label, value := range map[string]string{"model": strings.TrimSpace(input.Model), "small_model": strings.TrimSpace(input.SmallModel)} {
-		if value == "" {
-			delete(document.Raw, label)
-			continue
-		}
-		if !openCodeModelReferenceExists(document, value) {
-			return OpenCodeConfigSnapshot{}, fmt.Errorf("OpenCode %s 必须引用已存在的 provider/model: %s", label, value)
-		}
-		data, _ := json.Marshal(value)
-		document.Raw[label] = data
-	}
-	if _, _, err := s.persistDocumentLocked(path, format, original, document, state); err != nil {
-		return OpenCodeConfigSnapshot{}, err
-	}
-	return s.snapshotLocked()
 }
 
 func (s *OpenCodeService) GetGlobalPrompt() (OpenCodePromptInfo, error) {
@@ -305,8 +520,6 @@ func (s *OpenCodeService) Diagnostics() (OpenCodeDiagnostics, error) {
 		ConfigDirEnvSet:     os.Getenv("OPENCODE_CONFIG_DIR") != "",
 		ConfigPath:          path,
 		ConfigSource:        source,
-		RelayConfigured:     strings.TrimSpace(RelayToken()) != "",
-		RelayAddressEnvSet:  strings.TrimSpace(os.Getenv("CODE_SWITCH_RELAY_ADDR")) != "",
 		AnthropicKeyEnvSet:  os.Getenv("ANTHROPIC_API_KEY") != "",
 		OpenAIKeyEnvSet:     os.Getenv("OPENAI_API_KEY") != "",
 		GeminiKeyEnvSet:     os.Getenv("GEMINI_API_KEY") != "",
@@ -317,59 +530,8 @@ func (s *OpenCodeService) Diagnostics() (OpenCodeDiagnostics, error) {
 func (s *OpenCodeService) ImportLiveProviders() ([]OpenCodeProviderInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.providerStore == nil {
-		return nil, fmt.Errorf("OpenCode Provider 存储服务未初始化")
-	}
-	path, _, _, err := s.resolveTarget()
-	if err != nil {
+	if _, err := s.syncLiveProvidersLocked(); err != nil {
 		return nil, err
-	}
-	_, document, hash, err := readOpenCodeDocument(path)
-	if err != nil {
-		return nil, err
-	}
-	state, err := loadOpenCodeState()
-	if err != nil {
-		return nil, err
-	}
-	if conflicts := openCodeManagedConflicts(document, state, path); len(conflicts) > 0 {
-		return nil, fmt.Errorf("OpenCode live 配置存在托管冲突，拒绝导入: %s", strings.Join(conflicts, ", "))
-	}
-	existing, err := s.providerStore.LoadProviders(openCodePlatform)
-	if err != nil {
-		return nil, err
-	}
-	byKey := make(map[string]Provider, len(existing))
-	for _, provider := range existing {
-		if provider.openCode != nil && provider.openCode.ProviderKey != "" {
-			byKey[provider.openCode.ProviderKey] = provider
-		}
-	}
-	for key, raw := range document.Providers {
-		if _, exists := byKey[key]; exists {
-			continue
-		}
-		provider, err := providerFromOpenCodeRaw(key, raw)
-		if err != nil {
-			return nil, err
-		}
-		byKey[key] = provider
-	}
-	providers := make([]Provider, 0, len(byKey))
-	for _, provider := range byKey {
-		providers = append(providers, provider)
-	}
-	sort.Slice(providers, func(i, j int) bool {
-		return providers[i].openCode.ProviderKey < providers[j].openCode.ProviderKey
-	})
-	if err := s.saveOpenCodeProviders(providers); err != nil {
-		return nil, err
-	}
-	format := openCodeFormatForPath(path)
-	state.Targets[path] = openCodeTargetState{Path: path, Format: format, LastHash: hash, UpdatedAt: openCodeTimeNow()}
-	if err := saveOpenCodeState(state); err != nil {
-		_ = s.saveOpenCodeProviders(cloneOpenCodeProviders(existing))
-		return nil, fmt.Errorf("保存 OpenCode 导入基线失败: %w", err)
 	}
 	snapshot, err := s.snapshotLocked()
 	if err != nil {
@@ -381,11 +543,35 @@ func (s *OpenCodeService) ImportLiveProviders() ([]OpenCodeProviderInfo, error) 
 func (s *OpenCodeService) SaveProvider(input OpenCodeProviderInput) (OpenCodeProviderInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.ensureOpenCodeBaselineLocked(); err != nil {
+		return OpenCodeProviderInfo{}, err
+	}
 	provider, err := s.saveProviderLocked(input)
 	if err != nil {
 		return OpenCodeProviderInfo{}, err
 	}
-	return openCodeProviderInfo(provider, nil), nil
+	if input.Applied {
+		if err := s.applyProviderLocked(provider.openCode.ProviderKey); err != nil {
+			return OpenCodeProviderInfo{}, err
+		}
+	} else {
+		if err := s.restoreProviderLocked(provider.openCode.ProviderKey); err != nil {
+			return OpenCodeProviderInfo{}, err
+		}
+	}
+	state, err := loadOpenCodeState()
+	if err != nil {
+		return OpenCodeProviderInfo{}, err
+	}
+	path, _, _, err := s.resolveTarget()
+	if err != nil {
+		return OpenCodeProviderInfo{}, err
+	}
+	managed, applied := state.Managed[openCodeProviderStorageKey(path, provider.openCode.ProviderKey)]
+	if !applied {
+		return openCodeProviderInfo(provider, nil), nil
+	}
+	return openCodeProviderInfo(provider, &managed), nil
 }
 
 func (s *OpenCodeService) RenameProviderKey(oldKey, newKey string) error {
@@ -450,6 +636,9 @@ func (s *OpenCodeService) RenameProviderKey(oldKey, newKey string) error {
 	}
 	managedKey := openCodeProviderStorageKey(path, oldKey)
 	_, managedExists := state.Managed[managedKey]
+	if liveExists || managedExists {
+		return fmt.Errorf("已应用到 OpenCode 的供应商不能直接修改短名称，请先取消应用")
+	}
 	if liveExists && !managedExists {
 		return fmt.Errorf("OpenCode Provider %q 尚未由本项目托管，改名前请先显式应用一次", oldKey)
 	}
@@ -478,9 +667,6 @@ func (s *OpenCodeService) RenameProviderKey(oldKey, newKey string) error {
 	renamed.Name = newKey
 	renamed.openCode = cloneOpenCodePayload(renamed.openCode)
 	renamed.openCode.ProviderKey = newKey
-	if renamed.openCode.GatewayKey == oldKey {
-		renamed.openCode.GatewayKey = newKey
-	}
 	updated := make([]Provider, 0, len(providers))
 	for _, provider := range providers {
 		if provider.openCode != nil && provider.openCode.ProviderKey == oldKey {
@@ -567,12 +753,7 @@ func (s *OpenCodeService) DeleteProvider(providerKey string) error {
 		if sha256Hex(currentProvider) != managed.InjectedHash {
 			return fmt.Errorf("OpenCode Provider %q 已被外部修改，拒绝删除", providerKey)
 		}
-		if len(managed.OriginalProvider) == 0 {
-			delete(document.Providers, providerKey)
-			removeOpenCodeProviderReferences(&document, providerKey)
-		} else {
-			document.Providers[providerKey] = cloneRaw(managed.OriginalProvider)
-		}
+		delete(document.Providers, providerKey)
 	}
 
 	oldProviders := cloneOpenCodeProviders(providers)
@@ -620,18 +801,6 @@ func (s *OpenCodeService) DeleteProvider(providerKey string) error {
 	return nil
 }
 
-func (s *OpenCodeService) ApplyProvider(providerKey string) (OpenCodeApplyResult, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.applyProviderLocked(strings.TrimSpace(providerKey))
-}
-
-func (s *OpenCodeService) RestoreProvider(providerKey string) (OpenCodeApplyResult, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.restoreProviderLocked(strings.TrimSpace(providerKey))
-}
-
 func (s *OpenCodeService) saveProviderLocked(input OpenCodeProviderInput) (Provider, error) {
 	if s.providerStore == nil {
 		return Provider{}, fmt.Errorf("OpenCode Provider 存储服务未初始化")
@@ -649,19 +818,6 @@ func (s *OpenCodeService) saveProviderLocked(input OpenCodeProviderInput) (Provi
 	if err != nil {
 		return Provider{}, err
 	}
-	mode, err := normalizeOpenCodeMode(input.Mode)
-	if err != nil {
-		return Provider{}, err
-	}
-	if _, knownNPM := openCodeClientProtocolForNPM(npm); !knownNPM && mode == "relay" {
-		return Provider{}, fmt.Errorf("未知 npm 包 %s 只能使用 direct 模式，不能接入 Relay", npm)
-	}
-	if input.GatewayKey == "" {
-		input.GatewayKey = key
-	}
-	if err := validateOpenCodeProviderKey(input.GatewayKey); err != nil {
-		return Provider{}, fmt.Errorf("gatewayKey 无效: %w", err)
-	}
 	providers, err := s.providerStore.LoadProviders(openCodePlatform)
 	if err != nil {
 		return Provider{}, err
@@ -674,15 +830,39 @@ func (s *OpenCodeService) saveProviderLocked(input OpenCodeProviderInput) (Provi
 			break
 		}
 	}
-	if existing != nil && strings.TrimSpace(input.APIKey) == "" {
+	if existing != nil && strings.TrimSpace(input.ConfigJSON) == "" && strings.TrimSpace(input.APIKey) == "" {
 		input.APIKey = existing.APIKey
 	}
 	baseRaw := make(map[string]json.RawMessage)
-	if existing != nil && existing.openCode != nil {
-		baseRaw, err = providerRawMap(existing.openCode.RawProvider)
-		if err != nil {
-			return Provider{}, fmt.Errorf("解析 OpenCode Provider %q 原始配置失败: %w", key, err)
+	if strings.TrimSpace(input.ConfigJSON) != "" {
+		if !strings.HasPrefix(strings.TrimSpace(input.ConfigJSON), "{") {
+			return Provider{}, fmt.Errorf("OpenCode Provider %q 配置 JSON 必须是 JSON 对象", key)
 		}
+		baseRaw, err = providerRawMap(json.RawMessage(input.ConfigJSON))
+		if err != nil {
+			return Provider{}, fmt.Errorf("OpenCode Provider %q 配置 JSON 必须是 JSON 对象: %w", key, err)
+		}
+	}
+	if existing != nil && existing.openCode != nil {
+		if len(baseRaw) == 0 {
+			baseRaw, err = providerRawMap(existing.openCode.RawProvider)
+			if err != nil {
+				return Provider{}, fmt.Errorf("解析 OpenCode Provider %q 原始配置失败: %w", key, err)
+			}
+		}
+	}
+	configOptions, err := optionsRawMap(baseRaw)
+	if err != nil {
+		return Provider{}, fmt.Errorf("解析 OpenCode Provider %q options 失败: %w", key, err)
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		input.Name = rawString(baseRaw["name"])
+	}
+	if strings.TrimSpace(input.BaseURL) == "" {
+		input.BaseURL = rawString(configOptions["baseURL"])
+	}
+	if strings.TrimSpace(input.APIKey) == "" {
+		input.APIKey = rawString(configOptions["apiKey"])
 	}
 	setRawString(baseRaw, "name", strings.TrimSpace(input.Name), true)
 	setRawString(baseRaw, "npm", npm, false)
@@ -748,13 +928,13 @@ func (s *OpenCodeService) saveProviderLocked(input OpenCodeProviderInput) (Provi
 		Name:             key,
 		APIURL:           strings.TrimSpace(input.BaseURL),
 		APIKey:           input.APIKey,
-		Enabled:          input.Enabled,
-		Level:            input.Level,
+		Enabled:          true,
+		Level:            1,
 		UpstreamProtocol: string(upstreamProtocol),
 		SupportedModels:  openCodeSupportedModels(baseRaw),
 		openCode: &openCodeProviderPayload{
 			ProviderKey: key, NPM: npm, ClientProtocol: clientProtocol,
-			Mode: mode, GatewayKey: input.GatewayKey, RawProvider: rawData,
+			RawProvider: rawData,
 		},
 	}
 	if existing != nil {
@@ -773,12 +953,6 @@ func (s *OpenCodeService) saveProviderLocked(input OpenCodeProviderInput) (Provi
 		if provider.openCode.RawProvider == nil {
 			provider.openCode.RawProvider = existing.openCode.RawProvider
 		}
-	}
-	if provider.APIURL == "" && mode == "direct" {
-		return Provider{}, fmt.Errorf("OpenCode Provider %q 的 Base URL 不能为空", key)
-	}
-	if provider.APIKey == "" && mode == "direct" {
-		return Provider{}, fmt.Errorf("OpenCode Provider %q 的 API Key 不能为空", key)
 	}
 	updated := make([]Provider, 0, len(providers)+1)
 	replaced := false
@@ -813,6 +987,98 @@ func (s *OpenCodeService) saveOpenCodeProviders(providers []Provider) error {
 		}
 	}
 	return nil
+}
+
+func openCodeProviderExportEntryFromInfo(provider OpenCodeProviderInfo) OpenCodeProviderExportEntry {
+	return OpenCodeProviderExportEntry{
+		ProviderKey: provider.ProviderKey, Name: provider.Name, NPM: provider.NPM,
+		ClientProtocol: provider.ClientProtocol, UpstreamProtocol: provider.UpstreamProtocol,
+		BaseURL: provider.BaseURL, ConfigJSON: provider.ConfigJSON,
+	}
+}
+
+func (entry OpenCodeProviderExportEntry) toInput() OpenCodeProviderInput {
+	return OpenCodeProviderInput{
+		ProviderKey: entry.ProviderKey, Name: entry.Name, NPM: entry.NPM,
+		ClientProtocol: entry.ClientProtocol, UpstreamProtocol: entry.UpstreamProtocol,
+		BaseURL: entry.BaseURL, Applied: false, ConfigJSON: entry.ConfigJSON,
+		// nil 表示直接保留 ConfigJSON 内完整模型设置。
+		Models: nil,
+	}
+}
+
+func normalizeOpenCodeProviderExportDocument(document OpenCodeProviderExportDocument) (OpenCodeProviderExportDocument, error) {
+	if document.Version != openCodeProviderExportVersion {
+		return OpenCodeProviderExportDocument{}, fmt.Errorf("不支持的供应商导入文件版本: %d", document.Version)
+	}
+	if strings.TrimSpace(document.Platform) != openCodePlatform {
+		return OpenCodeProviderExportDocument{}, fmt.Errorf("该文件不是 OpenCode 供应商导出文件")
+	}
+	if document.Providers == nil {
+		document.Providers = []OpenCodeProviderExportEntry{}
+	}
+	seen := make(map[string]struct{}, len(document.Providers))
+	for index := range document.Providers {
+		entry := &document.Providers[index]
+		entry.ProviderKey = strings.TrimSpace(entry.ProviderKey)
+		if err := validateOpenCodeProviderKey(entry.ProviderKey); err != nil {
+			return OpenCodeProviderExportDocument{}, fmt.Errorf("第 %d 个供应商无效: %w", index+1, err)
+		}
+		if _, exists := seen[entry.ProviderKey]; exists {
+			return OpenCodeProviderExportDocument{}, fmt.Errorf("导入文件中有重复的供应商标识: %s", entry.ProviderKey)
+		}
+		seen[entry.ProviderKey] = struct{}{}
+		formatted, err := formatOpenCodeConfigJSON(json.RawMessage(entry.ConfigJSON))
+		if err != nil {
+			return OpenCodeProviderExportDocument{}, fmt.Errorf("供应商 %q 的配置 JSON 无效: %w", entry.ProviderKey, err)
+		}
+		entry.ConfigJSON = formatted
+	}
+	return document, nil
+}
+
+func openCodeProviderImportDecisions(items []OpenCodeProviderImportDecision) (map[string]string, error) {
+	decisions := make(map[string]string, len(items))
+	for _, item := range items {
+		key := strings.TrimSpace(item.ProviderKey)
+		if err := validateOpenCodeProviderKey(key); err != nil {
+			return nil, fmt.Errorf("重复供应商处理项无效: %w", err)
+		}
+		if _, exists := decisions[key]; exists {
+			return nil, fmt.Errorf("供应商 %q 的处理方式重复", key)
+		}
+		action := strings.ToLower(strings.TrimSpace(item.Action))
+		if action != "skip" && action != "replace" && action != "rename" {
+			return nil, fmt.Errorf("供应商 %q 的处理方式无效", key)
+		}
+		decisions[key] = action
+	}
+	return decisions, nil
+}
+
+func nextOpenCodeProviderImportKey(base string, used map[string]struct{}) string {
+	for index := 2; ; index++ {
+		candidate := fmt.Sprintf("%s-%d", base, index)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+func normalizeOpenCodeProviderJSONPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("未选择供应商 JSON 文件")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("解析供应商 JSON 文件路径失败: %w", err)
+	}
+	absolute = filepath.Clean(absolute)
+	if !strings.EqualFold(filepath.Ext(absolute), ".json") {
+		return "", fmt.Errorf("供应商导入导出只支持 .json 文件")
+	}
+	return absolute, nil
 }
 
 func (s *OpenCodeService) resolveTarget() (string, string, string, error) {
@@ -887,7 +1153,8 @@ func (s *OpenCodeService) snapshotLocked() (OpenCodeConfigSnapshot, error) {
 	return OpenCodeConfigSnapshot{
 		Config: config, Providers: result,
 		DefaultModel: document.DefaultModel, SmallModel: document.SmallModel,
-		Warnings: compactWarnings(warning),
+		Warnings:     compactWarnings(warning),
+		UsageLogging: s.currentUsageLoggingStateLocked(),
 	}, nil
 }
 
@@ -1157,7 +1424,7 @@ func providerFromOpenCodeRaw(key string, raw json.RawMessage) (Provider, error) 
 		UpstreamProtocol: string(upstream), SupportedModels: make(map[string]bool),
 		openCode: &openCodeProviderPayload{
 			ProviderKey: key, NPM: npm, ClientProtocol: clientProtocol,
-			Mode: openCodeDefaultMode, GatewayKey: key, RawProvider: cloneRaw(raw),
+			RawProvider: cloneRaw(raw),
 		},
 	}
 	for modelID := range models {
@@ -1189,15 +1456,11 @@ func openCodeProviderInfo(provider Provider, managed *openCodeManagedState) Open
 	key := provider.Name
 	npm := openCodeDefaultNPM
 	client := openCodeDefaultClient
-	mode := openCodeDefaultMode
-	gateway := key
 	raw := json.RawMessage(nil)
 	if provider.openCode != nil {
 		key = provider.openCode.ProviderKey
 		npm = normalizeOpenCodeNPM(provider.openCode.NPM)
 		client = provider.openCode.ClientProtocol
-		mode = provider.openCode.Mode
-		gateway = provider.openCode.GatewayKey
 		raw = provider.openCode.RawProvider
 	}
 	providerMap, _ := providerRawMap(raw)
@@ -1214,21 +1477,22 @@ func openCodeProviderInfo(provider Provider, managed *openCodeManagedState) Open
 		modelViews = append(modelViews, openCodeModelInfo(id, modelRaw))
 	}
 	sort.Slice(modelViews, func(i, j int) bool { return modelViews[i].ID < modelViews[j].ID })
-	relayEnabled := managed != nil && managed.Mode == "relay"
 	managedValue := managed != nil && managed.TargetPath != ""
-	ownership := "unmanaged"
+	ownership := "local"
 	if managedValue {
-		ownership = "managed-" + managed.Mode
+		ownership = "applied"
 	}
+	configJSON, _ := formatOpenCodeConfigJSON(raw)
 	return OpenCodeProviderInfo{
 		ID: provider.ID, ProviderKey: key, Name: name, NPM: npm,
 		ClientProtocol: client, UpstreamProtocol: string(provider.GetUpstreamProtocol()),
-		Mode: mode, GatewayKey: gateway, BaseURL: provider.APIURL,
-		APIKeyConfigured: strings.TrimSpace(provider.APIKey) != "",
-		APIKeyMasked:     maskSecret(provider.APIKey), Enabled: provider.Enabled,
+		BaseURL:           provider.APIURL,
+		APIKeyConfigured:  strings.TrimSpace(provider.APIKey) != "",
+		APIKeyMasked:      maskSecret(provider.APIKey),
 		HeadersConfigured: headersConfigured, Timeout: timeout,
-		Level: provider.Level, Managed: managedValue, RelayEnabled: relayEnabled,
-		Models: modelViews, Ownership: ownership,
+		Applied: managedValue,
+		Models:  modelViews, Ownership: ownership,
+		ConfigJSON: configJSON,
 	}
 }
 
@@ -1264,7 +1528,7 @@ func openCodeModelInfo(id string, raw json.RawMessage) OpenCodeModelInfo {
 }
 
 func openCodeEnvironmentWarnings() []string {
-	warnings := make([]string, 0, 4)
+	warnings := make([]string, 0, 3)
 	if os.Getenv("OPENCODE_CONFIG") != "" && os.Getenv("OPENCODE_CONFIG_DIR") != "" {
 		warnings = append(warnings, "OPENCODE_CONFIG 与 OPENCODE_CONFIG_DIR 同时设置，优先使用 OPENCODE_CONFIG")
 	}
@@ -1273,9 +1537,6 @@ func openCodeEnvironmentWarnings() []string {
 	}
 	if os.Getenv("GEMINI_API_KEY") != "" && os.Getenv("OPENAI_API_KEY") != "" {
 		warnings = append(warnings, "GEMINI_API_KEY 与 OPENAI_API_KEY 同时设置，请确认 @ai-sdk/google Provider 的认证来源")
-	}
-	if os.Getenv("CODE_SWITCH_RELAY_ADDR") != "" {
-		warnings = append(warnings, "CODE_SWITCH_RELAY_ADDR 会覆盖默认 Relay 地址，请确认 OpenCode relay Provider 的 baseURL")
 	}
 	return warnings
 }
@@ -1339,33 +1600,33 @@ func openCodeSettingsPath() (string, error) {
 	return filepath.Join(dir, "opencode-settings.json"), nil
 }
 
-func (s *OpenCodeService) applyProviderLocked(providerKey string) (OpenCodeApplyResult, error) {
+func (s *OpenCodeService) applyProviderLocked(providerKey string) error {
 	if err := validateOpenCodeProviderKey(providerKey); err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	if s.providerStore == nil {
-		return OpenCodeApplyResult{}, fmt.Errorf("OpenCode Provider 存储服务未初始化")
+		return fmt.Errorf("OpenCode Provider 存储服务未初始化")
 	}
-	path, source, format, err := s.resolveTarget()
+	path, _, format, err := s.resolveTarget()
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	originalBytes, document, currentHash, err := readOpenCodeDocument(path)
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	state, err := loadOpenCodeState()
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	oldState := cloneOpenCodeState(state)
 	target := state.Targets[path]
 	if target.LastHash != "" && target.LastHash != currentHash {
-		return OpenCodeApplyResult{}, fmt.Errorf("OpenCode 配置已被外部修改: %s", path)
+		return fmt.Errorf("OpenCode 配置已被外部修改: %s", path)
 	}
 	providers, err := s.providerStore.LoadProviders(openCodePlatform)
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	var provider *Provider
 	for index := range providers {
@@ -1376,80 +1637,41 @@ func (s *OpenCodeService) applyProviderLocked(providerKey string) (OpenCodeApply
 		}
 	}
 	if provider == nil {
-		return OpenCodeApplyResult{}, fmt.Errorf("未找到 OpenCode Provider %q", providerKey)
+		return fmt.Errorf("未找到 OpenCode Provider %q", providerKey)
 	}
 	baseRaw, err := providerRawMap(provider.openCode.RawProvider)
 	if err != nil {
-		return OpenCodeApplyResult{}, fmt.Errorf("解析 OpenCode Provider %q 失败: %w", providerKey, err)
+		return fmt.Errorf("解析 OpenCode Provider %q 失败: %w", providerKey, err)
 	}
-	mode, err := normalizeOpenCodeMode(provider.openCode.Mode)
+	nextRaw, err := json.Marshal(baseRaw)
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return fmt.Errorf("序列化 OpenCode Provider %q 失败: %w", providerKey, err)
 	}
-	if _, knownNPM := openCodeClientProtocolForNPM(provider.openCode.NPM); !knownNPM && mode == "relay" {
-		return OpenCodeApplyResult{}, fmt.Errorf("未知 npm 包 %s 只能使用 direct 模式，不能接入 Relay", provider.openCode.NPM)
-	}
-	nextRaw, err := openCodeProviderWithMode(baseRaw, provider, mode, s.relayAddr)
-	if err != nil {
-		return OpenCodeApplyResult{}, err
-	}
-	nextProviderMap, err := providerRawMap(nextRaw)
-	if err != nil {
-		return OpenCodeApplyResult{}, fmt.Errorf("解析 OpenCode Provider %q 写入内容失败: %w", providerKey, err)
-	}
-	models, err := openCodeProviderModelMap(nextProviderMap)
-	if err != nil {
-		return OpenCodeApplyResult{}, err
-	}
-	if references := openCodeModelReferenceErrors(&document, providerKey, models); len(references) > 0 {
-		return OpenCodeApplyResult{}, fmt.Errorf("OpenCode Provider %q 的模型引用已失效，请先修正: %s", providerKey, strings.Join(references, ", "))
-	}
-	originalProvider := cloneRaw(document.Providers[providerKey])
 	document.Providers[providerKey] = nextRaw
 	nextDocument, err := marshalOpenCodeDocument(document)
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
-	warning, err := writeOpenCodeDocument(path, originalBytes, nextDocument)
+	_, err = writeOpenCodeDocument(path, originalBytes, nextDocument)
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	_, _, writtenHash, err := readOpenCodeDocument(path)
 	if err != nil {
 		_ = restoreOpenCodeFile(path, originalBytes, originalBytes != nil)
-		return OpenCodeApplyResult{}, fmt.Errorf("OpenCode 配置写入后校验失败: %w", err)
+		return fmt.Errorf("OpenCode 配置写入后校验失败: %w", err)
 	}
 	managedKey := openCodeProviderStorageKey(path, providerKey)
 	state.Managed[managedKey] = openCodeManagedState{
-		TargetPath: path, ProviderKey: providerKey, Mode: mode,
-		OriginalProvider: originalProvider, InjectedProvider: cloneRaw(nextRaw),
-		OriginalHash: sha256Hex(originalProvider), InjectedHash: sha256Hex(nextRaw), UpdatedAt: openCodeTimeNow(),
+		TargetPath: path, ProviderKey: providerKey, InjectedHash: sha256Hex(nextRaw), UpdatedAt: openCodeTimeNow(),
 	}
 	state.Targets[path] = openCodeTargetState{Path: path, Format: format, LastHash: writtenHash, UpdatedAt: openCodeTimeNow()}
-	oldProviders := cloneOpenCodeProviders(providers)
-	for index := range providers {
-		if providers[index].openCode == nil || providers[index].openCode.ProviderKey != providerKey {
-			continue
-		}
-		providers[index].openCode.Mode = mode
-		providers[index].openCode.OriginalProvider = cloneRaw(originalProvider)
-		providers[index].openCode.InjectedProvider = cloneRaw(nextRaw)
-		providers[index].openCode.BaselineHash = sha256Hex(originalProvider)
-		providers[index].openCode.InjectedHash = sha256Hex(nextRaw)
-		providers[index].openCode.ConfigPath = path
-	}
-	if err := s.saveOpenCodeProviders(providers); err != nil {
-		_ = restoreOpenCodeFile(path, originalBytes, originalBytes != nil)
-		return OpenCodeApplyResult{}, fmt.Errorf("保存 OpenCode Provider 状态失败，配置已回滚: %w", err)
-	}
 	if err := saveOpenCodeState(state); err != nil {
-		_ = s.saveOpenCodeProviders(oldProviders)
 		_ = restoreOpenCodeFile(path, originalBytes, originalBytes != nil)
 		_ = saveOpenCodeState(oldState)
-		return OpenCodeApplyResult{}, fmt.Errorf("保存 OpenCode 托管状态失败，配置和 Provider 已回滚: %w", err)
+		return fmt.Errorf("保存 OpenCode 托管状态失败，配置和 Provider 已回滚: %w", err)
 	}
-	_ = source
-	return OpenCodeApplyResult{Path: path, ProviderKey: providerKey, Mode: mode, Hash: writtenHash, Warning: warning}, nil
+	return nil
 }
 
 func cloneOpenCodePayload(payload *openCodeProviderPayload) *openCodeProviderPayload {
@@ -1458,8 +1680,6 @@ func cloneOpenCodePayload(payload *openCodeProviderPayload) *openCodeProviderPay
 	}
 	cloned := *payload
 	cloned.RawProvider = cloneRaw(payload.RawProvider)
-	cloned.OriginalProvider = cloneRaw(payload.OriginalProvider)
-	cloned.InjectedProvider = cloneRaw(payload.InjectedProvider)
 	return &cloned
 }
 
@@ -1701,106 +1921,59 @@ func rewriteOpenCodeModelReferenceJSON(raw json.RawMessage, oldKey, newKey strin
 	return result
 }
 
-func (s *OpenCodeService) restoreProviderLocked(providerKey string) (OpenCodeApplyResult, error) {
+func (s *OpenCodeService) restoreProviderLocked(providerKey string) error {
 	if err := validateOpenCodeProviderKey(providerKey); err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	if s.providerStore == nil {
-		return OpenCodeApplyResult{}, fmt.Errorf("OpenCode Provider 存储服务未初始化")
+		return fmt.Errorf("OpenCode Provider 存储服务未初始化")
 	}
 	path, _, format, err := s.resolveTarget()
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	originalBytes, document, currentHash, err := readOpenCodeDocument(path)
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	state, err := loadOpenCodeState()
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	if target := state.Targets[path]; target.LastHash != "" && target.LastHash != currentHash {
-		return OpenCodeApplyResult{}, fmt.Errorf("OpenCode 配置已被外部修改: %s", path)
+		return fmt.Errorf("OpenCode 配置已被外部修改: %s", path)
 	}
 	oldState := cloneOpenCodeState(state)
 	managedKey := openCodeProviderStorageKey(path, providerKey)
 	managed, exists := state.Managed[managedKey]
 	if !exists {
-		return OpenCodeApplyResult{Path: path, ProviderKey: providerKey, Mode: "direct", Hash: currentHash}, nil
+		return nil
 	}
 	currentProvider := document.Providers[providerKey]
 	if sha256Hex(currentProvider) != managed.InjectedHash {
-		return OpenCodeApplyResult{}, fmt.Errorf("OpenCode Provider %q 已被外部修改，拒绝恢复", providerKey)
+		return fmt.Errorf("OpenCode Provider %q 已被外部修改，拒绝移除", providerKey)
 	}
-	if len(managed.OriginalProvider) == 0 {
-		delete(document.Providers, providerKey)
-		removeOpenCodeProviderReferences(&document, providerKey)
-	} else {
-		document.Providers[providerKey] = cloneRaw(managed.OriginalProvider)
-	}
+	delete(document.Providers, providerKey)
 	nextDocument, err := marshalOpenCodeDocument(document)
 	if err != nil {
-		return OpenCodeApplyResult{}, err
+		return err
 	}
-	warning, err := writeOpenCodeDocument(path, originalBytes, nextDocument)
-	if err != nil {
-		return OpenCodeApplyResult{}, err
+	if _, err := writeOpenCodeDocument(path, originalBytes, nextDocument); err != nil {
+		return err
 	}
 	_, _, writtenHash, err := readOpenCodeDocument(path)
 	if err != nil {
 		_ = restoreOpenCodeFile(path, originalBytes, originalBytes != nil)
-		return OpenCodeApplyResult{}, err
+		return err
 	}
 	delete(state.Managed, managedKey)
 	state.Targets[path] = openCodeTargetState{Path: path, Format: format, LastHash: writtenHash, UpdatedAt: openCodeTimeNow()}
-	providers, err := s.providerStore.LoadProviders(openCodePlatform)
-	if err != nil {
-		_ = restoreOpenCodeFile(path, originalBytes, originalBytes != nil)
-		return OpenCodeApplyResult{}, err
-	}
-	oldProviders := cloneOpenCodeProviders(providers)
-	for index := range providers {
-		if providers[index].openCode == nil || providers[index].openCode.ProviderKey != providerKey {
-			continue
-		}
-		providers[index].openCode.Mode = "direct"
-		providers[index].openCode.OriginalProvider = nil
-		providers[index].openCode.InjectedProvider = nil
-		providers[index].openCode.BaselineHash = ""
-		providers[index].openCode.InjectedHash = ""
-	}
-	if err := s.saveOpenCodeProviders(providers); err != nil {
-		_ = restoreOpenCodeFile(path, originalBytes, originalBytes != nil)
-		return OpenCodeApplyResult{}, err
-	}
 	if err := saveOpenCodeState(state); err != nil {
-		_ = s.saveOpenCodeProviders(oldProviders)
 		_ = restoreOpenCodeFile(path, originalBytes, originalBytes != nil)
 		_ = saveOpenCodeState(oldState)
-		return OpenCodeApplyResult{}, err
+		return err
 	}
-	return OpenCodeApplyResult{Path: path, ProviderKey: providerKey, Mode: "direct", Hash: writtenHash, Warning: warning}, nil
-}
-
-func openCodeProviderWithMode(raw map[string]json.RawMessage, provider *Provider, mode, relayAddr string) (json.RawMessage, error) {
-	options, err := optionsRawMap(raw)
-	if err != nil {
-		return nil, err
-	}
-	if mode == "relay" {
-		if strings.TrimSpace(RelayToken()) == "" {
-			return nil, fmt.Errorf("Relay Token 尚未初始化，不能托管 OpenCode Provider")
-		}
-		setRawString(options, "baseURL", openCodeRelayRootURL(relayAddr, provider.openCode.GatewayKey), false)
-		setRawString(options, "apiKey", RelayToken(), false)
-	} else {
-		setRawString(options, "baseURL", provider.APIURL, true)
-		setRawString(options, "apiKey", provider.APIKey, true)
-	}
-	optionsData, _ := json.Marshal(options)
-	raw["options"] = optionsData
-	return json.Marshal(raw)
+	return nil
 }
 
 func restoreOpenCodeFile(path string, data []byte, existed bool) error {

@@ -46,6 +46,7 @@ type AppSettings struct {
 	GlobalProxyProtocol       string `json:"global_proxy_protocol"`
 	GlobalProxyHost           string `json:"global_proxy_host"`
 	GlobalProxyPort           int    `json:"global_proxy_port"`
+	OpenCodeUsageLoggingEnabled bool `json:"opencode_usage_logging_enabled"`
 	LogRetentionDays          int    `json:"log_retention_days"`
 	// LogRetentionInitialized 标记保留策略是否已经对用户明确过。
 	//

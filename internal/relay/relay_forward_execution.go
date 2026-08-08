@@ -4,7 +4,6 @@ import (
 	"codeswitch/internal/httpx"
 	"codeswitch/services"
 	"fmt"
-	"net/url"
 	"strings"
 
 	relayprotocol "codeswitch/services/protocol"
@@ -73,25 +72,6 @@ func (prs *ProviderRelayService) newRelayForwardExecution(
 				return nil, err
 			}
 		}
-	}
-	if kind == "opencode" && routePlan.ClientProtocol == relayprotocol.GeminiNative &&
-		routePlan.UpstreamProtocol == relayprotocol.GeminiNative {
-		request, err := services.ParseGeminiEndpointPath(endpoint)
-		if err != nil {
-			return nil, services.NewClientRequestRejectedError(err.Error())
-		}
-		request.Model = provider.GetEffectiveModel(request.Model)
-		_, endpointQuery := httpx.SplitEndpointQuery(endpoint)
-		if endpointQuery != "" {
-			query := strings.TrimPrefix(endpointQuery, "?")
-			request.Query, _ = url.ParseQuery(query)
-		}
-		targetURL, err := services.BuildGeminiEndpoint(provider, request)
-		if err != nil {
-			return nil, err
-		}
-		execution.TargetURL = targetURL
-		execution.TargetEndpoint = ""
 	}
 	return execution, nil
 }

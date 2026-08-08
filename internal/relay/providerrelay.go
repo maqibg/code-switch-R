@@ -453,125 +453,6 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	// Pi 的每个 models.json Provider 使用独立路由，避免跨平台模型 ID 冲突。
 	router.POST("/pi/providers/:provider/*any", prs.piPlatformProxyHandler())
 
-	// OpenCode 每个 provider key 使用独立 gateway，避免不同配置条目的模型、
-	// 日志和黑名单相互污染。路径协议由客户端 SDK 的 endpoint 固定，不从请求体猜测。
-	router.POST("/opencode/providers/:gateway/v1/messages", prs.opencodeProxyHandler("/v1/messages", relayprotocol.AnthropicMessages))
-	router.GET("/opencode/providers/:gateway/v1/models", prs.opencodeModelsHandler)
-	router.POST("/opencode/providers/:gateway/v1/chat/completions", prs.opencodeProxyHandler("/v1/chat/completions", relayprotocol.OpenAIChat))
-	router.POST("/opencode/providers/:gateway/v1/responses", prs.opencodeProxyHandler("/v1/responses", relayprotocol.OpenAIResponses))
-	router.GET("/opencode/providers/:gateway/v1beta/models", prs.opencodeGeminiModelsHandler)
-	router.GET("/opencode/providers/:gateway/v1beta/models/*any", prs.opencodeProxyHandler("", relayprotocol.GeminiNative))
-	router.POST("/opencode/providers/:gateway/v1beta/models/*any", prs.opencodeProxyHandler("", relayprotocol.GeminiNative))
-
-}
-
-func (prs *ProviderRelayService) opencodeProxyHandler(endpoint string, clientProtocol relayprotocol.Protocol) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		gateway := strings.TrimSpace(c.Param("gateway"))
-		if err := services.ValidateOpenCodeGatewayKey(gateway); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.Set(services.OpenCodeGatewayContextKey, gateway)
-		c.Set(services.OpenCodeClientProtocolContextKey, string(clientProtocol))
-		effectiveEndpoint := endpoint
-		if clientProtocol == relayprotocol.GeminiNative {
-			// @ai-sdk/google 将 action 放在路径中，例如
-			// /v1beta/models/gemini-2.5-flash:generateContent。不能丢掉
-			// *any，否则模型筛选和上游端点构造都会失去关键信息。
-			effectiveEndpoint = "/v1beta/models" + c.Param("any")
-		}
-		prs.proxyHandler("opencode", effectiveEndpoint)(c)
-	}
-}
-
-func (prs *ProviderRelayService) opencodeGeminiModelsHandler(c *gin.Context) {
-	gateway := strings.TrimSpace(c.Param("gateway"))
-	if err := services.ValidateOpenCodeGatewayKey(gateway); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	providers, err := prs.providerService.LoadProviders("opencode")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load OpenCode providers"})
-		return
-	}
-	type modelEntry struct {
-		Name                       string   `json:"name"`
-		DisplayName                string   `json:"displayName,omitempty"`
-		InputTokenLimit            int64    `json:"inputTokenLimit,omitempty"`
-		OutputTokenLimit           int64    `json:"outputTokenLimit,omitempty"`
-		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
-	}
-	seen := make(map[string]struct{})
-	data := make([]modelEntry, 0)
-	for _, provider := range providers {
-		if provider.OpenCodeGatewayKey() != gateway ||
-			provider.OpenCodeClientProtocol() != string(relayprotocol.GeminiNative) ||
-			!services.ProviderEligibleForRelay(provider, "opencode") {
-			continue
-		}
-		if blocked, _ := services.BlacklistedFor(prs.blacklistService, services.BlacklistTargetFor("opencode:"+gateway, provider)); blocked {
-			continue
-		}
-		for model := range provider.SupportedModels {
-			model = services.NormalizeGeminiModelID(model)
-			if model == "" {
-				continue
-			}
-			if _, exists := seen[model]; exists {
-				continue
-			}
-			seen[model] = struct{}{}
-			data = append(data, modelEntry{
-				Name:                       "models/" + model,
-				SupportedGenerationMethods: []string{"generateContent", "streamGenerateContent", "countTokens"},
-			})
-		}
-	}
-	sort.Slice(data, func(i, j int) bool { return data[i].Name < data[j].Name })
-	c.JSON(http.StatusOK, gin.H{"models": data})
-}
-
-func (prs *ProviderRelayService) opencodeModelsHandler(c *gin.Context) {
-	gateway := strings.TrimSpace(c.Param("gateway"))
-	if err := services.ValidateOpenCodeGatewayKey(gateway); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	providers, err := prs.providerService.LoadProviders("opencode")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load OpenCode providers"})
-		return
-	}
-	type modelEntry struct {
-		ID      string `json:"id"`
-		Object  string `json:"object"`
-		OwnedBy string `json:"owned_by"`
-	}
-	seen := make(map[string]struct{})
-	data := make([]modelEntry, 0)
-	for _, provider := range providers {
-		if provider.OpenCodeGatewayKey() != gateway || !services.ProviderEligibleForRelay(provider, "opencode") {
-			continue
-		}
-		if blocked, _ := services.BlacklistedFor(prs.blacklistService, services.BlacklistTargetFor("opencode:"+gateway, provider)); blocked {
-			continue
-		}
-		for model := range provider.SupportedModels {
-			if _, exists := seen[model]; exists {
-				continue
-			}
-			seen[model] = struct{}{}
-			data = append(data, modelEntry{ID: model, Object: "model", OwnedBy: "code-switch-r"})
-		}
-	}
-	if len(data) == 0 {
-		c.JSON(http.StatusOK, gin.H{"object": "list", "data": []modelEntry{}})
-		return
-	}
-	sort.Slice(data, func(i, j int) bool { return data[i].ID < data[j].ID })
-	c.JSON(http.StatusOK, gin.H{"object": "list", "data": data})
 }
 
 func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.HandlerFunc {
@@ -590,9 +471,6 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		if protocolName, exists := c.Get(services.PiClientProtocolContextKey); exists {
 			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
 		}
-		if protocolName, exists := c.Get(services.OpenCodeClientProtocolContextKey); exists {
-			clientProtocol = relayprotocol.Protocol(fmt.Sprint(protocolName))
-		}
 		thinking := requestedThinkingValue(bodyBytes, clientProtocol)
 		if kind == "pi" {
 			services.LogPiDebugInbound(c.GetString(services.PiPlatformContextKey), endpoint, flattenQuery(c.Request.URL.Query()), cloneHeaders(c.Request.Header), bodyBytes)
@@ -600,15 +478,6 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
-		if kind == "opencode" && clientProtocol == relayprotocol.GeminiNative {
-			parsed, parseErr := services.ParseGeminiEndpointPath(endpoint)
-			if parseErr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": parseErr.Error()})
-				return
-			}
-			requestedModel = parsed.Model
-			isStream = parsed.IsStream()
-		}
 		telemetryModel := requestedModel
 		piPlatform := ""
 		if kind == "pi" {
@@ -623,24 +492,14 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			telemetryModel = bareModel
 			isStream = isStream || strings.Contains(strings.ToLower(endpoint), "streamgeneratecontent")
 		}
-		opencodeGateway := ""
-		if kind == "opencode" {
-			opencodeGateway = c.GetString(services.OpenCodeGatewayContextKey)
-		}
 		telemetry := beginRelayTelemetry(c, kind, clientProtocol, thinking, telemetryModel, isStream, prs.pricingService, piPlatform)
 		if piPlatform != "" {
 			telemetry.SourceID = piPlatform
-		}
-		if opencodeGateway != "" {
-			telemetry.SourceID = opencodeGateway
 		}
 		defer telemetry.finish(c)
 		relayScope := kind
 		if piPlatform != "" {
 			relayScope = "pi:" + piPlatform
-		}
-		if opencodeGateway != "" {
-			relayScope = "opencode:" + opencodeGateway
 		}
 
 		// 如果未指定模型，记录警告但不拦截
@@ -658,9 +517,6 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		skippedCount := 0
 		for _, provider := range providers {
 			if piPlatform != "" && provider.PiPlatformKey() != piPlatform {
-				continue
-			}
-			if opencodeGateway != "" && (provider.OpenCodeGatewayKey() != opencodeGateway || provider.OpenCodeClientProtocol() != string(clientProtocol)) {
 				continue
 			}
 			// 无认证上游允许空 API Key，其余认证方式必须提供凭据。
@@ -723,9 +579,6 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		query := flattenQuery(c.Request.URL.Query())
 		if piPlatform != "" {
 			services.DropPiClientCredentialQuery(query)
-		}
-		if kind == "opencode" && clientProtocol == relayprotocol.GeminiNative {
-			delete(query, "key")
 		}
 		clientHeaders := cloneHeaders(c.Request.Header)
 

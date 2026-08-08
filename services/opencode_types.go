@@ -8,15 +8,11 @@ import (
 )
 
 const (
-	openCodePlatform                 = "opencode"
-	openCodeDefaultNPM               = "@ai-sdk/anthropic"
-	openCodeDefaultClient            = "anthropic_messages"
-	openCodeDefaultMode              = "direct"
-	openCodeConfigStateVersion       = 1
-	openCodeRelayPathPrefix          = "/opencode/providers/"
-	openCodeAPIKeyRelayPlacehold     = "__CODE_SWITCH_R_RELAY_TOKEN__"
-	OpenCodeGatewayContextKey        = "codeswitch.opencode.gateway"
-	OpenCodeClientProtocolContextKey = "codeswitch.opencode.client_protocol"
+	openCodePlatform              = "opencode"
+	openCodeDefaultNPM            = "@ai-sdk/anthropic"
+	openCodeDefaultClient         = "anthropic_messages"
+	openCodeConfigStateVersion    = 1
+	openCodeProviderExportVersion = 1
 )
 
 var openCodeKeyPattern = regexp.MustCompile(`^[^/\\?#\x00-\x1f\x7f]+$`)
@@ -24,17 +20,10 @@ var openCodeKeyPattern = regexp.MustCompile(`^[^/\\?#\x00-\x1f\x7f]+$`)
 // openCodeProviderPayload 保存一个 OpenCode provider map entry 的完整边界。
 // RawProvider 包含 API Key，仅允许在后端和数据库内部使用。
 type openCodeProviderPayload struct {
-	ProviderKey      string          `json:"providerKey,omitempty"`
-	NPM              string          `json:"npm,omitempty"`
-	ClientProtocol   string          `json:"clientProtocol,omitempty"`
-	Mode             string          `json:"mode,omitempty"`
-	GatewayKey       string          `json:"gatewayKey,omitempty"`
-	RawProvider      json.RawMessage `json:"rawProvider,omitempty"`
-	OriginalProvider json.RawMessage `json:"originalProvider,omitempty"`
-	InjectedProvider json.RawMessage `json:"injectedProvider,omitempty"`
-	InjectedHash     string          `json:"injectedHash,omitempty"`
-	BaselineHash     string          `json:"baselineHash,omitempty"`
-	ConfigPath       string          `json:"configPath,omitempty"`
+	ProviderKey    string          `json:"providerKey,omitempty"`
+	NPM            string          `json:"npm,omitempty"`
+	ClientProtocol string          `json:"clientProtocol,omitempty"`
+	RawProvider    json.RawMessage `json:"rawProvider,omitempty"`
 }
 
 // OpenCodeModelInfo 是返回给前端的脱敏模型目录。
@@ -67,7 +56,7 @@ type OpenCodeModelInput struct {
 	ExtraJSON    string         `json:"extra_json"`
 }
 
-// OpenCodeProviderInfo 不包含 API Key、原始 options 或未知字段值。
+// OpenCodeProviderInfo 包含 OpenCode Provider 的完整配置 JSON，供前端直接编辑。
 type OpenCodeProviderInfo struct {
 	ID                int64               `json:"id"`
 	ProviderKey       string              `json:"provider_key"`
@@ -75,19 +64,15 @@ type OpenCodeProviderInfo struct {
 	NPM               string              `json:"npm"`
 	ClientProtocol    string              `json:"client_protocol"`
 	UpstreamProtocol  string              `json:"upstream_protocol"`
-	Mode              string              `json:"mode"`
-	GatewayKey        string              `json:"gateway_key"`
 	BaseURL           string              `json:"base_url"`
 	APIKeyConfigured  bool                `json:"api_key_configured"`
 	APIKeyMasked      string              `json:"api_key_masked"`
 	HeadersConfigured bool                `json:"headers_configured"`
 	Timeout           int64               `json:"timeout"`
-	Enabled           bool                `json:"enabled"`
-	Level             int                 `json:"level"`
-	Managed           bool                `json:"managed"`
-	RelayEnabled      bool                `json:"relay_enabled"`
+	Applied           bool                `json:"applied"`
 	Models            []OpenCodeModelInfo `json:"models"`
 	Ownership         string              `json:"ownership"`
+	ConfigJSON        string              `json:"config_json"`
 }
 
 type OpenCodeProviderInput struct {
@@ -96,16 +81,50 @@ type OpenCodeProviderInput struct {
 	NPM              string               `json:"npm"`
 	ClientProtocol   string               `json:"client_protocol"`
 	UpstreamProtocol string               `json:"upstream_protocol"`
-	Mode             string               `json:"mode"`
-	GatewayKey       string               `json:"gateway_key"`
 	BaseURL          string               `json:"base_url"`
 	APIKey           string               `json:"api_key"`
 	HeadersJSON      string               `json:"headers_json"`
 	OptionsJSON      string               `json:"options_json"`
 	Timeout          int64                `json:"timeout"`
-	Enabled          bool                 `json:"enabled"`
-	Level            int                  `json:"level"`
+	Applied          bool                 `json:"applied"`
 	Models           []OpenCodeModelInput `json:"models"`
+	ConfigJSON       string               `json:"config_json"`
+}
+
+// OpenCodeProviderExportDocument 是 OpenCode 页面供应商导入导出的稳定文件格式。
+type OpenCodeProviderExportDocument struct {
+	Version   int                           `json:"version"`
+	Platform  string                        `json:"platform"`
+	Providers []OpenCodeProviderExportEntry `json:"providers"`
+}
+
+// OpenCodeProviderExportEntry 只保存供应商本身的设置，不包含页面状态或使用记录。
+type OpenCodeProviderExportEntry struct {
+	ProviderKey      string `json:"provider_key"`
+	Name             string `json:"name"`
+	NPM              string `json:"npm"`
+	ClientProtocol   string `json:"client_protocol"`
+	UpstreamProtocol string `json:"upstream_protocol"`
+	BaseURL          string `json:"base_url"`
+	ConfigJSON       string `json:"config_json"`
+}
+
+// OpenCodeProviderImportDecision 指定一条重复短名称的处理方式。
+// Action 可以是 skip（保留当前供应商）、replace（使用导入内容替换）或 rename（作为新供应商导入）。
+type OpenCodeProviderImportDecision struct {
+	ProviderKey string `json:"provider_key"`
+	Action      string `json:"action"`
+}
+
+type OpenCodeProviderImportRequest struct {
+	Providers []OpenCodeProviderExportEntry    `json:"providers"`
+	Decisions []OpenCodeProviderImportDecision `json:"decisions"`
+}
+
+type OpenCodeProviderImportResult struct {
+	Imported int `json:"imported"`
+	Replaced int `json:"replaced"`
+	Skipped  int `json:"skipped"`
 }
 
 type OpenCodeConfigInfo struct {
@@ -122,28 +141,32 @@ type OpenCodeConfigInfo struct {
 }
 
 type OpenCodeConfigSnapshot struct {
-	Config       OpenCodeConfigInfo     `json:"config"`
-	Providers    []OpenCodeProviderInfo `json:"providers"`
-	DefaultModel string                 `json:"default_model"`
-	SmallModel   string                 `json:"small_model"`
-	Warnings     []string               `json:"warnings"`
+	Config       OpenCodeConfigInfo        `json:"config"`
+	Providers    []OpenCodeProviderInfo    `json:"providers"`
+	DefaultModel string                    `json:"default_model"`
+	SmallModel   string                    `json:"small_model"`
+	Warnings     []string                  `json:"warnings"`
+	UsageLogging OpenCodeUsageLoggingState `json:"usage_logging"`
 }
 
-type OpenCodeApplyResult struct {
-	Path        string `json:"path"`
-	ProviderKey string `json:"provider_key"`
-	Mode        string `json:"mode"`
-	Hash        string `json:"hash"`
-	Warning     string `json:"warning"`
+type OpenCodeUsageLoggingState struct {
+	Enabled      bool   `json:"enabled"`
+	LastSyncAt   string `json:"last_sync_at"`
+	LastError    string `json:"last_error"`
+	LastImported int    `json:"last_imported"`
+}
+
+type OpenCodeUsageSyncResult struct {
+	Enabled      bool     `json:"enabled"`
+	Imported     int      `json:"imported"`
+	Skipped      int      `json:"skipped"`
+	Sessions     int      `json:"sessions"`
+	DatabasePath string   `json:"database_path"`
+	Errors       []string `json:"errors"`
 }
 
 type OpenCodePathInput struct {
 	Path string `json:"path"`
-}
-
-type OpenCodeDefaultModelsInput struct {
-	Model      string `json:"model"`
-	SmallModel string `json:"small_model"`
 }
 
 type OpenCodePromptInfo struct {
@@ -177,8 +200,6 @@ type OpenCodeDiagnostics struct {
 	ConfigDirEnvSet     bool     `json:"config_dir_env_set"`
 	ConfigPath          string   `json:"config_path"`
 	ConfigSource        string   `json:"config_source"`
-	RelayConfigured     bool     `json:"relay_configured"`
-	RelayAddressEnvSet  bool     `json:"relay_address_env_set"`
 	AnthropicKeyEnvSet  bool     `json:"anthropic_key_env_set"`
 	OpenAIKeyEnvSet     bool     `json:"openai_key_env_set"`
 	GeminiKeyEnvSet     bool     `json:"gemini_key_env_set"`
@@ -224,14 +245,10 @@ type openCodeTargetState struct {
 }
 
 type openCodeManagedState struct {
-	TargetPath       string          `json:"targetPath"`
-	ProviderKey      string          `json:"providerKey"`
-	Mode             string          `json:"mode"`
-	OriginalProvider json.RawMessage `json:"originalProvider,omitempty"`
-	InjectedProvider json.RawMessage `json:"injectedProvider,omitempty"`
-	OriginalHash     string          `json:"originalHash,omitempty"`
-	InjectedHash     string          `json:"injectedHash,omitempty"`
-	UpdatedAt        string          `json:"updatedAt"`
+	TargetPath   string `json:"targetPath"`
+	ProviderKey  string `json:"providerKey"`
+	InjectedHash string `json:"injectedHash,omitempty"`
+	UpdatedAt    string `json:"updatedAt"`
 }
 
 type openCodeManagedMCPState struct {
@@ -279,10 +296,6 @@ func validateOpenCodeProviderKey(value string) error {
 		return fmt.Errorf("OpenCode providerKey 不能包含路径分隔符、查询字符或控制字符")
 	}
 	return nil
-}
-
-func ValidateOpenCodeGatewayKey(value string) error {
-	return validateOpenCodeProviderKey(value)
 }
 
 func normalizeOpenCodeNPM(value string) string {
@@ -349,17 +362,6 @@ func normalizeOpenCodeUpstreamProtocol(value string) (UpstreamProtocolType, erro
 	}
 }
 
-func normalizeOpenCodeMode(value string) (string, error) {
-	value = strings.TrimSpace(strings.ToLower(value))
-	if value == "" {
-		return openCodeDefaultMode, nil
-	}
-	if value != "direct" && value != "relay" {
-		return "", fmt.Errorf("OpenCode mode 必须是 direct 或 relay")
-	}
-	return value, nil
-}
-
 func openCodeProviderStorageKey(path, providerKey string) string {
 	return path + "\x00" + providerKey
 }
@@ -369,18 +371,4 @@ func (p Provider) OpenCodeProviderKey() string {
 		return ""
 	}
 	return p.openCode.ProviderKey
-}
-
-func (p Provider) OpenCodeGatewayKey() string {
-	if p.openCode == nil {
-		return ""
-	}
-	return p.openCode.GatewayKey
-}
-
-func (p Provider) OpenCodeClientProtocol() string {
-	if p.openCode == nil {
-		return ""
-	}
-	return p.openCode.ClientProtocol
 }

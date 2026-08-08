@@ -208,6 +208,7 @@ import {
   type StatsRange,
 } from '../../services/logs'
 import { useActivePolling } from '../../composables/useActivePolling'
+import { syncOpenCodeUsageNow } from '../../services/opencode'
 import {
   Chart,
   CategoryScale,
@@ -486,6 +487,14 @@ const loadDashboard = async () => {
   await Promise.all([loadLogs(), loadStats()])
 }
 
+const syncOpenCodeUsage = async () => {
+  try {
+    await syncOpenCodeUsageNow()
+  } catch (error) {
+    console.warn('failed to sync OpenCode usage', error)
+  }
+}
+
 const totalPages = computed(() => Math.max(1, Math.ceil(totalLogs.value / PAGE_SIZE)))
 
 const applyFilters = async () => {
@@ -498,9 +507,10 @@ const refreshLogs = () => {
   void loadDashboard()
 }
 
-const manualRefresh = () => {
+const manualRefresh = async () => {
   resetTimer()
-  void loadDashboard()
+  await syncOpenCodeUsage()
+  await loadDashboard()
 }
 
 const nextPage = () => {
@@ -684,6 +694,7 @@ watch(
 )
 
 const startPolling = async () => {
+  await syncOpenCodeUsage()
   await loadProviderOptions()
   await loadDashboard()
   startCountdown()

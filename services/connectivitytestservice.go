@@ -197,6 +197,19 @@ func (cts *ConnectivityTestService) TestProviderManual(
 		ConnectivityAuthType:     authType,
 		ProxyEnabled:             proxyEnabled,
 	}
+	if strings.EqualFold(strings.TrimSpace(platform), "opencode") {
+		endpointLower := strings.ToLower(strings.TrimSpace(endpoint))
+		switch {
+		case strings.Contains(endpointLower, "/v1beta"):
+			provider.UpstreamProtocol = string(UpstreamProtocolGoogle)
+		case strings.Contains(endpointLower, "/responses"):
+			provider.UpstreamProtocol = string(UpstreamProtocolOpenAIResponses)
+		case strings.Contains(endpointLower, "/chat/completions"):
+			provider.UpstreamProtocol = string(UpstreamProtocolOpenAIChat)
+		default:
+			provider.UpstreamProtocol = string(UpstreamProtocolAnthropic)
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

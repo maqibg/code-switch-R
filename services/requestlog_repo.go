@@ -52,14 +52,14 @@ func RequestLogInsertStatement(log RequestLog) dbcore.Statement {
 				ephemeral_1h_tokens, service_tier, input_cost, output_cost, reasoning_cost,
 				cache_create_cost, cache_read_cost, ephemeral_5m_cost, ephemeral_1h_cost,
 				total_cost, has_pricing, cost_calculated, pricing_version, pricing_source, pricing_rule_id,
-				pricing_snapshot, billing_status
+					pricing_snapshot, billing_status, created_at
 			)
 			SELECT
 						?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-				?, ?, ?
+					?, ?, ?, COALESCE(NULLIF(?, ''), CURRENT_TIMESTAMP)
 			WHERE NOT EXISTS (
 				SELECT 1 FROM request_log WHERE request_id = ? AND request_id <> ''
 			)
@@ -71,7 +71,7 @@ func RequestLogInsertStatement(log RequestLog) dbcore.Statement {
 		log.Ephemeral1hTokens, log.ServiceTier, log.InputCost, log.OutputCost, log.ReasoningCost,
 		log.CacheCreateCost, log.CacheReadCost, log.Ephemeral5mCost, log.Ephemeral1hCost,
 		log.TotalCost, dbcore.BoolToInt(log.HasPricing), 1, log.PricingVersion, log.PricingSource, log.PricingRuleID,
-		log.PricingSnapshot, log.BillingStatus, log.RequestID}}
+			log.PricingSnapshot, log.BillingStatus, log.CreatedAt, log.RequestID}}
 }
 
 // RelayAttemptInsertStatement 组装一条转发尝试的 relay_attempt 插入语句。

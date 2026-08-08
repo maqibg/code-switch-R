@@ -1580,6 +1580,7 @@ onUnmounted(() => {
 /* Level Select Dropdown 样式 */
 .level-select {
   position: relative;
+  width: 100%;
 }
 
 .level-select-button {
@@ -1587,24 +1588,27 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 42px;
   padding: 8px 12px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  background: var(--mac-surface-strong);
+  border: 1px solid var(--mac-border);
+  border-radius: 12px;
   font-size: 14px;
-  color: var(--color-text-primary);
+  color: var(--mac-text);
   cursor: pointer;
-  transition: all 0.2s ease;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .level-select-button:hover {
-  border-color: var(--color-border-hover);
-  background: var(--color-bg-tertiary);
+  border-color: color-mix(in srgb, var(--mac-accent) 28%, var(--mac-border));
+  background: var(--mac-surface);
 }
 
-.level-select-button:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+.level-select-button:focus-visible {
+  outline: none;
+  border-color: var(--mac-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mac-accent) 22%, transparent);
 }
 
 .level-select-button svg {
@@ -1646,6 +1650,10 @@ onUnmounted(() => {
   padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  box-sizing: border-box;
   transition: all 0.15s ease;
 }
 
@@ -1674,6 +1682,7 @@ onUnmounted(() => {
   flex: 1;
   font-size: 14px;
   color: var(--mac-text);
+  text-align: left;
 }
 
 .level-option.selected .level-name {
