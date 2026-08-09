@@ -17,6 +17,11 @@ const modelDiscoveryResponseLimit = 10 << 20
 type ProviderModelDiscoveryRequest struct {
 	Platform string   `json:"platform"`
 	Provider Provider `json:"provider"`
+	// APIType 选择模型列表接口的语义：
+	// "openai_compat" 走 /models（Authorization: Bearer）。
+	// "native" 使用供应商原生逻辑：google 用 x-goog-api-key + v1beta/models，其余与 openai_compat 一致。
+	// 为空时按 Provider 上游协议和端点自动推导。
+	APIType string `json:"apiType,omitempty"`
 }
 
 type DiscoveredModel struct {
@@ -32,6 +37,16 @@ type ProviderModelDiscoveryResult struct {
 type ProviderModelDiscoveryService struct {
 	appSettings *AppSettingsService
 }
+
+// 模型列表语义仅影响请求方式，不影响协议转换。
+// openai_compat：/models，授权头 Bearer。
+// native：google 供应商切换到 Gemini 原生请求构造，其余与 openai_compat 相同。
+type modelDiscoveryAPIType string
+
+const (
+	modelDiscoveryAPIOpenAICompat modelDiscoveryAPIType = "openai_compat"
+	modelDiscoveryAPINative       modelDiscoveryAPIType = "native"
+)
 
 func NewProviderModelDiscoveryService(appSettings *AppSettingsService) *ProviderModelDiscoveryService {
 	return &ProviderModelDiscoveryService{appSettings: appSettings}
@@ -64,11 +79,36 @@ func (s *ProviderModelDiscoveryService) FetchProviderModels(input ProviderModelD
 	if err != nil {
 		return ProviderModelDiscoveryResult{}, fmt.Errorf("创建模型发现客户端失败: %w", err)
 	}
-	protocolType := ResolveProviderUpstreamProtocol(input.Platform, provider, provider.GetEffectiveEndpoint("/v1/models"))
-	headers, err := BuildUpstreamHeaders(provider, input.Platform, nil, protocolType)
-	if err != nil {
-		return ProviderModelDiscoveryResult{}, err
+	apiType := strings.TrimSpace(input.APIType)
+	if apiType == "" {
+		apiType = string(modelDiscoveryAPIOpenAICompat)
+		if provider.GetUpstreamProtocol() == UpstreamProtocolGoogle {
+			apiType = string(modelDiscoveryAPINative)
+		}
 	}
+	googleNative := apiType == string(modelDiscoveryAPINative) && provider.GetUpstreamProtocol() == UpstreamProtocolGoogle
+	var headers map[string]string
+	if googleNative {
+		// Google 原生模型列表：X-Goog-Api-Key + /v1beta/models（key 也支持放 URL）。
+		headers = map[string]string{"x-goog-api-key": provider.APIKey}
+		if _, err := buildModelDiscoveryURLsNativeGoogle(provider); err != nil {
+			return ProviderModelDiscoveryResult{}, err
+		}
+	} else {
+		protocolType := ResolveProviderUpstreamProtocol(input.Platform, provider, provider.GetEffectiveEndpoint("/v1/models"))
+		headers, err = BuildUpstreamHeaders(provider, input.Platform, nil, protocolType)
+		if err != nil {
+			return ProviderModelDiscoveryResult{}, err
+		}
+	}
+	if googleNative {
+		urls, err = buildModelDiscoveryURLsNativeGoogle(provider)
+		if err != nil {
+			return ProviderModelDiscoveryResult{}, err
+		}
+	}
+	// API key 放 URL 查询参数（Google Models 原生规范）时会暴露在错误信息里，统一脱敏。
+	redact := func(value string) string { return redactSecret(value, provider.APIKey) }
 
 	var failures []string
 	for _, candidate := range urls {
@@ -85,7 +125,7 @@ func (s *ProviderModelDiscoveryService) FetchProviderModels(input ProviderModelD
 		resp, requestErr := client.Do(req)
 		if requestErr != nil {
 			cancel()
-			failures = append(failures, fmt.Sprintf("%s: %s", safeDiscoveryURL(candidate, provider.APIKey), redactSecret(requestErr.Error(), provider.APIKey)))
+			failures = append(failures, fmt.Sprintf("%s: %s", safeDiscoveryURL(candidate, provider.APIKey), redact(requestErr.Error())))
 			continue
 		}
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, modelDiscoveryResponseLimit+1))
@@ -104,7 +144,7 @@ func (s *ProviderModelDiscoveryService) FetchProviderModels(input ProviderModelD
 			if len(detail) > 512 {
 				detail = detail[:512] + "..."
 			}
-			failures = append(failures, fmt.Sprintf("%s: HTTP %d %s", safeDiscoveryURL(candidate, provider.APIKey), resp.StatusCode, redactSecret(detail, provider.APIKey)))
+			failures = append(failures, fmt.Sprintf("%s: HTTP %d %s", safeDiscoveryURL(candidate, provider.APIKey), resp.StatusCode, redact(detail)))
 			continue
 		}
 		models, parseErr := parseDiscoveredModels(body)
@@ -119,6 +159,40 @@ func (s *ProviderModelDiscoveryService) FetchProviderModels(input ProviderModelD
 		return ProviderModelDiscoveryResult{Models: models, SourceURL: safeDiscoveryURL(candidate, provider.APIKey)}, nil
 	}
 	return ProviderModelDiscoveryResult{}, fmt.Errorf("获取模型列表失败: %s", strings.Join(failures, "; "))
+}
+
+// buildModelDiscoveryURLsNativeGoogle 生成 Gemini 原生模型列表地址。
+// 端点优先使用 ModelsEndpoint，否则在 baseURL 后补 /v1beta/models（与 ai-toolbox 一致）。
+func buildModelDiscoveryURLsNativeGoogle(provider Provider) ([]string, error) {
+	if explicit := strings.TrimSpace(provider.ModelsEndpoint); explicit != "" {
+		base, err := url.Parse(strings.TrimSpace(provider.APIURL))
+		if err != nil || base.Scheme == "" || base.Host == "" {
+			return nil, fmt.Errorf("API URL 无效: %s", provider.APIURL)
+		}
+		reference, parseErr := url.Parse(explicit)
+		if parseErr != nil {
+			return nil, fmt.Errorf("模型列表端点无效: %w", parseErr)
+		}
+		return []string{base.ResolveReference(reference).String()}, nil
+	}
+	base, err := url.Parse(strings.TrimSpace(provider.APIURL))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return nil, fmt.Errorf("API URL 无效: %s", provider.APIURL)
+	}
+	path := strings.TrimSuffix(base.Path, "/")
+	path = strings.TrimSuffix(path, "/models")
+	if strings.HasSuffix(strings.ToLower(path), "/v1") || strings.HasSuffix(strings.ToLower(path), "/v1beta") || strings.HasSuffix(strings.ToLower(path), "/v1alpha") {
+		copyURL := *base
+		copyURL.Path = path + "/models"
+		copyURL.RawQuery = ""
+		copyURL.Fragment = ""
+		return []string{copyURL.String()}, nil
+	}
+	copyURL := *base
+	copyURL.Path = path + "/v1beta/models"
+	copyURL.RawQuery = ""
+	copyURL.Fragment = ""
+	return []string{copyURL.String()}, nil
 }
 
 func buildModelDiscoveryURLs(provider Provider) ([]string, error) {

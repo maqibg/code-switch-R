@@ -15,8 +15,26 @@
     </header>
 
     <main class="opencode-page">
+      <div class="platform-tabs-row">
+        <nav class="platform-tabs" role="tablist" aria-label="OpenCode 功能">
+          <button type="button" role="tab" :aria-selected="activeTab === 'providers'" :class="{ active: activeTab === 'providers' }" @click="activeTab = 'providers'">
+            <Server :size="16" class="tab-icon" />
+            <span>供应商</span>
+          </button>
+          <button type="button" role="tab" :aria-selected="activeTab === 'models'" :class="{ active: activeTab === 'models' }" @click="activeTab = 'models'">
+            <Layers :size="16" class="tab-icon" />
+            <span>模型配置</span>
+          </button>
+        </nav>
+      </div>
+
+      <template v-if="activeTab === 'providers'">
       <div class="section-header">
         <div class="section-controls">
+          <label class="mac-switch sm usage-toggle" :title="usageToggleTooltip">
+            <input type="checkbox" :checked="usageLoggingEnabled" :disabled="usageLoggingBusy" @change="toggleUsageLogging" />
+            <span></span>
+          </label>
           <button class="ghost-icon" type="button" aria-label="刷新 OpenCode 供应商" data-tooltip="刷新" :class="{ rotating: busy }" :disabled="busy" @click="refresh">
             <RefreshCw :size="17" />
           </button>
@@ -80,6 +98,31 @@
           <Boxes :size="26" /><strong>还没有 OpenCode 供应商</strong><span>导入已有配置，或点击右上角「新增供应商」。</span>
         </div>
       </div>
+      </template>
+
+      <template v-else-if="activeTab === 'models'">
+        <section class="opencode-model-settings">
+          <div class="model-settings-block">
+            <div class="model-settings-field">
+              <span>主模型</span>
+              <select v-model="defaultModelDraft" class="form-input model-settings-select" @change="saveDefaultModel">
+                <option value="">未设置</option>
+                <option v-for="option in modelOptions" :key="`ms-m-${option.value}`" :value="option.value">{{ option.label }}</option>
+              </select>
+              <span class="field-hint">OpenCode 默认使用的主模型，格式为 供应商/模型：主模型用于语音、文本等重型任务。</span>
+            </div>
+            <div class="model-settings-field">
+              <span>小模型</span>
+              <select v-model="smallModelDraft" class="form-input model-settings-select" @change="saveSmallModel">
+                <option value="">未设置</option>
+                <option v-for="option in modelOptions" :key="`ms-s-${option.value}`" :value="option.value">{{ option.label }}</option>
+              </select>
+              <span class="field-hint">OpenCode 用于标题等轻量任务的小模型，格式为 provider/model。</span>
+            </div>
+          </div>
+          <p v-if="modelOptions.length === 0" class="model-settings-empty">还没有可用的供应商模型，请先在「供应商」页添加供应商并配置模型。</p>
+        </section>
+      </template>
     </main>
 
     <VendorModal
@@ -178,7 +221,7 @@
 </template>
 
 <script setup lang="ts">
-import { Check, Boxes, CircleAlert, Copy, Download, FileUp, FolderOpen, Plus, RefreshCw, Upload, Wand2 } from 'lucide-vue-next'
+import { Check, Boxes, CircleAlert, Copy, Download, FileUp, FolderOpen, Layers, Plus, RefreshCw, Server, Upload, Wand2 } from 'lucide-vue-next'
 import opencodeIcon from '../../assets/icons/opencode.svg?raw'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { Clipboard, Dialogs } from '@wailsio/runtime'
@@ -187,13 +230,39 @@ import BaseModal from '../common/BaseModal.vue'
 import VendorModal from './VendorModal.vue'
 import { formatOpenCodeProviderImportJSON, highlightOpenCodeProviderImportJSON, OpenCodeImportIssue, parseOpenCodeProviderImportJSON } from './importValidation'
 import { showToast } from '../../utils/toast'
-import { deleteOpenCodeProvider, exportOpenCodeProviders, fetchOpenCodeSnapshot, importOpenCodeProviderDocument, openOpenCodeProviderExportDirectory, readOpenCodeProviderImportText, renameOpenCodeProvider, saveOpenCodeProvider, saveOpenCodeProviderExport } from '../../services/opencode'
+import { deleteOpenCodeProvider, exportOpenCodeProviders, fetchOpenCodeSnapshot, importOpenCodeProviderDocument, openOpenCodeProviderExportDirectory, readOpenCodeProviderImportText, renameOpenCodeProvider, saveOpenCodeProvider, saveOpenCodeProviderExport, setOpenCodeDefaultModel, setOpenCodeSmallModel, setOpenCodeUsageLoggingEnabled } from '../../services/opencode'
 
 const snapshot = ref(new OpenCodeConfigSnapshot())
 const busy = ref(false)
 const errorMessage = ref('')
 const vendorModalOpen = ref(false)
 const editingProvider = ref<OpenCodeProviderInfo | null>(null)
+const activeTab = ref<'providers' | 'models'>('providers')
+
+// 使用记录同步开关
+const usageLoggingBusy = ref(false)
+// 主模型 / 小模型
+const defaultModelDraft = ref('')
+const smallModelDraft = ref('')
+
+const modelOptions = computed(() => {
+  const options: Array<{ value: string; label: string }> = []
+  for (const provider of snapshot.value.providers) {
+    const providerLabel = provider.name || provider.provider_key
+    for (const model of provider.models) {
+      options.push({ value: `${provider.provider_key}/${model.id}`, label: `${providerLabel} / ${model.name || model.id}` })
+    }
+  }
+  return options
+})
+const usageLoggingEnabled = computed(() => snapshot.value.usage_logging?.enabled ?? false)
+const usageToggleTooltip = computed(() => {
+  const state = usageLoggingEnabled.value ? '开' : '关'
+  let text = `读取使用记录：${state}`
+  if (snapshot.value.usage_logging?.last_sync_at) text += `\n上次同步 ${formatSyncTime(snapshot.value.usage_logging.last_sync_at)}`
+  if (snapshot.value.usage_logging?.last_error) text += `\n错误：${snapshot.value.usage_logging.last_error}`
+  return text
+})
 
 const exportModalOpen = ref(false)
 const exportDocument = ref<OpenCodeProviderExportDocument | null>(null)
@@ -237,7 +306,56 @@ const getErrorMessage = (error: unknown) => error instanceof Error ? error.messa
 const refresh = async () => {
   busy.value = true
   errorMessage.value = ''
-  try { snapshot.value = await fetchOpenCodeSnapshot() } catch (error) { errorMessage.value = getErrorMessage(error) } finally { busy.value = false }
+  try {
+    snapshot.value = await fetchOpenCodeSnapshot()
+    defaultModelDraft.value = snapshot.value.default_model || ''
+    smallModelDraft.value = snapshot.value.small_model || ''
+  } catch (error) { errorMessage.value = getErrorMessage(error) } finally { busy.value = false }
+}
+
+const saveDefaultModel = async () => {
+  const next = defaultModelDraft.value
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    snapshot.value = await setOpenCodeDefaultModel(next)
+    defaultModelDraft.value = snapshot.value.default_model || ''
+  } catch (error) {
+    defaultModelDraft.value = snapshot.value.default_model || ''
+    errorMessage.value = getErrorMessage(error)
+  } finally { busy.value = false }
+}
+
+const saveSmallModel = async () => {
+  const next = smallModelDraft.value
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    snapshot.value = await setOpenCodeSmallModel(next)
+    smallModelDraft.value = snapshot.value.small_model || ''
+  } catch (error) {
+    smallModelDraft.value = snapshot.value.small_model || ''
+    errorMessage.value = getErrorMessage(error)
+  } finally { busy.value = false }
+}
+
+const toggleUsageLogging = async () => {
+  if (usageLoggingBusy.value) return
+  usageLoggingBusy.value = true
+  try {
+    snapshot.value.usage_logging = await setOpenCodeUsageLoggingEnabled(!usageLoggingEnabled.value)
+    await refresh()
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+    await refresh()
+  } finally { usageLoggingBusy.value = false }
+}
+
+const formatSyncTime = (value: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
 }
 
 const openEdit = (provider: OpenCodeProviderInfo) => { editingProvider.value = provider; vendorModalOpen.value = true }
@@ -428,6 +546,7 @@ const handleDuplicate = async (provider: OpenCodeProviderInfo) => {
         id: model.id, name: model.name, context_limit: model.context_limit, input_limit: model.input_limit,
         output_limit: model.output_limit, reasoning: model.reasoning, tool_call: model.tool_call,
         attachment: model.attachment, modalities: model.modalities, variants: model.variants, extra_json: '',
+        options_json: model.options_json,
       })),
     })
     await saveOpenCodeProvider(input); await refresh(); showToast('已复制供应商')
@@ -446,6 +565,7 @@ const toggleApplied = async (provider: OpenCodeProviderInfo) => {
       models: provider.models.map((m) => ({
         id: m.id, name: m.name, context_limit: m.context_limit, input_limit: m.input_limit, output_limit: m.output_limit,
         reasoning: m.reasoning, tool_call: m.tool_call, attachment: m.attachment, modalities: m.modalities, variants: m.variants, extra_json: '',
+        options_json: m.options_json,
       })),
     })
     await saveOpenCodeProvider(input); await refresh()
@@ -495,6 +615,110 @@ onMounted(async () => { await refresh() })
 /* ========== 内容区 ========== */
 .opencode-page { width: min(1180px, calc(100% - 56px)); margin: 0 auto; min-width: 0; padding: 24px 0 34px; box-sizing: border-box; }
 .error-banner { display: flex; align-items: flex-start; gap: 9px; padding: 12px 14px; margin-bottom: 14px; border-radius: 7px; font-size: 13px; color: #b42318; background: rgba(180,35,24,.08); }
+
+/* ========== 平台页风格 Tab（cc-switch 风格：扁平圆角矩形 + 等宽均分） ========== */
+.platform-tabs-row {
+  position: relative;
+  z-index: 20;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 0 16px;
+  box-sizing: border-box;
+}
+
+.platform-tabs {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--platform-color) 18%, var(--mac-border));
+  background: color-mix(in srgb, var(--mac-surface) 62%, transparent);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 46%, transparent);
+  box-sizing: border-box;
+}
+
+.platform-tabs button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0 !important;
+  height: 36px;
+  padding: 0 18px !important;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mac-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  box-sizing: border-box;
+  opacity: .62;
+  transition: opacity .2s ease, background-color .2s ease, color .2s ease;
+}
+
+.platform-tabs button .tab-icon {
+  opacity: .8;
+  transition: opacity .2s ease;
+}
+
+.platform-tabs button:hover {
+  opacity: 1;
+  color: var(--mac-text);
+  background: color-mix(in srgb, var(--platform-color) 9%, transparent);
+}
+
+.platform-tabs button.active {
+  opacity: 1;
+  color: #fff;
+  background: var(--platform-color);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent);
+  font-weight: 650;
+}
+
+.platform-tabs button.active .tab-icon {
+  opacity: 1;
+  color: #fff;
+}
+
+/* 使用记录开关：只有开关，无文字，位于刷新按钮左侧 */
+.usage-toggle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+/* ========== 模型配置 Tab ========== */
+.opencode-model-settings {
+  display: grid;
+  gap: 14px;
+  padding: 4px 0;
+  max-width: 900px;
+}
+.model-settings-block {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.model-settings-field { display: grid; gap: 6px; min-width: 0; }
+.model-settings-field > span { font-size: 12px; font-weight: 600; color: var(--mac-text-secondary); }
+.model-settings-select { min-height: 40px; padding: 8px 12px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); color: var(--mac-text); font: inherit; font-size: 13px; cursor: pointer; width: 100%; }
+.model-settings-select:focus { outline: none; border-color: var(--platform-color, #5c7580); box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, #5c7580) 25%, transparent); }
+.model-settings-field .field-hint { line-height: 1.5; }
+.model-settings-empty { margin: 0; padding: 14px; border: 1px dashed var(--mac-border); border-radius: 8px; color: var(--mac-text-secondary); font-size: 13px; }
+@media (max-width: 640px) {
+  .model-settings-block { grid-template-columns: 1fr; }
+}
 
 /* ========== Claude Code 风格 section-header（控件最右侧） ========== */
 .section-header { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding-inline: 0; flex-wrap: wrap; row-gap: 16px; position: relative; min-height: 36px; }

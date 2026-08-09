@@ -39,3 +39,22 @@ func TestRedactSecret(t *testing.T) {
 		t.Fatalf("密钥脱敏失败: %s", got)
 	}
 }
+
+func TestBuildModelDiscoveryURLsNativeGoogle(t *testing.T) {
+	urls, err := buildModelDiscoveryURLsNativeGoogle(Provider{APIURL: "https://generativelanguage.googleapis.com/"})
+	if err != nil || len(urls) != 1 || urls[0] != "https://generativelanguage.googleapis.com/v1beta/models" {
+		t.Fatalf("Google 默认版本路径错误: %#v, %v", urls, err)
+	}
+	urls, err = buildModelDiscoveryURLsNativeGoogle(Provider{APIURL: "https://generativelanguage.googleapis.com/v1beta"})
+	if err != nil || len(urls) != 1 || urls[0] != "https://generativelanguage.googleapis.com/v1beta/models" {
+		t.Fatalf("Google v1beta 路径错误: %#v, %v", urls, err)
+	}
+	urls, err = buildModelDiscoveryURLsNativeGoogle(Provider{APIURL: "https://generativelanguage.googleapis.com/v1beta/models"})
+	if err != nil || len(urls) != 1 || urls[0] != "https://generativelanguage.googleapis.com/v1beta/models" {
+		t.Fatalf("Google 已带 models 路径错误: %#v, %v", urls, err)
+	}
+	urls, err = buildModelDiscoveryURLsNativeGoogle(Provider{APIURL: "https://example.com/gateway", ModelsEndpoint: "/v1beta/models"})
+	if err != nil || len(urls) != 1 || urls[0] != "https://example.com/v1beta/models" {
+		t.Fatalf("Google 显式端点错误: %#v, %v", urls, err)
+	}
+}

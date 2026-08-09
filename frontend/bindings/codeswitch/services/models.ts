@@ -3025,169 +3025,6 @@ export class OpenCodeConfigSnapshot {
     }
 }
 
-export class OpenCodeDiagnostics {
-    "config_path_env_set": boolean;
-    "config_dir_env_set": boolean;
-    "config_path": string;
-    "config_source": string;
-    "anthropic_key_env_set": boolean;
-    "openai_key_env_set": boolean;
-    "gemini_key_env_set": boolean;
-    "environment_warnings": string[];
-
-    /** Creates a new OpenCodeDiagnostics instance. */
-    constructor($$source: Partial<OpenCodeDiagnostics> = {}) {
-        if (!("config_path_env_set" in $$source)) {
-            this["config_path_env_set"] = false;
-        }
-        if (!("config_dir_env_set" in $$source)) {
-            this["config_dir_env_set"] = false;
-        }
-        if (!("config_path" in $$source)) {
-            this["config_path"] = "";
-        }
-        if (!("config_source" in $$source)) {
-            this["config_source"] = "";
-        }
-        if (!("anthropic_key_env_set" in $$source)) {
-            this["anthropic_key_env_set"] = false;
-        }
-        if (!("openai_key_env_set" in $$source)) {
-            this["openai_key_env_set"] = false;
-        }
-        if (!("gemini_key_env_set" in $$source)) {
-            this["gemini_key_env_set"] = false;
-        }
-        if (!("environment_warnings" in $$source)) {
-            this["environment_warnings"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodeDiagnostics instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodeDiagnostics {
-        const $$createField7_0 = $$createType18;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("environment_warnings" in $$parsedSource) {
-            $$parsedSource["environment_warnings"] = $$createField7_0($$parsedSource["environment_warnings"]);
-        }
-        return new OpenCodeDiagnostics($$parsedSource as Partial<OpenCodeDiagnostics>);
-    }
-}
-
-export class OpenCodeMCPServerInfo {
-    "key": string;
-    "type": string;
-    "ownership": string;
-    "url": string;
-    "command": string[];
-    "environment": { [_ in string]?: string };
-    "headers": { [_ in string]?: string };
-
-    /** Creates a new OpenCodeMCPServerInfo instance. */
-    constructor($$source: Partial<OpenCodeMCPServerInfo> = {}) {
-        if (!("key" in $$source)) {
-            this["key"] = "";
-        }
-        if (!("type" in $$source)) {
-            this["type"] = "";
-        }
-        if (!("ownership" in $$source)) {
-            this["ownership"] = "";
-        }
-        if (!("url" in $$source)) {
-            this["url"] = "";
-        }
-        if (!("command" in $$source)) {
-            this["command"] = [];
-        }
-        if (!("environment" in $$source)) {
-            this["environment"] = {};
-        }
-        if (!("headers" in $$source)) {
-            this["headers"] = {};
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodeMCPServerInfo instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodeMCPServerInfo {
-        const $$createField4_0 = $$createType18;
-        const $$createField5_0 = $$createType4;
-        const $$createField6_0 = $$createType4;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("command" in $$parsedSource) {
-            $$parsedSource["command"] = $$createField4_0($$parsedSource["command"]);
-        }
-        if ("environment" in $$parsedSource) {
-            $$parsedSource["environment"] = $$createField5_0($$parsedSource["environment"]);
-        }
-        if ("headers" in $$parsedSource) {
-            $$parsedSource["headers"] = $$createField6_0($$parsedSource["headers"]);
-        }
-        return new OpenCodeMCPServerInfo($$parsedSource as Partial<OpenCodeMCPServerInfo>);
-    }
-}
-
-export class OpenCodeMCPServerInput {
-    "key": string;
-    "type": string;
-    "url": string;
-    "command": string[];
-    "environment": { [_ in string]?: string };
-    "headers": { [_ in string]?: string };
-
-    /** Creates a new OpenCodeMCPServerInput instance. */
-    constructor($$source: Partial<OpenCodeMCPServerInput> = {}) {
-        if (!("key" in $$source)) {
-            this["key"] = "";
-        }
-        if (!("type" in $$source)) {
-            this["type"] = "";
-        }
-        if (!("url" in $$source)) {
-            this["url"] = "";
-        }
-        if (!("command" in $$source)) {
-            this["command"] = [];
-        }
-        if (!("environment" in $$source)) {
-            this["environment"] = {};
-        }
-        if (!("headers" in $$source)) {
-            this["headers"] = {};
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodeMCPServerInput instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodeMCPServerInput {
-        const $$createField3_0 = $$createType18;
-        const $$createField4_0 = $$createType4;
-        const $$createField5_0 = $$createType4;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("command" in $$parsedSource) {
-            $$parsedSource["command"] = $$createField3_0($$parsedSource["command"]);
-        }
-        if ("environment" in $$parsedSource) {
-            $$parsedSource["environment"] = $$createField4_0($$parsedSource["environment"]);
-        }
-        if ("headers" in $$parsedSource) {
-            $$parsedSource["headers"] = $$createField5_0($$parsedSource["headers"]);
-        }
-        return new OpenCodeMCPServerInput($$parsedSource as Partial<OpenCodeMCPServerInput>);
-    }
-}
-
 /**
  * OpenCodeModelInfo 是返回给前端的脱敏模型目录。
  */
@@ -3204,6 +3041,7 @@ export class OpenCodeModelInfo {
     "extra_field_count": number;
     "modalities": string[];
     "variants": { [_ in string]?: any };
+    "options_json": string;
 
     /** Creates a new OpenCodeModelInfo instance. */
     constructor($$source: Partial<OpenCodeModelInfo> = {}) {
@@ -3243,6 +3081,9 @@ export class OpenCodeModelInfo {
         if (!("variants" in $$source)) {
             this["variants"] = {};
         }
+        if (!("options_json" in $$source)) {
+            this["options_json"] = "";
+        }
 
         Object.assign(this, $$source);
     }
@@ -3276,6 +3117,7 @@ export class OpenCodeModelInput {
     "modalities": string[];
     "variants": { [_ in string]?: any };
     "extra_json": string;
+    "options_json": string;
 
     /** Creates a new OpenCodeModelInput instance. */
     constructor($$source: Partial<OpenCodeModelInput> = {}) {
@@ -3312,6 +3154,9 @@ export class OpenCodeModelInput {
         if (!("extra_json" in $$source)) {
             this["extra_json"] = "";
         }
+        if (!("options_json" in $$source)) {
+            this["options_json"] = "";
+        }
 
         Object.assign(this, $$source);
     }
@@ -3330,60 +3175,6 @@ export class OpenCodeModelInput {
             $$parsedSource["variants"] = $$createField9_0($$parsedSource["variants"]);
         }
         return new OpenCodeModelInput($$parsedSource as Partial<OpenCodeModelInput>);
-    }
-}
-
-export class OpenCodePathInput {
-    "path": string;
-
-    /** Creates a new OpenCodePathInput instance. */
-    constructor($$source: Partial<OpenCodePathInput> = {}) {
-        if (!("path" in $$source)) {
-            this["path"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodePathInput instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodePathInput {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new OpenCodePathInput($$parsedSource as Partial<OpenCodePathInput>);
-    }
-}
-
-export class OpenCodePromptInfo {
-    "path": string;
-    "hash": string;
-    "exists": boolean;
-    "content": string;
-
-    /** Creates a new OpenCodePromptInfo instance. */
-    constructor($$source: Partial<OpenCodePromptInfo> = {}) {
-        if (!("path" in $$source)) {
-            this["path"] = "";
-        }
-        if (!("hash" in $$source)) {
-            this["hash"] = "";
-        }
-        if (!("exists" in $$source)) {
-            this["exists"] = false;
-        }
-        if (!("content" in $$source)) {
-            this["content"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodePromptInfo instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodePromptInfo {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new OpenCodePromptInfo($$parsedSource as Partial<OpenCodePromptInfo>);
     }
 }
 
@@ -3794,117 +3585,6 @@ export class OpenCodeUsageSyncResult {
             $$parsedSource["errors"] = $$createField5_0($$parsedSource["errors"]);
         }
         return new OpenCodeUsageSyncResult($$parsedSource as Partial<OpenCodeUsageSyncResult>);
-    }
-}
-
-export class OpenCodeWSLSyncInput {
-    "distro": string;
-    "config_path": string;
-
-    /** Creates a new OpenCodeWSLSyncInput instance. */
-    constructor($$source: Partial<OpenCodeWSLSyncInput> = {}) {
-        if (!("distro" in $$source)) {
-            this["distro"] = "";
-        }
-        if (!("config_path" in $$source)) {
-            this["config_path"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodeWSLSyncInput instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodeWSLSyncInput {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new OpenCodeWSLSyncInput($$parsedSource as Partial<OpenCodeWSLSyncInput>);
-    }
-}
-
-export class OpenCodeWSLSyncResult {
-    "distro": string;
-    "config_path": string;
-    "prompt_path": string;
-    "hash": string;
-    "synced_at": string;
-
-    /** Creates a new OpenCodeWSLSyncResult instance. */
-    constructor($$source: Partial<OpenCodeWSLSyncResult> = {}) {
-        if (!("distro" in $$source)) {
-            this["distro"] = "";
-        }
-        if (!("config_path" in $$source)) {
-            this["config_path"] = "";
-        }
-        if (!("prompt_path" in $$source)) {
-            this["prompt_path"] = "";
-        }
-        if (!("hash" in $$source)) {
-            this["hash"] = "";
-        }
-        if (!("synced_at" in $$source)) {
-            this["synced_at"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodeWSLSyncResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodeWSLSyncResult {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new OpenCodeWSLSyncResult($$parsedSource as Partial<OpenCodeWSLSyncResult>);
-    }
-}
-
-export class OpenCodeWSLTargetInfo {
-    "distro": string;
-    "config_path": string;
-    "prompt_path": string;
-    "exists": boolean;
-    "hash": string;
-    "last_sync_hash": string;
-    "last_sync_at": string;
-    "error": string;
-
-    /** Creates a new OpenCodeWSLTargetInfo instance. */
-    constructor($$source: Partial<OpenCodeWSLTargetInfo> = {}) {
-        if (!("distro" in $$source)) {
-            this["distro"] = "";
-        }
-        if (!("config_path" in $$source)) {
-            this["config_path"] = "";
-        }
-        if (!("prompt_path" in $$source)) {
-            this["prompt_path"] = "";
-        }
-        if (!("exists" in $$source)) {
-            this["exists"] = false;
-        }
-        if (!("hash" in $$source)) {
-            this["hash"] = "";
-        }
-        if (!("last_sync_hash" in $$source)) {
-            this["last_sync_hash"] = "";
-        }
-        if (!("last_sync_at" in $$source)) {
-            this["last_sync_at"] = "";
-        }
-        if (!("error" in $$source)) {
-            this["error"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new OpenCodeWSLTargetInfo instance from a string or object.
-     */
-    static createFrom($$source: any = {}): OpenCodeWSLTargetInfo {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new OpenCodeWSLTargetInfo($$parsedSource as Partial<OpenCodeWSLTargetInfo>);
     }
 }
 
@@ -5729,6 +5409,14 @@ export class ProviderDailyStat {
 export class ProviderModelDiscoveryRequest {
     "platform": string;
     "provider": Provider;
+
+    /**
+     * APIType 选择模型列表接口的语义：
+     * "openai_compat" 走 /models（Authorization: Bearer）。
+     * "native" 使用供应商原生逻辑：google 用 x-goog-api-key + v1beta/models，其余与 openai_compat 一致。
+     * 为空时按 Provider 上游协议和端点自动推导。
+     */
+    "apiType"?: string;
 
     /** Creates a new ProviderModelDiscoveryRequest instance. */
     constructor($$source: Partial<ProviderModelDiscoveryRequest> = {}) {

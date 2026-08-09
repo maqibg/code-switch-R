@@ -849,6 +849,38 @@
   },
   "components": {
     "home": {},
+    "opencode": {
+      "model": {
+        "id": "模型 ID",
+        "name": "显示名称",
+        "nameOptional": "显示名称（可选）",
+        "contextLimit": "上下文限制",
+        "contextLimitPlaceholder": "例如 200000",
+        "outputLimit": "输出限制",
+        "outputLimitPlaceholder": "例如 64000",
+        "capabilities": "能力",
+        "reasoning": "支持推理",
+        "toolCall": "支持工具调用",
+        "temperature": "支持温度设置",
+        "attachment": "支持附件",
+        "inputModalities": "输入内容类型",
+        "outputModalities": "输出内容类型",
+        "modalitiesHint": "模型接受的内容格式。",
+        "variants": "模型变体（JSON）",
+        "variantsHint": "不同推理档位等变体配置，直接填 JSON 对象。",
+        "variantsPlaceholder": "例如 {\n  \"low\": { \"thinkingLevel\": \"low\" }\n}",
+        "invalidVariants": "模型变体必须是 JSON 对象",
+        "options": "其他配置 options（JSON）",
+        "optionsHint": "该模型的 SDK 附加选项，如 { \"store\": false }。",
+        "invalidOptions": "options 必须是 JSON 对象",
+        "addModel": "添加模型",
+        "editModel": "编辑模型",
+        "idExists": "模型 ID 已存在",
+        "selectPreset": "选择预设",
+        "otherPresets": "其他供应商预设",
+        "noPresets": "暂无可用预设"
+      }
+    },
     "provider": {
       "modelWhitelist": {
         "label": "模型白名单",
@@ -865,13 +897,6 @@
           "prefix": "前缀匹配所有 Claude 模型",
           "vendor": "匹配带供应商前缀的模型"
         }
-      },
-      "headers": {
-        "label": "附加请求 Header",
-        "add": "添加 Header",
-        "remove": "删除 Header",
-        "keyPlaceholder": "Header 名称",
-        "valuePlaceholder": "Header 值"
       },
       "requestTemplate": {
         "label": "请求头模板",

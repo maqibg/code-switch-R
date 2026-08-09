@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -153,18 +152,6 @@ func (s *OpenCodeService) SaveProviderExport(path string, document OpenCodeProvi
 }
 
 // ReadProviderImportFile 读取并校验用户选择的供应商 JSON 文件。
-func (s *OpenCodeService) ReadProviderImportFile(path string) (OpenCodeProviderExportDocument, error) {
-	text, err := s.ReadProviderImportText(path)
-	if err != nil {
-		return OpenCodeProviderExportDocument{}, fmt.Errorf("读取供应商导入文件失败: %w", err)
-	}
-	var document OpenCodeProviderExportDocument
-	if err := json.Unmarshal([]byte(text), &document); err != nil {
-		return OpenCodeProviderExportDocument{}, fmt.Errorf("供应商导入文件不是有效 JSON: %w", err)
-	}
-	return normalizeOpenCodeProviderExportDocument(document)
-}
-
 // ReadProviderImportText 只读取用户选择的 JSON 文本，不提前解析；前端需要在编辑区展示并标记无效内容。
 func (s *OpenCodeService) ReadProviderImportText(path string) (string, error) {
 	target, err := normalizeOpenCodeProviderJSONPath(path)
@@ -273,271 +260,46 @@ func (s *OpenCodeService) OpenProviderExportDirectory(path string) error {
 	return nil
 }
 
-func (s *OpenCodeService) GetConfigPathInfo() (OpenCodeConfigInfo, error) {
+// SetDefaultModel 设置 OpenCode 主模型（顶层 model 字段，格式为 provider/model）。
+// 传入空字符串会清空该字段。
+func (s *OpenCodeService) SetDefaultModel(model string) (OpenCodeConfigSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	snapshot, err := s.snapshotLocked()
-	return snapshot.Config, err
+	if err := s.setModelReferenceLocked("model", model); err != nil {
+		return OpenCodeConfigSnapshot{}, err
+	}
+	return s.snapshotLocked()
 }
 
-func (s *OpenCodeService) SetConfigPath(input OpenCodePathInput) (OpenCodeConfigInfo, error) {
+// SetSmallModel 设置 OpenCode 小模型（顶层 small_model 字段，格式为 provider/model）。
+// 传入空字符串会清空该字段。
+func (s *OpenCodeService) SetSmallModel(model string) (OpenCodeConfigSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	value := strings.TrimSpace(input.Path)
-	if value != "" {
-		absolute, err := filepath.Abs(value)
-		if err != nil {
-			return OpenCodeConfigInfo{}, fmt.Errorf("解析 OpenCode 配置路径失败: %w", err)
-		}
-		value = filepath.Clean(absolute)
+	if err := s.setModelReferenceLocked("small_model", model); err != nil {
+		return OpenCodeConfigSnapshot{}, err
 	}
-	if err := saveOpenCodeSettings(value); err != nil {
-		return OpenCodeConfigInfo{}, err
-	}
-	snapshot, err := s.snapshotLocked()
-	return snapshot.Config, err
+	return s.snapshotLocked()
 }
 
-func (s *OpenCodeService) GetGlobalPrompt() (OpenCodePromptInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	path, _, _, err := s.resolveTarget()
-	if err != nil {
-		return OpenCodePromptInfo{}, err
-	}
-	promptPath := filepath.Join(filepath.Dir(path), "AGENTS.md")
-	data, readErr := os.ReadFile(promptPath)
-	if os.IsNotExist(readErr) {
-		return OpenCodePromptInfo{Path: promptPath, Hash: sha256Hex(nil)}, nil
-	}
-	if readErr != nil {
-		return OpenCodePromptInfo{}, fmt.Errorf("读取 OpenCode AGENTS.md 失败: %w", readErr)
-	}
-	return OpenCodePromptInfo{Path: promptPath, Hash: sha256Hex(data), Exists: true, Content: string(data)}, nil
-}
-
-func (s *OpenCodeService) SaveGlobalPrompt(content, expectedHash string) (OpenCodePromptInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, err := s.getGlobalPromptLocked()
-	if err != nil {
-		return OpenCodePromptInfo{}, err
-	}
-	if strings.TrimSpace(expectedHash) == "" || expectedHash != current.Hash {
-		return OpenCodePromptInfo{}, fmt.Errorf("OpenCode AGENTS.md 已被外部修改，拒绝覆盖")
-	}
-	if err := AtomicWriteText(current.Path, content); err != nil {
-		return OpenCodePromptInfo{}, fmt.Errorf("写入 OpenCode AGENTS.md 失败: %w", err)
-	}
-	return s.getGlobalPromptLocked()
-}
-
-func (s *OpenCodeService) ListMCPServers() ([]OpenCodeMCPServerInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	path, _, _, err := s.resolveTarget()
-	if err != nil {
-		return nil, err
-	}
-	_, document, _, err := readOpenCodeDocument(path)
-	if err != nil {
-		return nil, err
-	}
-	state, err := loadOpenCodeState()
-	if err != nil {
-		return nil, err
-	}
-	return openCodeMCPInfosForState(document.Raw["mcp"], state, path)
-}
-
-func (s *OpenCodeService) SaveMCPServer(input OpenCodeMCPServerInput) ([]OpenCodeMCPServerInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key := strings.TrimSpace(input.Key)
-	if err := validateOpenCodeProviderKey(key); err != nil {
-		return nil, fmt.Errorf("MCP key 无效: %w", err)
-	}
-	serverType := strings.TrimSpace(strings.ToLower(input.Type))
-	if serverType != "local" && serverType != "remote" {
-		return nil, fmt.Errorf("OpenCode MCP type 必须是 local 或 remote")
-	}
+func (s *OpenCodeService) setModelReferenceLocked(key, reference string) error {
 	path, format, original, document, _, state, err := s.readDocumentForWriteLocked()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	mcp, err := providerRawMap(document.Raw["mcp"])
-	if err != nil {
-		return nil, fmt.Errorf("解析 OpenCode mcp 失败: %w", err)
-	}
-	managedKey := openCodeProviderStorageKey(path, key)
-	managed, owned := state.MCP[managedKey]
-	if _, exists := mcp[key]; exists && !owned {
-		return nil, fmt.Errorf("OpenCode MCP %q 尚未由本项目托管，请先 Claim 后再修改", key)
-	}
-	server, err := providerRawMap(mcp[key])
-	if err != nil {
-		return nil, err
-	}
-	setRawString(server, "type", serverType, false)
-	if serverType == "remote" {
-		setRawString(server, "url", strings.TrimSpace(input.URL), true)
-		if input.Headers != nil {
-			data, _ := json.Marshal(input.Headers)
-			server["headers"] = data
-		}
-		delete(server, "command")
-		delete(server, "environment")
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		delete(document.Raw, key)
 	} else {
-		if len(input.Command) == 0 {
-			return nil, fmt.Errorf("local MCP 必须提供 command")
+		if !openCodeModelReferenceExists(document, reference) {
+			return fmt.Errorf("OpenCode 模型引用 %q 不存在，请先确认供应商和模型", reference)
 		}
-		data, _ := json.Marshal(input.Command)
-		server["command"] = data
-		if input.Environment != nil {
-			data, _ := json.Marshal(input.Environment)
-			server["environment"] = data
-		}
-		delete(server, "url")
-		delete(server, "headers")
+		setRawString(document.Raw, key, reference, false)
 	}
-	serverData, _ := json.Marshal(server)
-	mcp[key] = serverData
-	document.Raw["mcp"], _ = json.Marshal(mcp)
-	oldState := cloneOpenCodeState(state)
-	_, _, err = s.persistDocumentLocked(path, format, original, document, state)
-	if err != nil {
-		return nil, err
-	}
-	state.MCP[managedKey] = openCodeManagedMCPState{
-		TargetPath: path, Key: key, OriginalServer: cloneRaw(managed.OriginalServer),
-		InjectedServer: cloneRaw(serverData), OriginalHash: sha256Hex(managed.OriginalServer),
-		InjectedHash: sha256Hex(serverData), UpdatedAt: openCodeTimeNow(),
-	}
-	if !owned {
-		state.MCP[managedKey] = openCodeManagedMCPState{
-			TargetPath: path, Key: key, OriginalServer: nil,
-			InjectedServer: cloneRaw(serverData), OriginalHash: sha256Hex(nil),
-			InjectedHash: sha256Hex(serverData), UpdatedAt: openCodeTimeNow(),
-		}
-	}
-	if err := saveOpenCodeState(state); err != nil {
-		_ = restoreOpenCodeFile(path, original, original != nil)
-		_ = saveOpenCodeState(oldState)
-		return nil, fmt.Errorf("保存 OpenCode MCP 托管状态失败，配置已回滚: %w", err)
-	}
-	return openCodeMCPInfosForState(document.Raw["mcp"], state, path)
-}
-
-func (s *OpenCodeService) ClaimMCPServer(key string) ([]OpenCodeMCPServerInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key = strings.TrimSpace(key)
-	if err := validateOpenCodeProviderKey(key); err != nil {
-		return nil, err
-	}
-	path, _, _, document, _, state, err := s.readDocumentForWriteLocked()
-	if err != nil {
-		return nil, err
-	}
-	mcp, err := providerRawMap(document.Raw["mcp"])
-	if err != nil {
-		return nil, err
-	}
-	server, exists := mcp[key]
-	if !exists {
-		return nil, fmt.Errorf("未找到 OpenCode MCP %q", key)
-	}
-	managedKey := openCodeProviderStorageKey(path, key)
-	if _, owned := state.MCP[managedKey]; !owned {
-		state.MCP[managedKey] = openCodeManagedMCPState{
-			TargetPath: path, Key: key, OriginalServer: cloneRaw(server),
-			InjectedServer: cloneRaw(server), OriginalHash: sha256Hex(server),
-			InjectedHash: sha256Hex(server), UpdatedAt: openCodeTimeNow(),
-		}
-		if err := saveOpenCodeState(state); err != nil {
-			return nil, err
-		}
-	}
-	return openCodeMCPInfosForState(document.Raw["mcp"], state, path)
-}
-
-func (s *OpenCodeService) DeleteMCPServer(key string) ([]OpenCodeMCPServerInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key = strings.TrimSpace(key)
-	if err := validateOpenCodeProviderKey(key); err != nil {
-		return nil, err
-	}
-	path, format, original, document, _, state, err := s.readDocumentForWriteLocked()
-	if err != nil {
-		return nil, err
-	}
-	mcp, err := providerRawMap(document.Raw["mcp"])
-	if err != nil {
-		return nil, err
-	}
-	managedKey := openCodeProviderStorageKey(path, key)
-	managed, owned := state.MCP[managedKey]
-	if !owned {
-		return nil, fmt.Errorf("OpenCode MCP %q 不属于本项目，拒绝删除", key)
-	}
-	currentServer, exists := mcp[key]
-	if !exists || sha256Hex(currentServer) != managed.InjectedHash {
-		return nil, fmt.Errorf("OpenCode MCP %q 已被外部修改，拒绝删除", key)
-	}
-	if len(managed.OriginalServer) == 0 {
-		delete(mcp, key)
-	} else {
-		mcp[key] = cloneRaw(managed.OriginalServer)
-	}
-	if len(mcp) == 0 {
-		delete(document.Raw, "mcp")
-	} else {
-		document.Raw["mcp"], _ = json.Marshal(mcp)
-	}
-	oldState := cloneOpenCodeState(state)
 	if _, _, err := s.persistDocumentLocked(path, format, original, document, state); err != nil {
-		return nil, err
+		return err
 	}
-	delete(state.MCP, managedKey)
-	if err := saveOpenCodeState(state); err != nil {
-		_ = restoreOpenCodeFile(path, original, original != nil)
-		_ = saveOpenCodeState(oldState)
-		return nil, fmt.Errorf("保存 OpenCode MCP 删除状态失败，配置已回滚: %w", err)
-	}
-	return openCodeMCPInfosForState(document.Raw["mcp"], state, path)
-}
-
-func (s *OpenCodeService) Diagnostics() (OpenCodeDiagnostics, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	path, source, _, err := s.resolveTarget()
-	if err != nil {
-		return OpenCodeDiagnostics{}, err
-	}
-	return OpenCodeDiagnostics{
-		ConfigPathEnvSet:    os.Getenv("OPENCODE_CONFIG") != "",
-		ConfigDirEnvSet:     os.Getenv("OPENCODE_CONFIG_DIR") != "",
-		ConfigPath:          path,
-		ConfigSource:        source,
-		AnthropicKeyEnvSet:  os.Getenv("ANTHROPIC_API_KEY") != "",
-		OpenAIKeyEnvSet:     os.Getenv("OPENAI_API_KEY") != "",
-		GeminiKeyEnvSet:     os.Getenv("GEMINI_API_KEY") != "",
-		EnvironmentWarnings: openCodeEnvironmentWarnings(),
-	}, nil
-}
-
-func (s *OpenCodeService) ImportLiveProviders() ([]OpenCodeProviderInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, err := s.syncLiveProvidersLocked(); err != nil {
-		return nil, err
-	}
-	snapshot, err := s.snapshotLocked()
-	if err != nil {
-		return nil, err
-	}
-	return snapshot.Providers, nil
+	return nil
 }
 
 func (s *OpenCodeService) SaveProvider(input OpenCodeProviderInput) (OpenCodeProviderInfo, error) {
@@ -1199,22 +961,6 @@ func (s *OpenCodeService) persistDocumentLocked(path, format string, original []
 	return hash, warning, nil
 }
 
-func (s *OpenCodeService) getGlobalPromptLocked() (OpenCodePromptInfo, error) {
-	path, _, _, err := s.resolveTarget()
-	if err != nil {
-		return OpenCodePromptInfo{}, err
-	}
-	promptPath := filepath.Join(filepath.Dir(path), "AGENTS.md")
-	data, readErr := os.ReadFile(promptPath)
-	if os.IsNotExist(readErr) {
-		return OpenCodePromptInfo{Path: promptPath, Hash: sha256Hex(nil)}, nil
-	}
-	if readErr != nil {
-		return OpenCodePromptInfo{}, fmt.Errorf("读取 OpenCode AGENTS.md 失败: %w", readErr)
-	}
-	return OpenCodePromptInfo{Path: promptPath, Hash: sha256Hex(data), Exists: true, Content: string(data)}, nil
-}
-
 func openCodeModelReferenceExists(document openCodeConfigDocument, reference string) bool {
 	reference = strings.TrimSpace(reference)
 	separator := strings.IndexByte(reference, '/')
@@ -1237,140 +983,6 @@ func openCodeModelReferenceExists(document openCodeConfigDocument, reference str
 	}
 	_, exists = models[modelID]
 	return exists
-}
-
-func openCodeMCPInfos(raw json.RawMessage) ([]OpenCodeMCPServerInfo, error) {
-	servers, err := providerRawMap(raw)
-	if err != nil {
-		return nil, fmt.Errorf("解析 OpenCode MCP map 失败: %w", err)
-	}
-	keys := make([]string, 0, len(servers))
-	for key := range servers {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	result := make([]OpenCodeMCPServerInfo, 0, len(keys))
-	for _, key := range keys {
-		server, err := providerRawMap(servers[key])
-		if err != nil {
-			return nil, fmt.Errorf("解析 OpenCode MCP %q 失败: %w", key, err)
-		}
-		serverType := strings.ToLower(strings.TrimSpace(rawString(server["type"])))
-		if serverType == "" {
-			if len(server["command"]) > 0 {
-				serverType = "local"
-			} else {
-				serverType = "remote"
-			}
-		}
-		command := make([]string, 0)
-		if len(server["command"]) > 0 && json.Unmarshal(server["command"], &command) != nil {
-			return nil, fmt.Errorf("OpenCode MCP %q 的 command 必须是数组", key)
-		}
-		environment := make(map[string]string)
-		if len(server["environment"]) > 0 {
-			if err := json.Unmarshal(server["environment"], &environment); err != nil {
-				return nil, fmt.Errorf("OpenCode MCP %q 的 environment 必须是对象", key)
-			}
-		}
-		headers := make(map[string]string)
-		if len(server["headers"]) > 0 {
-			if err := json.Unmarshal(server["headers"], &headers); err != nil {
-				return nil, fmt.Errorf("OpenCode MCP %q 的 headers 必须是对象", key)
-			}
-		}
-		result = append(result, OpenCodeMCPServerInfo{
-			Key: key, Type: serverType, Ownership: "unmanaged", URL: maskMCPURL(rawString(server["url"])), Command: maskMCPCommand(command),
-			Environment: maskStringMap(environment), Headers: maskStringMap(headers),
-		})
-	}
-	return result, nil
-}
-
-func openCodeMCPInfosForState(raw json.RawMessage, state openCodeStateFile, path string) ([]OpenCodeMCPServerInfo, error) {
-	result, err := openCodeMCPInfos(raw)
-	if err != nil {
-		return nil, err
-	}
-	for index := range result {
-		if _, owned := state.MCP[openCodeProviderStorageKey(path, result[index].Key)]; owned {
-			result[index].Ownership = "managed"
-		}
-	}
-	return result, nil
-}
-
-func openCodeManagedConflicts(document openCodeConfigDocument, state openCodeStateFile, path string) []string {
-	conflicts := make([]string, 0)
-	prefix := path + "\x00"
-	for storageKey, managed := range state.Managed {
-		if !strings.HasPrefix(storageKey, prefix) {
-			continue
-		}
-		key := strings.TrimPrefix(storageKey, prefix)
-		if sha256Hex(document.Providers[key]) != managed.InjectedHash {
-			conflicts = append(conflicts, "provider:"+key)
-		}
-	}
-	mcp, err := providerRawMap(document.Raw["mcp"])
-	if err != nil {
-		return append(conflicts, "mcp:parse-error")
-	}
-	for storageKey, managed := range state.MCP {
-		if !strings.HasPrefix(storageKey, prefix) {
-			continue
-		}
-		key := strings.TrimPrefix(storageKey, prefix)
-		if sha256Hex(mcp[key]) != managed.InjectedHash {
-			conflicts = append(conflicts, "mcp:"+key)
-		}
-	}
-	sort.Strings(conflicts)
-	return conflicts
-}
-
-func maskStringMap(values map[string]string) map[string]string {
-	if len(values) == 0 {
-		return nil
-	}
-	result := make(map[string]string, len(values))
-	for key, value := range values {
-		result[key] = maskSecret(value)
-	}
-	return result
-}
-
-func maskMCPCommand(command []string) []string {
-	if len(command) == 0 {
-		return nil
-	}
-	result := append([]string(nil), command...)
-	for index, value := range result {
-		lower := strings.ToLower(value)
-		for _, marker := range []string{"api-key=", "apikey=", "token=", "secret=", "password="} {
-			if position := strings.Index(lower, marker); position >= 0 {
-				result[index] = value[:position+len(marker)] + "****"
-				break
-			}
-		}
-	}
-	return result
-}
-
-func maskMCPURL(raw string) string {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	query := parsed.Query()
-	for key := range query {
-		lower := strings.ToLower(key)
-		if strings.Contains(lower, "key") || strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "password") {
-			query.Set(key, "****")
-		}
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
 }
 
 func compactWarnings(values ...string) []string {
@@ -1514,6 +1126,10 @@ func openCodeModelInfo(id string, raw json.RawMessage) OpenCodeModelInfo {
 	if len(model["variants"]) > 0 {
 		_ = json.Unmarshal(model["variants"], &variants)
 	}
+	optionsJSON := ""
+	if len(model["options"]) > 0 {
+		optionsJSON = string(model["options"])
+	}
 	return OpenCodeModelInfo{
 		ID: id, Name: rawString(model["name"]),
 		ContextLimit: rawInt64(limit["context"]), InputLimit: rawInt64(limit["input"]),
@@ -1524,21 +1140,8 @@ func openCodeModelInfo(id string, raw json.RawMessage) OpenCodeModelInfo {
 		ExtraFieldCount: extra,
 		Modalities:      modalities,
 		Variants:        variants,
+		OptionsJSON:     optionsJSON,
 	}
-}
-
-func openCodeEnvironmentWarnings() []string {
-	warnings := make([]string, 0, 3)
-	if os.Getenv("OPENCODE_CONFIG") != "" && os.Getenv("OPENCODE_CONFIG_DIR") != "" {
-		warnings = append(warnings, "OPENCODE_CONFIG 与 OPENCODE_CONFIG_DIR 同时设置，优先使用 OPENCODE_CONFIG")
-	}
-	if os.Getenv("OPENAI_API_KEY") != "" && os.Getenv("ANTHROPIC_API_KEY") != "" {
-		warnings = append(warnings, "OPENAI_API_KEY 与 ANTHROPIC_API_KEY 同时设置，OpenCode Provider 会优先使用自身 options.apiKey")
-	}
-	if os.Getenv("GEMINI_API_KEY") != "" && os.Getenv("OPENAI_API_KEY") != "" {
-		warnings = append(warnings, "GEMINI_API_KEY 与 OPENAI_API_KEY 同时设置，请确认 @ai-sdk/google Provider 的认证来源")
-	}
-	return warnings
 }
 
 func rawInt64(raw json.RawMessage) int64 {
@@ -1559,16 +1162,6 @@ func rawBool(raw json.RawMessage) bool {
 		_ = json.Unmarshal(raw, &value)
 	}
 	return value
-}
-
-func saveOpenCodeSettings(path string) error {
-	settingsPath, err := openCodeSettingsPath()
-	if err != nil {
-		return err
-	}
-	return AtomicWriteJSON(settingsPath, struct {
-		ConfigPath string `json:"configPath,omitempty"`
-	}{ConfigPath: path})
 }
 
 func loadOpenCodeSettings() (string, error) {

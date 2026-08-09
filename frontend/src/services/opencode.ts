@@ -2,7 +2,6 @@ import * as OpenCodeAPI from '../../bindings/codeswitch/services/opencodeservice
 import {
   OpenCodeConfigSnapshot,
   OpenCodeModelInput,
-  OpenCodePathInput,
   OpenCodeProviderExportDocument,
   OpenCodeProviderImportDecision,
   OpenCodeProviderImportRequest,
@@ -12,25 +11,22 @@ import {
 
 export const fetchOpenCodeSnapshot = async (): Promise<OpenCodeConfigSnapshot> => OpenCodeAPI.Snapshot()
 
-export const setOpenCodeConfigPath = async (path: string) =>
-  OpenCodeAPI.SetConfigPath(new OpenCodePathInput({ path }))
-
 export const setOpenCodeUsageLoggingEnabled = async (enabled: boolean) =>
   OpenCodeAPI.SetUsageLoggingEnabled(enabled)
 
 export const syncOpenCodeUsageNow = async () => OpenCodeAPI.SyncUsageNow()
 
-export const importOpenCodeProviders = async (): Promise<OpenCodeProviderInfo[]> =>
-  OpenCodeAPI.ImportLiveProviders()
+export const setOpenCodeDefaultModel = async (model: string): Promise<OpenCodeConfigSnapshot> =>
+  OpenCodeAPI.SetDefaultModel(model)
+
+export const setOpenCodeSmallModel = async (model: string): Promise<OpenCodeConfigSnapshot> =>
+  OpenCodeAPI.SetSmallModel(model)
 
 export const exportOpenCodeProviders = async (): Promise<OpenCodeProviderExportDocument> =>
   OpenCodeAPI.ExportProviders()
 
 export const saveOpenCodeProviderExport = async (path: string, document: OpenCodeProviderExportDocument) =>
   OpenCodeAPI.SaveProviderExport(path, document)
-
-export const readOpenCodeProviderImportFile = async (path: string): Promise<OpenCodeProviderExportDocument> =>
-  OpenCodeAPI.ReadProviderImportFile(path)
 
 export const readOpenCodeProviderImportText = async (path: string): Promise<string> =>
   OpenCodeAPI.ReadProviderImportText(path)
@@ -51,18 +47,6 @@ export const renameOpenCodeProvider = async (oldKey: string, newKey: string) =>
 
 export const deleteOpenCodeProvider = async (providerKey: string) => OpenCodeAPI.DeleteProvider(providerKey)
 
-export const fetchOpenCodePrompt = async () => OpenCodeAPI.GetGlobalPrompt()
-export const saveOpenCodePrompt = async (content: string, expectedHash: string) => OpenCodeAPI.SaveGlobalPrompt(content, expectedHash)
-export const fetchOpenCodeMCPServers = async () => OpenCodeAPI.ListMCPServers()
-export const claimOpenCodeMCPServer = async (key: string) => OpenCodeAPI.ClaimMCPServer(key)
-export const saveOpenCodeMCPServer = async (input: Parameters<typeof OpenCodeAPI.SaveMCPServer>[0]) => OpenCodeAPI.SaveMCPServer(input)
-export const deleteOpenCodeMCPServer = async (key: string) => OpenCodeAPI.DeleteMCPServer(key)
-export const fetchOpenCodeWSLTargets = async () => OpenCodeAPI.ListWSLTargets()
-export const syncOpenCodeWSLConfig = async (distro: string, configPath = '') => OpenCodeAPI.SyncWSLConfig({ distro, config_path: configPath })
-
-export const startOpenCode = async () => OpenCodeAPI.Start()
-export const stopOpenCode = async () => OpenCodeAPI.Stop()
-
 export const createOpenCodeModelInput = (model: Partial<OpenCodeModelInput> = {}) =>
   new OpenCodeModelInput({
     id: model.id ?? '',
@@ -76,4 +60,5 @@ export const createOpenCodeModelInput = (model: Partial<OpenCodeModelInput> = {}
     modalities: model.modalities ?? [],
     variants: model.variants ?? {},
     extra_json: model.extra_json ?? '',
+    options_json: model.options_json ?? '',
   })

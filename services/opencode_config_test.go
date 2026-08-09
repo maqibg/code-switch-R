@@ -177,16 +177,36 @@ func TestOpenCodeModelRoundTripPreservesVariantsModalitiesAndUnknownFields(t *te
 	}
 }
 
-func TestOpenCodeMCPInfoMasksSecretsAndMarksOwnership(t *testing.T) {
-	raw := json.RawMessage(`{"remote":{"type":"remote","url":"https://example.test/mcp","headers":{"Authorization":"Bearer secret-token"}}}`)
-	state := newOpenCodeStateFile()
-	state.MCP[openCodeProviderStorageKey("C:/opencode.json", "remote")] = openCodeManagedMCPState{}
-	infos, err := openCodeMCPInfosForState(raw, state, "C:/opencode.json")
+func TestOpenCodeModelRoundTripPreservesOptions(t *testing.T) {
+	existing := json.RawMessage(`{"options":{"provider":"custom","thinking":{"type":"enabled"}},"name":"old"}`)
+
+	// 未提供 options_json：保留现有 options，不丢失
+	raw, err := buildModelRaw(OpenCodeModelInput{ID: "flash", Name: "Flash"}, existing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(infos) != 1 || infos[0].Ownership != "managed" || infos[0].Headers["Authorization"] == "Bearer secret-token" {
-		t.Fatalf("MCP 脱敏或 ownership 错误: %#v", infos)
+	if !strings.Contains(string(raw), `"provider":"custom"`) {
+		t.Fatalf("未提供 options_json 时丢失现有 options: %s", raw)
+	}
+
+	// 提供 options_json：按新值写入并替换旧值
+	raw, err = buildModelRaw(OpenCodeModelInput{ID: "flash", Name: "Flash", OptionsJSON: `{"provider":"new"}`}, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"provider":"new"`) || strings.Contains(string(raw), `"thinking"`) {
+		t.Fatalf("options_json 未按新值写入: %s", raw)
+	}
+
+	// 无效 options_json：报错而不是静默丢弃
+	if _, err = buildModelRaw(OpenCodeModelInput{ID: "flash", OptionsJSON: `not-json`}, existing); err == nil {
+		t.Fatal("无效 options_json 未被拒绝")
+	}
+
+	// 通过 openCodeModelInfo 回读时能拿到 options_json
+	info := openCodeModelInfo("flash", json.RawMessage(`{"options":{"provider":"custom"},"limit":{"context":100}}`))
+	if !strings.Contains(info.OptionsJSON, `"provider":"custom"`) {
+		t.Fatalf("openCodeModelInfo 未暴露 options_json: %q", info.OptionsJSON)
 	}
 }
 
@@ -256,16 +276,5 @@ func TestOpenCodeWriteRejectsExternalChange(t *testing.T) {
 	}
 	if _, err := writeOpenCodeDocument(path, original, []byte(`{"provider":{"new":{}}}`)); err == nil {
 		t.Fatal("外部修改后仍允许覆盖 OpenCode 配置")
-	}
-}
-
-func TestOpenCodeWSLPathRejectsWindowsAndParentTraversal(t *testing.T) {
-	for _, value := range []string{`C:\\Users\\user\\opencode.json`, `/home/user/../opencode.json`, `relative/opencode.json`} {
-		if err := validateOpenCodeWSLPath(value); err == nil {
-			t.Fatalf("非法 WSL 路径未被拒绝: %s", value)
-		}
-	}
-	if err := validateOpenCodeWSLPath("/home/user/.config/opencode/opencode.jsonc"); err != nil {
-		t.Fatal(err)
 	}
 }

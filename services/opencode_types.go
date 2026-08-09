@@ -40,6 +40,7 @@ type OpenCodeModelInfo struct {
 	ExtraFieldCount int            `json:"extra_field_count"`
 	Modalities      []string       `json:"modalities"`
 	Variants        map[string]any `json:"variants"`
+	OptionsJSON     string         `json:"options_json"`
 }
 
 type OpenCodeModelInput struct {
@@ -54,6 +55,7 @@ type OpenCodeModelInput struct {
 	Modalities   []string       `json:"modalities"`
 	Variants     map[string]any `json:"variants"`
 	ExtraJSON    string         `json:"extra_json"`
+	OptionsJSON  string         `json:"options_json"`
 }
 
 // OpenCodeProviderInfo 包含 OpenCode Provider 的完整配置 JSON，供前端直接编辑。
@@ -169,67 +171,6 @@ type OpenCodePathInput struct {
 	Path string `json:"path"`
 }
 
-type OpenCodePromptInfo struct {
-	Path    string `json:"path"`
-	Hash    string `json:"hash"`
-	Exists  bool   `json:"exists"`
-	Content string `json:"content"`
-}
-
-type OpenCodeMCPServerInfo struct {
-	Key         string            `json:"key"`
-	Type        string            `json:"type"`
-	Ownership   string            `json:"ownership"`
-	URL         string            `json:"url"`
-	Command     []string          `json:"command"`
-	Environment map[string]string `json:"environment"`
-	Headers     map[string]string `json:"headers"`
-}
-
-type OpenCodeMCPServerInput struct {
-	Key         string            `json:"key"`
-	Type        string            `json:"type"`
-	URL         string            `json:"url"`
-	Command     []string          `json:"command"`
-	Environment map[string]string `json:"environment"`
-	Headers     map[string]string `json:"headers"`
-}
-
-type OpenCodeDiagnostics struct {
-	ConfigPathEnvSet    bool     `json:"config_path_env_set"`
-	ConfigDirEnvSet     bool     `json:"config_dir_env_set"`
-	ConfigPath          string   `json:"config_path"`
-	ConfigSource        string   `json:"config_source"`
-	AnthropicKeyEnvSet  bool     `json:"anthropic_key_env_set"`
-	OpenAIKeyEnvSet     bool     `json:"openai_key_env_set"`
-	GeminiKeyEnvSet     bool     `json:"gemini_key_env_set"`
-	EnvironmentWarnings []string `json:"environment_warnings"`
-}
-
-type OpenCodeWSLTargetInfo struct {
-	Distro       string `json:"distro"`
-	ConfigPath   string `json:"config_path"`
-	PromptPath   string `json:"prompt_path"`
-	Exists       bool   `json:"exists"`
-	Hash         string `json:"hash"`
-	LastSyncHash string `json:"last_sync_hash"`
-	LastSyncAt   string `json:"last_sync_at"`
-	Error        string `json:"error"`
-}
-
-type OpenCodeWSLSyncInput struct {
-	Distro     string `json:"distro"`
-	ConfigPath string `json:"config_path"`
-}
-
-type OpenCodeWSLSyncResult struct {
-	Distro     string `json:"distro"`
-	ConfigPath string `json:"config_path"`
-	PromptPath string `json:"prompt_path"`
-	Hash       string `json:"hash"`
-	SyncedAt   string `json:"synced_at"`
-}
-
 type openCodeConfigDocument struct {
 	Raw          map[string]json.RawMessage
 	Providers    map[string]json.RawMessage
@@ -251,30 +192,10 @@ type openCodeManagedState struct {
 	UpdatedAt    string `json:"updatedAt"`
 }
 
-type openCodeManagedMCPState struct {
-	TargetPath     string          `json:"targetPath"`
-	Key            string          `json:"key"`
-	OriginalServer json.RawMessage `json:"originalServer,omitempty"`
-	InjectedServer json.RawMessage `json:"injectedServer,omitempty"`
-	OriginalHash   string          `json:"originalHash,omitempty"`
-	InjectedHash   string          `json:"injectedHash,omitempty"`
-	UpdatedAt      string          `json:"updatedAt"`
-}
-
-type openCodeWSLState struct {
-	Distro       string `json:"distro"`
-	ConfigPath   string `json:"configPath"`
-	PromptPath   string `json:"promptPath"`
-	LastSyncHash string `json:"lastSyncHash"`
-	LastSyncAt   string `json:"lastSyncAt"`
-}
-
 type openCodeStateFile struct {
-	Version int                                `json:"version"`
-	Targets map[string]openCodeTargetState     `json:"targets,omitempty"`
-	Managed map[string]openCodeManagedState    `json:"managed,omitempty"`
-	MCP     map[string]openCodeManagedMCPState `json:"mcp,omitempty"`
-	WSL     map[string]openCodeWSLState        `json:"wsl,omitempty"`
+	Version int                             `json:"version"`
+	Targets map[string]openCodeTargetState  `json:"targets,omitempty"`
+	Managed map[string]openCodeManagedState `json:"managed,omitempty"`
 }
 
 func newOpenCodeStateFile() openCodeStateFile {
@@ -282,8 +203,6 @@ func newOpenCodeStateFile() openCodeStateFile {
 		Version: openCodeConfigStateVersion,
 		Targets: make(map[string]openCodeTargetState),
 		Managed: make(map[string]openCodeManagedState),
-		MCP:     make(map[string]openCodeManagedMCPState),
-		WSL:     make(map[string]openCodeWSLState),
 	}
 }
 
@@ -308,13 +227,13 @@ func normalizeOpenCodeNPM(value string) string {
 
 func openCodeClientProtocolForNPM(npm string) (string, bool) {
 	switch strings.TrimSpace(npm) {
-	case "@ai-sdk/anthropic":
+	case "@ai-sdk/anthropic", "@ai-sdk/amazon-bedrock":
 		return "anthropic_messages", true
-	case "@ai-sdk/openai-compatible":
-		return "openai_chat", true
-	case "@ai-sdk/openai":
+	case "@ai-sdk/openai", "@ai-sdk/mistral":
 		return "openai_responses", true
-	case "@ai-sdk/google":
+	case "@ai-sdk/openai-compatible", "@ai-sdk/azure", "@ai-sdk/cerebras", "@ai-sdk/deepinfra", "@ai-sdk/deepseek", "@ai-sdk/fireworks", "@ai-sdk/groq", "@ai-sdk/perplexity", "@ai-sdk/togetherai", "@ai-sdk/xai", "@ai-sdk/cohere", "@ai-sdk/assemblyai", "@ai-sdk/baseten", "@ai-sdk/elevenlabs", "@ai-sdk/gladia", "@ai-sdk/hume", "@ai-sdk/lmnt", "@ai-sdk/revai":
+		return "openai_chat", true
+	case "@ai-sdk/google", "@ai-sdk/google-vertex":
 		return "gemini_native", true
 	default:
 		return "", false

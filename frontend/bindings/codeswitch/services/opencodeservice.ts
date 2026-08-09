@@ -9,26 +9,8 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function ClaimMCPServer(key: string): $CancellablePromise<$models.OpenCodeMCPServerInfo[]> {
-    return $Call.ByID(3028797136, key).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
-export function DeleteMCPServer(key: string): $CancellablePromise<$models.OpenCodeMCPServerInfo[]> {
-    return $Call.ByID(699676559, key).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
 export function DeleteProvider(providerKey: string): $CancellablePromise<void> {
     return $Call.ByID(1181751877, providerKey);
-}
-
-export function Diagnostics(): $CancellablePromise<$models.OpenCodeDiagnostics> {
-    return $Call.ByID(1553626481).then(($result: any) => {
-        return $$createType2($result);
-    });
 }
 
 /**
@@ -37,25 +19,7 @@ export function Diagnostics(): $CancellablePromise<$models.OpenCodeDiagnostics> 
  */
 export function ExportProviders(): $CancellablePromise<$models.OpenCodeProviderExportDocument> {
     return $Call.ByID(4227282193).then(($result: any) => {
-        return $$createType3($result);
-    });
-}
-
-export function GetConfigPathInfo(): $CancellablePromise<$models.OpenCodeConfigInfo> {
-    return $Call.ByID(3560139132).then(($result: any) => {
-        return $$createType4($result);
-    });
-}
-
-export function GetGlobalPrompt(): $CancellablePromise<$models.OpenCodePromptInfo> {
-    return $Call.ByID(2106498372).then(($result: any) => {
-        return $$createType5($result);
-    });
-}
-
-export function ImportLiveProviders(): $CancellablePromise<$models.OpenCodeProviderInfo[]> {
-    return $Call.ByID(3829220802).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType0($result);
     });
 }
 
@@ -65,19 +29,7 @@ export function ImportLiveProviders(): $CancellablePromise<$models.OpenCodeProvi
  */
 export function ImportProviders(request: $models.OpenCodeProviderImportRequest): $CancellablePromise<$models.OpenCodeProviderImportResult> {
     return $Call.ByID(1614659748, request).then(($result: any) => {
-        return $$createType8($result);
-    });
-}
-
-export function ListMCPServers(): $CancellablePromise<$models.OpenCodeMCPServerInfo[]> {
-    return $Call.ByID(2739586895).then(($result: any) => {
         return $$createType1($result);
-    });
-}
-
-export function ListWSLTargets(): $CancellablePromise<$models.OpenCodeWSLTargetInfo[]> {
-    return $Call.ByID(537918287).then(($result: any) => {
-        return $$createType10($result);
     });
 }
 
@@ -87,14 +39,6 @@ export function OpenProviderExportDirectory(path: string): $CancellablePromise<v
 
 /**
  * ReadProviderImportFile 读取并校验用户选择的供应商 JSON 文件。
- */
-export function ReadProviderImportFile(path: string): $CancellablePromise<$models.OpenCodeProviderExportDocument> {
-    return $Call.ByID(1496131565, path).then(($result: any) => {
-        return $$createType3($result);
-    });
-}
-
-/**
  * ReadProviderImportText 只读取用户选择的 JSON 文本，不提前解析；前端需要在编辑区展示并标记无效内容。
  */
 export function ReadProviderImportText(path: string): $CancellablePromise<string> {
@@ -105,21 +49,9 @@ export function RenameProviderKey(oldKey: string, newKey: string): $CancellableP
     return $Call.ByID(2605765863, oldKey, newKey);
 }
 
-export function SaveGlobalPrompt(content: string, expectedHash: string): $CancellablePromise<$models.OpenCodePromptInfo> {
-    return $Call.ByID(2553048575, content, expectedHash).then(($result: any) => {
-        return $$createType5($result);
-    });
-}
-
-export function SaveMCPServer(input: $models.OpenCodeMCPServerInput): $CancellablePromise<$models.OpenCodeMCPServerInfo[]> {
-    return $Call.ByID(3797189877, input).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
 export function SaveProvider(input: $models.OpenCodeProviderInput): $CancellablePromise<$models.OpenCodeProviderInfo> {
     return $Call.ByID(3766937619, input).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType2($result);
     });
 }
 
@@ -130,9 +62,23 @@ export function SaveProviderExport(path: string, document: $models.OpenCodeProvi
     return $Call.ByID(3476687113, path, document);
 }
 
-export function SetConfigPath(input: $models.OpenCodePathInput): $CancellablePromise<$models.OpenCodeConfigInfo> {
-    return $Call.ByID(2472564268, input).then(($result: any) => {
-        return $$createType4($result);
+/**
+ * SetDefaultModel 设置 OpenCode 主模型（顶层 model 字段，格式为 provider/model）。
+ * 传入空字符串会清空该字段。
+ */
+export function SetDefaultModel(model: string): $CancellablePromise<$models.OpenCodeConfigSnapshot> {
+    return $Call.ByID(3544428535, model).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
+ * SetSmallModel 设置 OpenCode 小模型（顶层 small_model 字段，格式为 provider/model）。
+ * 传入空字符串会清空该字段。
+ */
+export function SetSmallModel(model: string): $CancellablePromise<$models.OpenCodeConfigSnapshot> {
+    return $Call.ByID(1001538093, model).then(($result: any) => {
+        return $$createType3($result);
     });
 }
 
@@ -141,13 +87,13 @@ export function SetConfigPath(input: $models.OpenCodePathInput): $CancellablePro
  */
 export function SetUsageLoggingEnabled(enabled: boolean): $CancellablePromise<$models.OpenCodeUsageLoggingState> {
     return $Call.ByID(811154598, enabled).then(($result: any) => {
-        return $$createType11($result);
+        return $$createType4($result);
     });
 }
 
 export function Snapshot(): $CancellablePromise<$models.OpenCodeConfigSnapshot> {
     return $Call.ByID(1002181451).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType3($result);
     });
 }
 
@@ -168,29 +114,14 @@ export function Stop(): $CancellablePromise<void> {
  */
 export function SyncUsageNow(): $CancellablePromise<$models.OpenCodeUsageSyncResult> {
     return $Call.ByID(2572218445).then(($result: any) => {
-        return $$createType13($result);
-    });
-}
-
-export function SyncWSLConfig(input: $models.OpenCodeWSLSyncInput): $CancellablePromise<$models.OpenCodeWSLSyncResult> {
-    return $Call.ByID(1134285272, input).then(($result: any) => {
-        return $$createType14($result);
+        return $$createType5($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $models.OpenCodeMCPServerInfo.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $models.OpenCodeDiagnostics.createFrom;
-const $$createType3 = $models.OpenCodeProviderExportDocument.createFrom;
-const $$createType4 = $models.OpenCodeConfigInfo.createFrom;
-const $$createType5 = $models.OpenCodePromptInfo.createFrom;
-const $$createType6 = $models.OpenCodeProviderInfo.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = $models.OpenCodeProviderImportResult.createFrom;
-const $$createType9 = $models.OpenCodeWSLTargetInfo.createFrom;
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = $models.OpenCodeUsageLoggingState.createFrom;
-const $$createType12 = $models.OpenCodeConfigSnapshot.createFrom;
-const $$createType13 = $models.OpenCodeUsageSyncResult.createFrom;
-const $$createType14 = $models.OpenCodeWSLSyncResult.createFrom;
+const $$createType0 = $models.OpenCodeProviderExportDocument.createFrom;
+const $$createType1 = $models.OpenCodeProviderImportResult.createFrom;
+const $$createType2 = $models.OpenCodeProviderInfo.createFrom;
+const $$createType3 = $models.OpenCodeConfigSnapshot.createFrom;
+const $$createType4 = $models.OpenCodeUsageLoggingState.createFrom;
+const $$createType5 = $models.OpenCodeUsageSyncResult.createFrom;

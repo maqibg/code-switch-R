@@ -848,6 +848,38 @@
     "refresh": "Recheck"
   },
   "components": {
+    "opencode": {
+      "model": {
+        "id": "Model ID",
+        "name": "Display Name",
+        "nameOptional": "Display Name (optional)",
+        "contextLimit": "Context Limit",
+        "contextLimitPlaceholder": "e.g., 200000",
+        "outputLimit": "Output Limit",
+        "outputLimitPlaceholder": "e.g., 64000",
+        "capabilities": "Capabilities",
+        "reasoning": "Reasoning",
+        "toolCall": "Tool Calling",
+        "temperature": "Temperature Setting",
+        "attachment": "Attachments",
+        "inputModalities": "Input Modalities",
+        "outputModalities": "Output Modalities",
+        "modalitiesHint": "Content formats the model accepts.",
+        "variants": "Model Variants (JSON)",
+        "variantsHint": "Variant configs such as reasoning tiers, as a JSON object.",
+        "variantsPlaceholder": "e.g., {\n  \"low\": { \"thinkingLevel\": \"low\" }\n}",
+        "invalidVariants": "Variants must be a JSON object",
+        "options": "Other Options (JSON)",
+        "optionsHint": "Extra SDK options for this model, e.g. { \"store\": false }.",
+        "invalidOptions": "Options must be a JSON object",
+        "addModel": "Add Model",
+        "editModel": "Edit Model",
+        "idExists": "Model ID already exists",
+        "selectPreset": "Select preset",
+        "otherPresets": "Other presets",
+        "noPresets": "No presets available"
+      }
+    },
     "provider": {
       "modelWhitelist": {
         "label": "Supported Models",

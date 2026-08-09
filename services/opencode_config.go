@@ -86,12 +86,6 @@ func loadOpenCodeState() (openCodeStateFile, error) {
 	if state.Managed == nil {
 		state.Managed = make(map[string]openCodeManagedState)
 	}
-	if state.MCP == nil {
-		state.MCP = make(map[string]openCodeManagedMCPState)
-	}
-	if state.WSL == nil {
-		state.WSL = make(map[string]openCodeWSLState)
-	}
 	return state, nil
 }
 
@@ -235,14 +229,6 @@ func cloneOpenCodeState(state openCodeStateFile) openCodeStateFile {
 	for key, value := range state.Managed {
 		cloned.Managed[key] = value
 	}
-	for key, value := range state.MCP {
-		value.OriginalServer = cloneRaw(value.OriginalServer)
-		value.InjectedServer = cloneRaw(value.InjectedServer)
-		cloned.MCP[key] = value
-	}
-	for key, value := range state.WSL {
-		cloned.WSL[key] = value
-	}
 	return cloned
 }
 
@@ -350,6 +336,14 @@ func buildModelRaw(input OpenCodeModelInput, existing json.RawMessage) (json.Raw
 	}
 	if err := mergeOpenCodeJSONExtension(model, input.ExtraJSON, fmt.Sprintf("模型 %s 扩展字段", input.ID)); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(input.OptionsJSON) != "" {
+		var options map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(input.OptionsJSON), &options); err != nil || options == nil {
+			return nil, fmt.Errorf("模型 %s options 必须是 JSON 对象", input.ID)
+		}
+		data, _ := json.Marshal(options)
+		model["options"] = data
 	}
 	setRawString(model, "name", input.Name, true)
 	limit := make(map[string]json.RawMessage)
