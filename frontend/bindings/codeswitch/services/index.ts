@@ -128,6 +128,7 @@ export {
     OpenCodeConfigSnapshot,
     OpenCodeModelInfo,
     OpenCodeModelInput,
+    OpenCodeModelModalities,
     OpenCodeProviderExportDocument,
     OpenCodeProviderExportEntry,
     OpenCodeProviderImportDecision,

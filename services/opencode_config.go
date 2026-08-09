@@ -353,27 +353,43 @@ func buildModelRaw(input OpenCodeModelInput, existing json.RawMessage) (json.Raw
 	if input.ContextLimit > 0 {
 		data, _ := json.Marshal(input.ContextLimit)
 		limit["context"] = data
+	} else {
+		delete(limit, "context")
 	}
 	if input.InputLimit > 0 {
 		data, _ := json.Marshal(input.InputLimit)
 		limit["input"] = data
+	} else {
+		delete(limit, "input")
 	}
 	if input.OutputLimit > 0 {
 		data, _ := json.Marshal(input.OutputLimit)
 		limit["output"] = data
+	} else {
+		delete(limit, "output")
 	}
 	if len(limit) > 0 {
 		data, _ := json.Marshal(limit)
 		model["limit"] = data
+	} else {
+		delete(model, "limit")
 	}
 	setRawBool(model, "reasoning", input.Reasoning)
 	setRawBool(model, "tool_call", input.ToolCall)
+	setRawBool(model, "temperature", input.Temperature)
 	setRawBool(model, "attachment", input.Attachment)
 	if input.Modalities != nil {
-		if len(input.Modalities) == 0 {
+		modalities := *input.Modalities
+		if modalities.Input == nil {
+			modalities.Input = []string{}
+		}
+		if modalities.Output == nil {
+			modalities.Output = []string{}
+		}
+		if len(modalities.Input) == 0 && len(modalities.Output) == 0 {
 			delete(model, "modalities")
 		} else {
-			data, _ := json.Marshal(input.Modalities)
+			data, _ := json.Marshal(modalities)
 			model["modalities"] = data
 		}
 	}

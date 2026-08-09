@@ -28,34 +28,41 @@ type openCodeProviderPayload struct {
 
 // OpenCodeModelInfo 是返回给前端的脱敏模型目录。
 type OpenCodeModelInfo struct {
-	ID              string         `json:"id"`
-	Name            string         `json:"name"`
-	ContextLimit    int64          `json:"context_limit"`
-	InputLimit      int64          `json:"input_limit"`
-	OutputLimit     int64          `json:"output_limit"`
-	Reasoning       bool           `json:"reasoning"`
-	ToolCall        bool           `json:"tool_call"`
-	Attachment      bool           `json:"attachment"`
-	HasVariants     bool           `json:"has_variants"`
-	ExtraFieldCount int            `json:"extra_field_count"`
-	Modalities      []string       `json:"modalities"`
-	Variants        map[string]any `json:"variants"`
-	OptionsJSON     string         `json:"options_json"`
+	ID              string                  `json:"id"`
+	Name            string                  `json:"name"`
+	ContextLimit    int64                   `json:"context_limit"`
+	InputLimit      int64                   `json:"input_limit"`
+	OutputLimit     int64                   `json:"output_limit"`
+	Reasoning       bool                    `json:"reasoning"`
+	ToolCall        bool                    `json:"tool_call"`
+	Temperature     bool                    `json:"temperature"`
+	Attachment      bool                    `json:"attachment"`
+	HasVariants     bool                    `json:"has_variants"`
+	ExtraFieldCount int                     `json:"extra_field_count"`
+	Modalities      OpenCodeModelModalities `json:"modalities"`
+	Variants        map[string]any          `json:"variants"`
+	OptionsJSON     string                  `json:"options_json"`
+}
+
+type OpenCodeModelModalities struct {
+	Input  []string `json:"input"`
+	Output []string `json:"output"`
 }
 
 type OpenCodeModelInput struct {
-	ID           string         `json:"id"`
-	Name         string         `json:"name"`
-	ContextLimit int64          `json:"context_limit"`
-	InputLimit   int64          `json:"input_limit"`
-	OutputLimit  int64          `json:"output_limit"`
-	Reasoning    bool           `json:"reasoning"`
-	ToolCall     bool           `json:"tool_call"`
-	Attachment   bool           `json:"attachment"`
-	Modalities   []string       `json:"modalities"`
-	Variants     map[string]any `json:"variants"`
-	ExtraJSON    string         `json:"extra_json"`
-	OptionsJSON  string         `json:"options_json"`
+	ID           string                   `json:"id"`
+	Name         string                   `json:"name"`
+	ContextLimit int64                    `json:"context_limit"`
+	InputLimit   int64                    `json:"input_limit"`
+	OutputLimit  int64                    `json:"output_limit"`
+	Reasoning    bool                     `json:"reasoning"`
+	ToolCall     bool                     `json:"tool_call"`
+	Temperature  bool                     `json:"temperature"`
+	Attachment   bool                     `json:"attachment"`
+	Modalities   *OpenCodeModelModalities `json:"modalities"`
+	Variants     map[string]any           `json:"variants"`
+	ExtraJSON    string                   `json:"extra_json"`
+	OptionsJSON  string                   `json:"options_json"`
 }
 
 // OpenCodeProviderInfo 包含 OpenCode Provider 的完整配置 JSON，供前端直接编辑。

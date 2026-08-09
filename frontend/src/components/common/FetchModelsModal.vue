@@ -1,14 +1,23 @@
 <template>
   <BaseModal :open="open" :title="t('components.opencode.fetchModels.title', { provider: providerName })" variant="wide" @close="close">
+    <template #title>
+      <span class="fetch-modal-title">
+        <CloudDownload :size="16" aria-hidden="true" />
+        {{ t('components.opencode.fetchModels.title', { provider: providerName }) }}
+      </span>
+    </template>
     <div class="fetch-models">
-      <!-- 数据源（仅当供应商未提供 baseURL 时展示） -->
-      <section v-if="showSourceFields" class="source-section">
-        <div class="field-block">
+      <section class="section-card source-section">
+        <div class="section-header">
+          <strong class="section-title">{{ t('components.opencode.fetchModels.sourceSection') }}</strong>
+          <span class="section-hint">{{ t('components.opencode.fetchModels.sourceSectionHint') }}</span>
+        </div>
+        <div class="field-block field-row">
           <span class="field-label">{{ t('components.opencode.fetchModels.apiType') }}</span>
           <div class="radio-row">
             <label class="radio-check">
               <input v-model="apiType" type="radio" value="openai_compat" />
-              <span>OpenAI Compatible <em>/models</em></span>
+              <span>{{ t('components.opencode.fetchModels.openaiCompat') }} <em>/models</em></span>
             </label>
             <label v-if="supportsNative" class="radio-check">
               <input v-model="apiType" type="radio" value="native" />
@@ -16,7 +25,7 @@
             </label>
           </div>
         </div>
-        <div class="field-block">
+        <div class="field-block field-row">
           <span class="field-label">{{ t('components.opencode.fetchModels.apiUrl') }}</span>
           <div class="api-url-row">
             <input v-model="customUrl" class="form-input" :placeholder="defaultUrl() || 'https://api.example.com/v1/models'" />
@@ -27,63 +36,75 @@
         </div>
       </section>
 
-      <!-- 结果 -->
-      <div class="result-toolbar">
-        <BaseButton type="button" :disabled="loading" @click="fetchModels">
-          <RefreshCw v-if="fetched" :size="14" :class="{ spin: loading }" />
-          <Download v-else :size="14" />
-          {{ loading ? t('components.opencode.fetchModels.fetching') : fetched ? t('components.opencode.fetchModels.refresh') : t('components.opencode.fetchModels.fetch') }}
-        </BaseButton>
-        <div class="search-box">
-          <Search :size="15" />
-          <input v-model="query" class="form-input" :placeholder="t('components.opencode.fetchModels.searchPlaceholder')" />
-        </div>
-      </div>
-
-      <p v-if="error" class="fetch-error">{{ error }}</p>
-
-      <template v-if="fetched">
-        <div class="summary-grid">
-          <div class="summary-item"><span class="summary-label">{{ t('components.opencode.fetchModels.returned') }}</span><strong>{{ models.length }}</strong></div>
-          <div class="summary-item"><span class="summary-label">{{ t('components.opencode.fetchModels.selected') }}</span><strong>{{ selectedIds.size }}</strong></div>
-          <div class="summary-item"><span class="summary-label">{{ t('components.opencode.fetchModels.removable') }}</span><strong>{{ missingCount }}</strong></div>
+      <section class="section-card result-section">
+        <div class="section-header">
+          <strong class="section-title">{{ t('components.opencode.fetchModels.resultSection') }}</strong>
+          <span class="section-hint">{{ t('components.opencode.fetchModels.resultSectionHint') }}</span>
         </div>
 
-        <div v-if="missingCount > 0" class="cleanup-row">
-          <label class="radio-check">
-            <input v-model="removeMissing" type="checkbox" />
-            <span>{{ t('components.opencode.fetchModels.removeMissing', { count: missingCount }) }}</span>
-          </label>
+        <div class="result-toolbar">
+          <BaseButton type="button" :disabled="loading" @click="fetchModels">
+            <RefreshCw v-if="fetched" :size="14" :class="{ spin: loading }" />
+            <Download v-else :size="14" />
+            {{ loading ? t('components.opencode.fetchModels.fetching') : fetched ? t('components.opencode.fetchModels.refresh') : t('components.opencode.fetchModels.fetch') }}
+          </BaseButton>
+          <div class="search-box">
+            <Search :size="15" aria-hidden="true" />
+            <input v-model="query" class="form-input" :placeholder="t('components.opencode.fetchModels.searchPlaceholder')" />
+          </div>
         </div>
-        <p v-else class="cleanup-muted">{{ t('components.opencode.fetchModels.removeMissingNone') }}</p>
 
-        <div class="selection-list" :class="{ empty: filteredModels.length === 0 }">
-          <label v-for="model in filteredModels" :key="model.id" class="selection-row" :class="{ existing: existingIds.includes(model.id) }">
-            <input
-              type="checkbox"
-              :checked="selectedIds.has(model.id)"
-              :disabled="existingIds.includes(model.id)"
-              @change="toggle(model.id)"
-            />
-            <span class="selection-copy">
-              <strong>{{ model.name || model.id }}</strong>
-              <code>{{ model.id }}</code>
-            </span>
-            <span v-if="existingIds.includes(model.id)" class="selection-badge">{{ t('components.opencode.fetchModels.alreadyExists') }}</span>
-          </label>
-          <p v-if="filteredModels.length === 0" class="selection-state">
-            {{ query.trim() ? t('components.opencode.fetchModels.noSearchResults') : t('components.opencode.fetchModels.noModels') }}
-          </p>
+        <div v-if="error" class="fetch-error" role="alert">
+          <strong>{{ t('components.opencode.fetchModels.fetchFailed') }}</strong>
+          <span>{{ error }}</span>
         </div>
-      </template>
-      <p v-else class="selection-state">{{ t('components.opencode.fetchModels.noFetchHint') }}</p>
 
-      <footer class="selection-actions">
-        <BaseButton variant="outline" type="button" @click="close">{{ t('common.cancel') }}</BaseButton>
-        <BaseButton type="button" :disabled="!canApply" @click="apply">
-          {{ t('components.opencode.fetchModels.apply', { add: selectedIds.size, remove: removeMissing ? missingCount : 0 }) }}
-        </BaseButton>
-      </footer>
+        <template v-if="fetched">
+          <div class="summary-grid">
+            <div class="summary-item"><span class="summary-label">{{ t('components.opencode.fetchModels.returnedCount') }}</span><strong>{{ models.length }}</strong></div>
+            <div class="summary-item"><span class="summary-label">{{ t('components.opencode.fetchModels.selectedCount') }}</span><strong>{{ selectedIds.size }}</strong></div>
+            <div class="summary-item"><span class="summary-label">{{ t('components.opencode.fetchModels.removableCount') }}</span><strong>{{ missingCount }}</strong></div>
+          </div>
+
+          <div v-if="missingCount > 0" class="cleanup-row">
+            <label class="radio-check">
+              <input v-model="removeMissing" type="checkbox" />
+              <span>{{ t('components.opencode.fetchModels.removeMissing', { count: missingCount }) }}</span>
+            </label>
+          </div>
+          <p v-else class="cleanup-muted">{{ t('components.opencode.fetchModels.removeMissingNone') }}</p>
+
+          <div class="selection-table" :class="{ empty: filteredModels.length === 0 }">
+            <div class="selection-table-head" aria-hidden="true"><span></span><span>{{ t('components.opencode.fetchModels.modelId') }}</span><span>{{ t('components.opencode.fetchModels.modelName') }}</span></div>
+            <label v-for="model in filteredModels" :key="model.id" class="selection-row" :class="{ existing: existingIds.includes(model.id) }">
+              <input
+                type="checkbox"
+                :aria-label="model.id"
+                :checked="selectedIds.has(model.id)"
+                :disabled="existingIds.includes(model.id)"
+                @change="toggle(model.id)"
+              />
+              <span class="selection-id-cell">
+                <code>{{ model.id }}</code>
+                <span v-if="existingIds.includes(model.id)" class="selection-badge">{{ t('components.opencode.fetchModels.alreadyExists') }}</span>
+              </span>
+              <span class="selection-name-cell">{{ model.name || '-' }}</span>
+            </label>
+            <p v-if="filteredModels.length === 0" class="selection-state">
+              {{ query.trim() ? t('components.opencode.fetchModels.noSearchResults') : t('components.opencode.fetchModels.noModelsFound') }}
+            </p>
+          </div>
+        </template>
+        <p v-else class="selection-state">{{ t('components.opencode.fetchModels.noFetchHint') }}</p>
+
+        <footer class="selection-actions">
+          <BaseButton variant="outline" type="button" @click="close">{{ t('common.cancel') }}</BaseButton>
+          <BaseButton type="button" :disabled="!canApply" @click="apply">
+            {{ t('components.opencode.fetchModels.applyChanges', { addCount: selectedIds.size, removeCount: removeMissing ? missingCount : 0 }) }}
+          </BaseButton>
+        </footer>
+      </section>
+
     </div>
   </BaseModal>
 </template>
@@ -91,7 +112,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Download, RefreshCw, Search, Undo2 } from 'lucide-vue-next'
+import { CloudDownload, Download, RefreshCw, Search, Undo2 } from 'lucide-vue-next'
 import BaseButton from './BaseButton.vue'
 import BaseModal from './BaseModal.vue'
 import { FetchProviderModels } from '../../../bindings/codeswitch/services/providermodeldiscoveryservice'
@@ -106,6 +127,7 @@ const props = withDefaults(
     sdkType?: string
     baseUrl?: string
     apiKey?: string
+    headers?: Record<string, string>
     upstreamProtocol?: string
     existingIds?: string[]
   }>(),
@@ -114,6 +136,7 @@ const props = withDefaults(
     sdkType: '',
     baseUrl: '',
     apiKey: '',
+    headers: () => ({}),
     upstreamProtocol: 'anthropic',
     existingIds: () => [],
   },
@@ -136,7 +159,6 @@ const fetched = ref(false)
 const removeMissing = ref(false)
 
 const supportsNative = computed(() => props.sdkType === '@ai-sdk/google' || props.sdkType === '@ai-sdk/anthropic')
-const showSourceFields = computed(() => !props.baseUrl.trim())
 const existingSet = computed(() => new Set(props.existingIds))
 
 const filteredModels = computed(() => {
@@ -173,6 +195,10 @@ watch(
   },
 )
 
+watch([apiType, () => props.baseUrl, () => props.sdkType, () => props.apiKey], () => {
+  if (props.open) customUrl.value = defaultUrl()
+})
+
 const close = () => emit('close')
 
 const fetchModels = async () => {
@@ -185,6 +211,7 @@ const fetchModels = async () => {
       name: props.providerName || 'opencode-provider',
       apiUrl: props.baseUrl.trim(),
       apiKey: props.apiKey.trim(),
+      headers: props.headers,
       enabled: true,
       level: 1,
       upstreamProtocol: props.upstreamProtocol,
@@ -230,40 +257,57 @@ const apply = () => {
 
 <style scoped>
 .fetch-models { display: grid; gap: 14px; min-width: 0; }
-.source-section { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--mac-border); border-radius: 10px; background: color-mix(in srgb, var(--mac-surface) 92%, transparent); }
+.fetch-modal-title { display: inline-flex; align-items: center; gap: 8px; }
+.section-card { display: grid; gap: 14px; padding: 14px; border: 1px solid var(--mac-border); border-radius: 10px; background: color-mix(in srgb, var(--mac-surface) 92%, transparent); }
+.section-header { display: grid; gap: 4px; }
+.section-title { font-size: 13px; color: var(--mac-text); }
+.section-hint { color: var(--mac-text-secondary); font-size: 11px; line-height: 1.45; }
 .field-block { display: grid; gap: 6px; min-width: 0; }
-.field-label { font-size: 12px; font-weight: 600; color: var(--mac-text); }
-.radio-row { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.field-row { grid-template-columns: 92px minmax(0, 1fr); align-items: start; }
+.field-label { padding-top: 10px; font-size: 12px; font-weight: 600; color: var(--mac-text); }
+.radio-row { display: flex; flex-wrap: wrap; gap: 8px 18px; min-height: 38px; align-items: center; }
 .radio-check { display: inline-flex; gap: 5px; align-items: center; font-size: 13px; color: var(--mac-text); cursor: pointer; user-select: none; }
 .radio-check em { font-style: normal; color: var(--mac-text-secondary); font-size: 12px; }
 .api-url-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .api-url-row .form-input { flex: 1 1 auto; }
 .reset-url { flex: 0 0 auto; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--mac-border); border-radius: 9px; background: var(--mac-surface-strong); color: var(--mac-text-secondary); cursor: pointer; }
-.reset-url:hover { color: var(--mac-text); border-color: var(--platform-color, #5c7580); }
+.reset-url:hover:not(:disabled) { color: var(--mac-text); border-color: var(--platform-color, #5c7580); }
+.reset-url:disabled { cursor: not-allowed; opacity: .5; }
 
 .result-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .search-box { position: relative; flex: 1 1 220px; min-width: 0; }
-.search-box svg { position: absolute; left: 11px; top: 9px; color: var(--mac-text-secondary); pointer-events: none; }
+.search-box svg { position: absolute; left: 11px; top: 12px; color: var(--mac-text-secondary); pointer-events: none; }
 .search-box .form-input { padding-left: 32px; }
-.fetch-error { margin: 0; color: #b42318; font-size: 12px; line-height: 1.5; padding: 10px 12px; border: 1px solid color-mix(in srgb, #b42318 30%, var(--mac-border)); border-radius: 8px; background: color-mix(in srgb, #b42318 6%, transparent); }
+.fetch-error { display: grid; gap: 4px; margin: 0; color: #b42318; font-size: 12px; line-height: 1.5; padding: 10px 12px; border: 1px solid color-mix(in srgb, #b42318 30%, var(--mac-border)); border-radius: 8px; background: color-mix(in srgb, #b42318 6%, transparent); }
 
 .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .summary-item { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); }
 .summary-label { font-size: 11px; color: var(--mac-text-secondary); }
 .summary-item strong { font-size: 18px; color: var(--mac-text); font-variant-numeric: tabular-nums; }
 .cleanup-row, .cleanup-muted { min-height: 24px; }
-.cleanup-muted { font-size: 12px; color: var(--mac-text-secondary); }
+.cleanup-muted { margin: 0; font-size: 12px; color: var(--mac-text-secondary); }
 
-.selection-list { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 2px; }
-.selection-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--mac-border); border-radius: 9px; background: var(--mac-surface-strong); cursor: pointer; }
+.selection-table { max-height: 320px; overflow-y: auto; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); }
+.selection-table-head, .selection-row { display: grid; grid-template-columns: 28px minmax(0, 1.35fr) minmax(0, .65fr); gap: 12px; align-items: center; }
+.selection-table-head { position: sticky; top: 0; z-index: 1; padding: 9px 12px; border-bottom: 1px solid var(--mac-border); background: var(--mac-surface); color: var(--mac-text-secondary); font-size: 11px; font-weight: 600; }
+.selection-row { padding: 9px 12px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--mac-border) 75%, transparent); background: transparent; cursor: pointer; }
+.selection-row:last-of-type { border-bottom: 0; }
+.selection-row:hover:not(.existing) { background: color-mix(in srgb, var(--platform-color, #5c7580) 7%, transparent); }
 .selection-row.existing { opacity: .65; }
 .selection-row input { flex: 0 0 auto; }
-.selection-copy { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.selection-copy strong { font-size: 13px; color: var(--mac-text); margin-right: 8px; }
-.selection-copy code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: var(--mac-text-secondary); }
-.selection-badge { flex: 0 0 auto; margin-left: auto; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--mac-text-secondary) 12%, transparent); color: var(--mac-text-secondary); font-size: 11px; white-space: nowrap; }
-.selection-state { margin: 0; padding: 18px; border: 1px dashed var(--mac-border); border-radius: 8px; color: var(--mac-text-secondary); font-size: 13px; text-align: center; }
+.selection-id-cell, .selection-name-cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selection-id-cell { display: inline-flex; align-items: center; gap: 8px; }
+.selection-id-cell code { overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: var(--mac-text); }
+.selection-name-cell { color: var(--mac-text-secondary); font-size: 12px; }
+.selection-badge { flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--mac-text-secondary) 12%, transparent); color: var(--mac-text-secondary); font-size: 11px; white-space: nowrap; }
+.selection-state { grid-column: 1 / -1; margin: 0; padding: 18px; border: 0; color: var(--mac-text-secondary); font-size: 13px; text-align: center; }
 .selection-actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; padding-top: 2px; }
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 620px) {
+  .field-row { grid-template-columns: 1fr; }
+  .field-label { padding-top: 0; }
+  .selection-table-head, .selection-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .selection-table-head span:last-child, .selection-name-cell { display: none; }
+}
 </style>

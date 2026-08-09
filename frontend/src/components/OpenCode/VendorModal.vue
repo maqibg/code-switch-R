@@ -102,19 +102,62 @@
               <button type="button" class="btn btn-outline btn-sm inline-action" @click="openAddModelModal"><Plus :size="14" />添加</button>
             </div>
           </div>
-          <div v-if="draft.models.length === 0" class="editor-empty">暂无模型配置。点击“添加”配置模型。</div>
+          <div v-if="draft.models.length === 0 && expandedModelTarget !== 'new'" class="editor-empty">暂无模型配置。点击“添加”配置模型。</div>
           <div v-else class="model-entry-list">
-            <div v-for="(model, index) in draft.models" :key="`${model.id}-${index}`" class="model-entry">
-              <div class="model-entry-main">
-                <span class="model-entry-name">{{ model.name || model.id || '未命名模型' }}</span>
-                <span v-if="model.id && model.name && model.name !== model.id" class="model-entry-id">{{ model.id }}</span>
-                <span class="model-entry-limits">{{ modelEntryLimits(model) }}</span>
+            <div v-if="expandedModelTarget === 'new'" class="model-entry model-entry-expanded model-entry-new">
+              <div class="model-entry-summary">
+                <span class="model-expand-button-placeholder" aria-hidden="true"><Plus :size="15" /></span>
+                <div class="model-entry-main">
+                  <span class="model-entry-name">{{ editingModelSource ? '复制模型' : '添加模型' }}</span>
+                  <span class="model-entry-id">{{ editingModelSource?.id || '填写模型 ID' }}</span>
+                </div>
+                <button type="button" class="icon-button" title="取消编辑" @click="closeModelEditor"><X :size="15" /></button>
               </div>
-              <div class="model-entry-actions">
-                <button type="button" class="icon-button" title="编辑模型" @click="openEditModelModal(index)"><Pencil :size="15" /></button>
-                <button type="button" class="icon-button" title="复制模型" @click="openCopyModelModal(index)"><Copy :size="15" /></button>
-                <button type="button" class="icon-button danger-icon" title="删除模型" @click="removeModel(index)"><Trash2 :size="15" /></button>
+              <ModelFormModal
+                :open="true"
+                :is-edit="false"
+                :provider-npm="draft.npm"
+                :preset-models="modelPresets"
+                :existing-model-ids="draft.models.map((m) => m.id.trim()).filter(Boolean)"
+                :initial-input="editingModelSource"
+                @close="closeModelEditor"
+                @save="saveModelFromModal"
+              />
+            </div>
+
+            <div v-for="(model, index) in draft.models" :key="`${model.id}-${index}`" class="model-entry" :class="{ 'model-entry-expanded': expandedModelTarget === index }">
+              <div class="model-entry-summary">
+                <button
+                  type="button"
+                  class="model-expand-button"
+                  :aria-expanded="expandedModelTarget === index"
+                  :title="expandedModelTarget === index ? '收起编辑' : '展开编辑'"
+                  @click="toggleModelEditor(index)"
+                >
+                  <ChevronRight :size="15" :class="{ rotated: expandedModelTarget === index }" />
+                </button>
+                <div class="model-entry-main">
+                  <div class="model-entry-title-line">
+                    <span class="model-entry-name">{{ model.name || model.id || '未命名模型' }}</span>
+                    <span class="model-entry-id">({{ model.id || '未设置 ID' }})</span>
+                  </div>
+                  <span class="model-entry-limits">{{ modelEntryLimits(model) }}</span>
+                </div>
+                <div class="model-entry-actions">
+                  <button type="button" class="icon-button" title="复制模型" @click="openCopyModelModal(index)"><Copy :size="15" /></button>
+                  <button type="button" class="icon-button danger-icon" title="删除模型" @click="removeModel(index)"><Trash2 :size="15" /></button>
+                </div>
               </div>
+              <ModelFormModal
+                v-if="expandedModelTarget === index"
+                :open="true"
+                :is-edit="true"
+                :provider-npm="draft.npm"
+                :existing-model-ids="draft.models.map((m) => m.id.trim()).filter(Boolean)"
+                :initial-input="model"
+                @close="closeModelEditor"
+                @save="saveModelFromModal"
+              />
             </div>
           </div>
         </section>
@@ -126,50 +169,56 @@
         </section>
       </div>
 
-      <ModelFormModal
-        :open="modelModalOpen"
-        :is-edit="editingModelIndex !== null"
-        :provider-npm="draft.npm"
-        :existing-model-ids="draft.models.map((m) => m.id.trim()).filter(Boolean)"
-        :initial-model="editingModelIndex !== null ? draft.models[editingModelIndex] : null"
-        @close="closeModelModal"
-        @save="saveModelFromModal"
-      />
-
-      <FetchModelsModal
-        :open="fetchModelsModalOpen"
-        :provider-name="draft.name.trim() || draft.provider_key.trim()"
-        :sdk-type="draft.npm"
-        :base-url="draft.base_url.trim()"
-        :api-key="draft.api_key.trim()"
-        :upstream-protocol="draft.upstream_protocol"
-        :existing-ids="draft.models.map((m) => m.id.trim()).filter(Boolean)"
-        @close="closeFetchModelsModal"
-        @apply="applyFetchedModels"
-      />
-
       <footer class="form-actions">
         <BaseButton variant="outline" type="button" @click="$emit('close')">取消</BaseButton>
         <BaseButton type="submit" :disabled="busy">{{ editing ? '保存' : '添加供应商' }}</BaseButton>
       </footer>
     </form>
   </BaseModal>
+
+  <FetchModelsModal
+    :open="fetchModelsModalOpen"
+    :provider-name="draft.name.trim() || draft.provider_key.trim()"
+    :sdk-type="draft.npm"
+    :base-url="draft.base_url.trim()"
+    :api-key="draft.api_key.trim()"
+    :headers="fetchHeaders"
+    :upstream-protocol="draft.upstream_protocol"
+    :existing-ids="draft.models.map((m) => m.id.trim()).filter(Boolean)"
+    @close="closeFetchModelsModal"
+    @apply="applyFetchedModels"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { Copy, Download, Pencil, Plus, Trash2 } from 'lucide-vue-next'
-import { FetchProviderModels } from '../../../bindings/codeswitch/services/providermodeldiscoveryservice'
+import { ChevronRight, Copy, Download, Plus, Trash2, X } from 'lucide-vue-next'
 import { createOpenCodeModelInput } from '../../services/opencode'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import FetchModelsModal from '../common/FetchModelsModal.vue'
 import ModelFormModal from '../common/ModelFormModal.vue'
 import type { OpenCodeModelInput, OpenCodeProviderInfo } from '../../../bindings/codeswitch/services/models'
-import { OpenCodeProviderInput, Provider, ProviderModelDiscoveryRequest } from '../../../bindings/codeswitch/services/models'
+import { OpenCodeProviderInput } from '../../../bindings/codeswitch/services/models'
+import presetModelGroups from '../../data/opencode-model-presets.json'
 
 type ModalTab = 'basic' | 'advanced'
 type EditorEntry = { id: number; key: string; value: string }
+type ModelEditorTarget = number | 'new'
+type OpenCodePresetModel = {
+  id: string
+  name: string
+  contextLimit?: number
+  outputLimit?: number
+  modalities?: { input: string[]; output: string[] }
+  reasoning?: boolean
+  tool_call?: boolean
+  temperature?: boolean
+  attachment?: boolean
+  variants?: Record<string, unknown>
+  options?: Record<string, unknown>
+  group?: string
+}
 
 // 支持的接口格式：与 ai-toolbox 的 PROVIDER_TYPES 对齐（常用优先，其余按字母排序）
 const npmPackageOptions = [
@@ -238,7 +287,7 @@ const headerEntries = ref<EditorEntry[]>([])
 const extraEntries = ref<EditorEntry[]>([])
 const configJson = ref('')
 const configJsonError = ref('')
-const modelModalOpen = ref(false)
+const expandedModelTarget = ref<ModelEditorTarget | null>(null)
 const editingModelIndex = ref<number | null>(null)
 const editingModelSource = ref<OpenCodeModelInput | null>(null)
 const fetchModelsModalOpen = ref(false)
@@ -271,6 +320,8 @@ const clientProtocolLabelByNpm: Record<string, string> = {
   '@ai-sdk/google': 'Gemini Native',
 }
 
+const modelPresetsByNpm = presetModelGroups as Record<string, OpenCodePresetModel[]>
+
 const defaultDraft = (): OpenCodeProviderInput => new OpenCodeProviderInput({
   provider_key: '', name: '', npm: '@ai-sdk/anthropic', client_protocol: 'anthropic_messages',
   upstream_protocol: 'anthropic', base_url: '', api_key: '',
@@ -280,49 +331,38 @@ const defaultDraft = (): OpenCodeProviderInput => new OpenCodeProviderInput({
 const draft = reactive<OpenCodeProviderInput>(defaultDraft())
 const clientProtocol = computed(() => clientProtocolByNpm[draft.npm] || draft.client_protocol || 'openai_chat')
 const clientProtocolLabel = computed(() => clientProtocolLabelByNpm[draft.npm] || clientProtocol.value)
-
-watch(() => props.open, (isOpen) => {
-  if (isOpen) {
-    activeTab.value = 'basic'
-    modelModalOpen.value = false
-    editingModelIndex.value = null
-    fetchModelsModalOpen.value = false
-    if (props.provider) {
-      Object.assign(draft, {
-        provider_key: props.provider.provider_key,
-        name: props.provider.name,
-        npm: props.provider.npm,
-        client_protocol: props.provider.client_protocol,
-        upstream_protocol: props.provider.upstream_protocol,
-        base_url: props.provider.base_url,
-        api_key: '', headers_json: '', options_json: '', config_json: props.provider.config_json || '',
-        timeout: props.provider.timeout || 300000,
-        applied: props.provider.applied,
-        models: props.provider.models.map((m) => createOpenCodeModelInput({
-          id: m.id, name: m.name, context_limit: m.context_limit, input_limit: m.input_limit, output_limit: m.output_limit,
-          reasoning: m.reasoning, tool_call: m.tool_call, attachment: m.attachment, modalities: m.modalities, variants: m.variants, extra_json: '',
-          options_json: m.options_json,
-        })),
-      })
-    } else {
-      Object.assign(draft, defaultDraft())
-    }
-    // 若当前接口格式没有明确上游协议，则按 npm 推导默认值
-    if (!draft.upstream_protocol || upstreamProtocolByNpm[draft.npm]) {
-      draft.upstream_protocol = upstreamProtocolByNpm[draft.npm] || 'anthropic'
-    }
-    if (draft.config_json.trim()) {
-      syncEditorStateFromConfig()
-    } else {
-      headerEntries.value = []
-      extraEntries.value = []
-      configJson.value = ''
-      syncConfigJsonFromDraft()
-    }
+const fetchHeaders = computed<Record<string, string>>(() => {
+  const headers: Record<string, string> = {}
+  for (const entry of headerEntries.value) {
+    const key = entry.key.trim()
+    if (key) headers[key] = entry.value
   }
+  return headers
 })
+const modelPresets = computed<OpenCodePresetModel[]>(() => {
+  const orderedNpmTypes = [draft.npm, ...Object.keys(modelPresetsByNpm).filter((npm) => npm !== draft.npm)]
+  const seen = new Set<string>()
+  return orderedNpmTypes.flatMap((npm) => (modelPresetsByNpm[npm] || []).map((preset) => ({
+    ...preset,
+    group: npm === draft.npm ? '当前接口格式' : '其他供应商预设',
+  }))).filter((preset) => {
+    const normalizedID = preset.id.trim().toLowerCase()
+    if (!normalizedID || seen.has(normalizedID)) return false
+    seen.add(normalizedID)
+    return true
+  })
+})
+const findModelPreset = (id: string) => modelPresets.value.find((preset) => preset.id.trim().toLowerCase() === id.trim().toLowerCase())
+const defaultFetchedModalities = () => draft.npm === '@ai-sdk/openai-compatible'
+  ? { input: ['text'], output: ['text'] }
+  : { input: ['text', 'image'], output: ['text'] }
 
-const removeModel = (index: number) => { draft.models = draft.models.filter((_, i) => i !== index); syncConfigJsonFromDraft() }
+const removeModel = (index: number) => {
+  draft.models = draft.models.filter((_, i) => i !== index)
+  if (expandedModelTarget.value === index) closeModelEditor()
+  else if (typeof expandedModelTarget.value === 'number' && expandedModelTarget.value > index) expandedModelTarget.value -= 1
+  syncConfigJsonFromDraft()
+}
 
 const modelEntryLimits = (model: OpenCodeModelInput) => {
   const parts: string[] = []
@@ -334,13 +374,14 @@ const modelEntryLimits = (model: OpenCodeModelInput) => {
 const openAddModelModal = () => {
   editingModelIndex.value = null
   editingModelSource.value = null
-  modelModalOpen.value = true
+  expandedModelTarget.value = 'new'
 }
 
 const openEditModelModal = (index: number) => {
+  if (!draft.models[index]) return
   editingModelIndex.value = index
   editingModelSource.value = null
-  modelModalOpen.value = true
+  expandedModelTarget.value = index
 }
 
 const openCopyModelModal = (index: number) => {
@@ -350,35 +391,46 @@ const openCopyModelModal = (index: number) => {
   editingModelSource.value = createOpenCodeModelInput({
     id: `${source.id}_copy`,
     name: source.name, context_limit: source.context_limit, input_limit: source.input_limit, output_limit: source.output_limit,
-    reasoning: source.reasoning, tool_call: source.tool_call, attachment: source.attachment,
-    modalities: [...(source.modalities || [])], variants: { ...(source.variants || {}) },
+    reasoning: source.reasoning, tool_call: source.tool_call, temperature: source.temperature, attachment: source.attachment,
+    modalities: source.modalities ? { input: [...source.modalities.input], output: [...source.modalities.output] } : null,
+    variants: { ...(source.variants || {}) },
     extra_json: source.extra_json, options_json: source.options_json,
   })
-  modelModalOpen.value = true
+  expandedModelTarget.value = 'new'
 }
 
-const closeModelModal = () => { modelModalOpen.value = false; editingModelIndex.value = null; editingModelSource.value = null }
+const closeModelEditor = () => {
+  expandedModelTarget.value = null
+  editingModelIndex.value = null
+  editingModelSource.value = null
+}
+const toggleModelEditor = (index: number) => {
+  if (expandedModelTarget.value === index) closeModelEditor()
+  else openEditModelModal(index)
+}
 
 const saveModelFromModal = (input: OpenCodeModelInput) => {
   const id = input.id.trim()
-  if (!id) { closeModelModal(); return }
+  if (!id) return
   const next = [...draft.models]
   if (editingModelIndex.value !== null) {
-    next[editingModelIndex.value] = { ...next[editingModelIndex.value], ...input }
+    const current = next[editingModelIndex.value]
+    if (!current) return
+    next[editingModelIndex.value] = {
+      ...current,
+      ...input,
+      input_limit: current.input_limit,
+      id: current.id,
+    }
   } else {
     if (next.some((m) => m.id.trim() === id)) {
-      modelModalOpen.value = false
-      editingModelIndex.value = null
-      editingModelSource.value = null
       return
     }
-    next.push(input)
+    next.push({ ...input, input_limit: editingModelSource.value?.input_limit ?? input.input_limit })
   }
   draft.models = next
   syncConfigJsonFromDraft()
-  modelModalOpen.value = false
-  editingModelIndex.value = null
-  editingModelSource.value = null
+  closeModelEditor()
 }
 
 const openFetchModelsModal = () => { fetchModelsModalOpen.value = true }
@@ -390,7 +442,25 @@ const applyFetchedModels = (payload: { selected: Array<{ id: string; name?: stri
     const id = fetched.id.trim()
     if (!id || existing.has(id)) continue
     existing.add(id)
-    next.push(createOpenCodeModelInput({ id, name: fetched.name || id }))
+    const preset = findModelPreset(id)
+    const contextLimit = Number(preset?.contextLimit) > 0 ? Number(preset?.contextLimit) : 0
+    const outputLimit = Number(preset?.outputLimit) > 0 ? Number(preset?.outputLimit) : 0
+    const hasCompleteLimits = contextLimit > 0 && outputLimit > 0
+    next.push(createOpenCodeModelInput({
+      id,
+      name: preset?.name || fetched.name || id,
+      context_limit: hasCompleteLimits ? contextLimit : 0,
+      output_limit: hasCompleteLimits ? outputLimit : 0,
+      reasoning: preset?.reasoning ?? true,
+      tool_call: preset?.tool_call ?? true,
+      temperature: preset?.temperature ?? false,
+      attachment: preset?.attachment ?? false,
+      modalities: preset?.modalities
+        ? { input: [...preset.modalities.input], output: [...preset.modalities.output] }
+        : defaultFetchedModalities(),
+      variants: preset?.variants ? { ...preset.variants } : {},
+      options_json: preset?.options ? JSON.stringify(preset.options, null, 2) : '',
+    }))
   }
   draft.models = next
   syncConfigJsonFromDraft()
@@ -435,7 +505,7 @@ const modelToConfig = (model: OpenCodeModelInput, existing: Record<string, any> 
     try {
       result.options = parseJSONObject(model.options_json)
     } catch { /* 保存时由后端报告模型 options 错误 */ }
-  }
+  } else delete result.options
   if (model.name.trim()) result.name = model.name.trim()
   else delete result.name
   const limit: Record<string, number> = { ...(result.limit || {}) }
@@ -449,8 +519,9 @@ const modelToConfig = (model: OpenCodeModelInput, existing: Record<string, any> 
   else delete result.limit
   result.reasoning = model.reasoning
   result.tool_call = model.tool_call
+  result.temperature = model.temperature
   result.attachment = model.attachment
-  if (model.modalities?.length) result.modalities = model.modalities
+  if (model.modalities && (model.modalities.input.length || model.modalities.output.length)) result.modalities = model.modalities
   else delete result.modalities
   if (model.variants && Object.keys(model.variants).length) result.variants = model.variants
   else delete result.variants
@@ -511,13 +582,21 @@ const syncEditorStateFromConfig = () => {
   draft.models = Object.entries(models).map(([id, raw]) => {
     const model = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, any> : {}
     const limit = model.limit && typeof model.limit === 'object' ? model.limit : {}
-    const known = new Set(['name', 'limit', 'modalities', 'attachment', 'reasoning', 'tool_call', 'toolCall', 'variants', 'options'])
+    const known = new Set(['name', 'limit', 'modalities', 'attachment', 'reasoning', 'tool_call', 'toolCall', 'temperature', 'variants', 'options'])
     const extra = Object.fromEntries(Object.entries(model).filter(([key]) => !known.has(key)))
+    const modalities = Array.isArray(model.modalities)
+      ? { input: model.modalities, output: [] }
+      : model.modalities && typeof model.modalities === 'object'
+        ? {
+            input: Array.isArray(model.modalities.input) ? model.modalities.input : [],
+            output: Array.isArray(model.modalities.output) ? model.modalities.output : [],
+          }
+        : null
     return createOpenCodeModelInput({
       id, name: typeof model.name === 'string' ? model.name : id,
       context_limit: Number(limit.context) || 0, input_limit: Number(limit.input) || 0, output_limit: Number(limit.output) || 0,
-      reasoning: Boolean(model.reasoning), tool_call: Boolean(model.tool_call ?? model.toolCall), attachment: Boolean(model.attachment),
-      modalities: Array.isArray(model.modalities) ? model.modalities : [], variants: model.variants || {}, extra_json: JSON.stringify(extra),
+      reasoning: Boolean(model.reasoning), tool_call: Boolean(model.tool_call ?? model.toolCall), temperature: Boolean(model.temperature), attachment: Boolean(model.attachment),
+      modalities, variants: model.variants || {}, extra_json: JSON.stringify(extra),
       options_json: model.options && typeof model.options === 'object' && !Array.isArray(model.options) ? JSON.stringify(model.options, null, 2) : '',
     })
   })
@@ -554,6 +633,49 @@ const handleConfigJsonInput = () => {
   }
 }
 
+watch(() => props.open, (isOpen) => {
+  if (isOpen) {
+    activeTab.value = 'basic'
+    expandedModelTarget.value = null
+    editingModelIndex.value = null
+    editingModelSource.value = null
+    fetchModelsModalOpen.value = false
+    if (props.provider) {
+      Object.assign(draft, {
+        provider_key: props.provider.provider_key,
+        name: props.provider.name,
+        npm: props.provider.npm,
+        client_protocol: props.provider.client_protocol,
+        upstream_protocol: props.provider.upstream_protocol,
+        base_url: props.provider.base_url,
+        api_key: '', headers_json: '', options_json: '', config_json: props.provider.config_json || '',
+        timeout: props.provider.timeout || 300000,
+        applied: props.provider.applied,
+        models: props.provider.models.map((m) => createOpenCodeModelInput({
+          id: m.id, name: m.name, context_limit: m.context_limit, input_limit: m.input_limit, output_limit: m.output_limit,
+          reasoning: m.reasoning, tool_call: m.tool_call, temperature: m.temperature, attachment: m.attachment,
+          modalities: m.modalities, variants: m.variants, extra_json: '',
+          options_json: m.options_json,
+        })),
+      })
+    } else {
+      Object.assign(draft, defaultDraft())
+    }
+    // 若当前接口格式没有明确上游协议，则按 npm 推导默认值
+    if (!draft.upstream_protocol || upstreamProtocolByNpm[draft.npm]) {
+      draft.upstream_protocol = upstreamProtocolByNpm[draft.npm] || 'anthropic'
+    }
+    if (draft.config_json.trim()) {
+      syncEditorStateFromConfig()
+    } else {
+      headerEntries.value = []
+      extraEntries.value = []
+      configJson.value = ''
+      syncConfigJsonFromDraft()
+    }
+  }
+}, { immediate: true })
+
 const handleSave = () => {
   const providerKey = draft.provider_key.trim()
   if (!providerKey) return
@@ -568,7 +690,8 @@ const handleSave = () => {
     applied: draft.applied,
     models: draft.models.map((m) => createOpenCodeModelInput({
       id: m.id, name: m.name, context_limit: m.context_limit, input_limit: m.input_limit, output_limit: m.output_limit,
-      reasoning: m.reasoning, tool_call: m.tool_call, attachment: m.attachment, modalities: m.modalities, variants: m.variants, extra_json: m.extra_json,
+      reasoning: m.reasoning, tool_call: m.tool_call, temperature: m.temperature, attachment: m.attachment,
+      modalities: m.modalities, variants: m.variants, extra_json: m.extra_json,
       options_json: m.options_json,
     })),
   })
@@ -606,11 +729,12 @@ const handleSave = () => {
 .opencode-editor-heading, .models-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .opencode-editor-heading > div, .models-toolbar > div:first-child { display: grid; gap: 4px; min-width: 0; }
 .opencode-editor-title { display: block; font-size: 13px; font-weight: 600; color: var(--mac-text); }
-.inline-action { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px !important; border-radius: 6px !important; font-size: 12px !important; }
+.inline-action { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; min-width: 64px; min-height: 30px; padding: 0 10px !important; border-radius: 6px !important; font-size: 12px !important; }
 .key-value-editor { display: grid; gap: 8px; }
-.key-value-heading, .key-value-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 30px; gap: 8px; align-items: center; margin-right: 16px; }
+.key-value-heading, .key-value-row { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr) 64px; gap: 8px; align-items: center; }
 .key-value-heading { padding: 0 2px; font-size: 11px; color: var(--mac-text-secondary); }
 .key-value-row .form-input { min-height: 36px; padding: 7px 10px; }
+.key-value-row > .icon-button { justify-self: center; }
 .editor-empty { padding: 12px; border: 1px dashed var(--mac-border); border-radius: 6px; color: var(--mac-text-secondary); font-size: 12px; text-align: center; }
 .editor-collapse-trigger { display: inline-flex; align-items: flex-start; gap: 8px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .editor-collapse-trigger span { display: grid; gap: 4px; }
@@ -620,15 +744,26 @@ const handleSave = () => {
 .rotated { transform: rotate(90deg); }
 .models-toolbar-actions { display: inline-flex; flex: 0 0 auto; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .model-entry-list { display: grid; gap: 8px; }
-.model-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); }
+.model-entry { display: grid; gap: 0; min-width: 0; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); overflow: hidden; }
 .model-entry:hover { border-color: color-mix(in srgb, var(--platform-color, #5c7580) 35%, var(--mac-border)); }
-.model-entry-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; }
+.model-entry-expanded { border-color: color-mix(in srgb, var(--platform-color, #5c7580) 45%, var(--mac-border)); box-shadow: 0 4px 14px color-mix(in srgb, var(--mac-text) 6%, transparent); }
+.model-entry-new { border-style: dashed; }
+.model-entry-summary { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px 12px; }
+.model-entry-expanded .model-entry-summary { border-bottom: 1px solid color-mix(in srgb, var(--mac-border) 85%, transparent); }
+.model-entry-main { display: grid; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.model-entry-title-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .model-entry-name { font-size: 13px; font-weight: 600; color: var(--mac-text); }
 .model-entry-id { font-size: 11px; color: var(--mac-text-secondary); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-.model-entry-limits { font-size: 11px; color: var(--mac-text-secondary); white-space: nowrap; }
+.model-entry-limits { min-height: 14px; font-size: 11px; color: var(--mac-text-secondary); white-space: nowrap; }
 .model-entry-actions { display: inline-flex; flex: 0 0 auto; gap: 4px; align-items: center; }
 .icon-button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; transition: background .2s ease, color .2s ease; }
 .icon-button:hover { background: color-mix(in srgb, var(--platform-color, #5c7580) 12%, transparent); }
+.model-expand-button, .model-expand-button-placeholder { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); }
+.model-expand-button { cursor: pointer; transition: background .2s ease, color .2s ease; }
+.model-expand-button:hover { background: color-mix(in srgb, var(--platform-color, #5c7580) 12%, transparent); color: var(--mac-text); }
+.model-expand-button svg { transition: transform .18s ease; }
+.model-expand-button svg.rotated { transform: rotate(90deg); }
+.model-entry > :deep(.model-inline-editor) { min-width: 0; padding: 16px 12px 12px; }
 .danger-icon:hover { color: #b42318; }
 .config-json-editor { min-height: 260px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre; tab-size: 2; }
 .config-json-editor.invalid { border-color: #b42318; }
@@ -637,9 +772,11 @@ const handleSave = () => {
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 680px) {
   .key-value-heading { display: none; }
-  .key-value-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 30px; }
+  .key-value-row { grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr) 64px; }
   .opencode-editor-heading, .models-toolbar { align-items: stretch; flex-direction: column; }
   .models-toolbar-actions { justify-content: flex-start; }
+  .model-entry-summary { align-items: flex-start; }
+  .model-entry-actions { margin-left: auto; }
 }
 :global(html.dark) .form-input { background: color-mix(in srgb, var(--mac-surface) 78%, transparent); }
 :global(html.dark) .form-input:focus { border-color: var(--platform-color, #5c7580); box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, #5c7580) 30%, transparent); }

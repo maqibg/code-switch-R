@@ -28,6 +28,10 @@
         </nav>
       </div>
 
+      <section v-if="errorMessage" class="error-banner">
+        <CircleAlert :size="18" /><span>{{ errorMessage }}</span>
+      </section>
+
       <template v-if="activeTab === 'providers'">
       <div class="section-header">
         <div class="section-controls">
@@ -49,10 +53,6 @@
           </button>
         </div>
       </div>
-
-      <section v-if="errorMessage" class="error-banner">
-        <CircleAlert :size="18" /><span>{{ errorMessage }}</span>
-      </section>
 
       <div class="automation-list">
         <article
@@ -102,25 +102,35 @@
 
       <template v-else-if="activeTab === 'models'">
         <section class="opencode-model-settings">
-          <div class="model-settings-block">
-            <div class="model-settings-field">
-              <span>主模型</span>
-              <select v-model="defaultModelDraft" class="form-input model-settings-select" @change="saveDefaultModel">
-                <option value="">未设置</option>
-                <option v-for="option in modelOptions" :key="`ms-m-${option.value}`" :value="option.value">{{ option.label }}</option>
-              </select>
-              <span class="field-hint">OpenCode 默认使用的主模型，格式为 供应商/模型：主模型用于语音、文本等重型任务。</span>
-            </div>
-            <div class="model-settings-field">
-              <span>小模型</span>
-              <select v-model="smallModelDraft" class="form-input model-settings-select" @change="saveSmallModel">
-                <option value="">未设置</option>
-                <option v-for="option in modelOptions" :key="`ms-s-${option.value}`" :value="option.value">{{ option.label }}</option>
-              </select>
-              <span class="field-hint">OpenCode 用于标题等轻量任务的小模型，格式为 provider/model。</span>
+          <div class="model-settings-card">
+            <header class="model-settings-card-header">
+              <div class="model-settings-card-title"><Layers :size="19" /><strong>模型配置</strong></div>
+              <button class="ghost-icon" type="button" aria-label="刷新模型配置" data-tooltip="刷新" :class="{ rotating: busy }" :disabled="busy" @click="refresh">
+                <RefreshCw :size="16" />
+              </button>
+            </header>
+            <div class="model-settings-card-content">
+              <div class="model-settings-field">
+                <div class="model-settings-label-row"><span>主模型</span></div>
+                <select v-model="defaultModelDraft" class="form-input model-settings-select" :disabled="busy" @change="saveDefaultModel">
+                  <option value="">未设置</option>
+                  <optgroup v-for="group in modelOptionGroups" :key="`ms-m-g-${group.label}`" :label="group.label">
+                    <option v-for="option in group.options" :key="`ms-m-${option.value}`" :value="option.value">{{ optionLabel(option, defaultModelDraft) }}</option>
+                  </optgroup>
+                </select>
+              </div>
+              <div class="model-settings-field">
+                <div class="model-settings-label-row"><span>小模型</span><small>用于轻量级任务，如标题生成</small></div>
+                <select v-model="smallModelDraft" class="form-input model-settings-select" :disabled="busy" @change="saveSmallModel">
+                  <option value="">未设置</option>
+                  <optgroup v-for="group in modelOptionGroups" :key="`ms-s-g-${group.label}`" :label="group.label">
+                    <option v-for="option in group.options" :key="`ms-s-${option.value}`" :value="option.value">{{ optionLabel(option, smallModelDraft) }}</option>
+                  </optgroup>
+                </select>
+              </div>
+              <p v-if="modelOptions.length === 0" class="model-settings-empty">还没有可用的供应商模型，请先在「供应商」页添加供应商并配置模型。</p>
             </div>
           </div>
-          <p v-if="modelOptions.length === 0" class="model-settings-empty">还没有可用的供应商模型，请先在「供应商」页添加供应商并配置模型。</p>
         </section>
       </template>
     </main>
@@ -245,16 +255,35 @@ const usageLoggingBusy = ref(false)
 const defaultModelDraft = ref('')
 const smallModelDraft = ref('')
 
-const modelOptions = computed(() => {
-  const options: Array<{ value: string; label: string }> = []
-  for (const provider of snapshot.value.providers) {
-    const providerLabel = provider.name || provider.provider_key
-    for (const model of provider.models) {
-      options.push({ value: `${provider.provider_key}/${model.id}`, label: `${providerLabel} / ${model.name || model.id}` })
-    }
+type ModelOption = { value: string; label: string }
+type ModelOptionGroup = { label: string; options: ModelOption[] }
+
+const modelOptionGroups = computed<ModelOptionGroup[]>(() => {
+  const groups: ModelOptionGroup[] = snapshot.value.providers
+    .filter((provider) => provider.models.length > 0)
+    .map((provider) => ({
+      label: provider.name || provider.provider_key,
+      options: provider.models.map((model) => ({
+        value: `${provider.provider_key}/${model.id}`,
+        label: model.name && model.name !== model.id ? `${model.name} (${model.id})` : model.id,
+      })),
+    }))
+  const knownValues = new Set(groups.flatMap((group) => group.options.map((option) => option.value)))
+  const unavailable = [defaultModelDraft.value, smallModelDraft.value]
+    .filter((value, index, values) => value && values.indexOf(value) === index && !knownValues.has(value))
+  if (unavailable.length > 0) {
+    groups.unshift({
+      label: '当前配置（供应商或模型已不存在）',
+      options: unavailable.map((value) => ({ value, label: value })),
+    })
   }
-  return options
+  return groups
 })
+
+const modelOptions = computed(() => {
+  return modelOptionGroups.value.flatMap((group) => group.options)
+})
+const optionLabel = (option: ModelOption, selected: string) => option.value === selected ? `${option.label} ✓` : option.label
 const usageLoggingEnabled = computed(() => snapshot.value.usage_logging?.enabled ?? false)
 const usageToggleTooltip = computed(() => {
   const state = usageLoggingEnabled.value ? '开' : '关'
@@ -545,7 +574,7 @@ const handleDuplicate = async (provider: OpenCodeProviderInfo) => {
       models: provider.models.map((model) => ({
         id: model.id, name: model.name, context_limit: model.context_limit, input_limit: model.input_limit,
         output_limit: model.output_limit, reasoning: model.reasoning, tool_call: model.tool_call,
-        attachment: model.attachment, modalities: model.modalities, variants: model.variants, extra_json: '',
+        attachment: model.attachment, temperature: model.temperature, modalities: model.modalities, variants: model.variants, extra_json: '',
         options_json: model.options_json,
       })),
     })
@@ -564,7 +593,8 @@ const toggleApplied = async (provider: OpenCodeProviderInfo) => {
       applied: !provider.applied,
       models: provider.models.map((m) => ({
         id: m.id, name: m.name, context_limit: m.context_limit, input_limit: m.input_limit, output_limit: m.output_limit,
-        reasoning: m.reasoning, tool_call: m.tool_call, attachment: m.attachment, modalities: m.modalities, variants: m.variants, extra_json: '',
+        reasoning: m.reasoning, tool_call: m.tool_call, temperature: m.temperature, attachment: m.attachment,
+        modalities: m.modalities, variants: m.variants, extra_json: '',
         options_json: m.options_json,
       })),
     })
@@ -699,25 +729,39 @@ onMounted(async () => { await refresh() })
 
 /* ========== 模型配置 Tab ========== */
 .opencode-model-settings {
-  display: grid;
-  gap: 14px;
-  padding: 4px 0;
-  max-width: 900px;
+  width: 100%;
+  padding: 0;
 }
-.model-settings-block {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
+.model-settings-card {
+  overflow: hidden;
+  border: 1px solid var(--mac-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mac-surface) 94%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--mac-text) 7%, transparent);
 }
+.model-settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 0 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--mac-border) 80%, transparent);
+}
+.model-settings-card-title { display: inline-flex; align-items: center; gap: 9px; color: var(--mac-text); }
+.model-settings-card-title strong { font-size: 16px; font-weight: 700; }
+.model-settings-card-content { display: grid; gap: 16px; padding: 22px 24px 24px; }
+.model-settings-label-row { display: flex; align-items: baseline; gap: 8px; min-height: 18px; }
+.model-settings-label-row span { font-size: 13px; font-weight: 650; color: var(--mac-text); }
+.model-settings-label-row small { color: var(--mac-text-secondary); font-size: 12px; }
 .model-settings-field { display: grid; gap: 6px; min-width: 0; }
-.model-settings-field > span { font-size: 12px; font-weight: 600; color: var(--mac-text-secondary); }
-.model-settings-select { min-height: 40px; padding: 8px 12px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); color: var(--mac-text); font: inherit; font-size: 13px; cursor: pointer; width: 100%; }
+.model-settings-select { min-height: 42px; padding: 8px 12px; border: 1px solid var(--mac-border); border-radius: 9px; background: var(--mac-surface-strong); color: var(--mac-text); font: inherit; font-size: 13px; cursor: pointer; width: 100%; }
 .model-settings-select:focus { outline: none; border-color: var(--platform-color, #5c7580); box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, #5c7580) 25%, transparent); }
-.model-settings-field .field-hint { line-height: 1.5; }
+.model-settings-select:disabled { cursor: wait; opacity: .68; }
 .model-settings-empty { margin: 0; padding: 14px; border: 1px dashed var(--mac-border); border-radius: 8px; color: var(--mac-text-secondary); font-size: 13px; }
 @media (max-width: 640px) {
-  .model-settings-block { grid-template-columns: 1fr; }
+  .model-settings-card-header { padding-inline: 16px; }
+  .model-settings-card-content { padding: 18px 16px 20px; }
 }
 
 /* ========== Claude Code 风格 section-header（控件最右侧） ========== */

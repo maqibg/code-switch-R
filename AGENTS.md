@@ -178,7 +178,36 @@ wails3 task package
 
 ### Windows 桌面开发实例
 
-需要与本机已安装的正式版并行测试时，开发实例固定使用 `code-switch` 进程名、独立单实例 ID 和 `18101` Relay 端口。先完成前端构建和 Windows amd64 Go 构建，将程序输出为 `bin\dev\code-switch.exe`，再设置以下环境变量启动：
+需要与本机已安装的正式版并行测试时，开发实例固定使用 `code-switch` 进程名、独立单实例 ID（`com.rogers-f.code-switch-r.dev`）和 `18101` Relay 端口，二进制输出到 `bin\dev\code-switch.exe`。完整启动流程：
+
+**第 1 步：前端生产构建。** `main.go` 会嵌入 `frontend/dist`，必须先生成 dist 再编 Go，两步串行不能并行：
+
+```powershell
+Set-Location frontend
+npm ci
+npm run build
+Set-Location ..
+```
+
+**第 2 步：Windows amd64 Go 构建。** 当前环境必须显式设置 `GOOS=windows`、`GOARCH=amd64` 和 `CGO_ENABLED=0`，不要依赖默认架构：
+
+```powershell
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
+$env:CGO_ENABLED = "0"
+go build -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o bin/dev/code-switch.exe .
+```
+
+**第 3 步：停止旧实例。** 重启时只停止路径为本仓库 `bin\dev\code-switch.exe` 的进程，不得终止用户安装的正式版或其他同名进程：
+
+```powershell
+$p = Get-CimInstance Win32_Process -Filter "Name='code-switch.exe'"
+foreach ($proc in $p) {
+  if ($proc.ExecutablePath -like '*code-switch-R*bin*dev*') { Stop-Process -Id $proc.ProcessId -Force -Confirm:$false }
+}
+```
+
+**第 4 步：设置环境变量并启动。** 启动可见桌面窗口的 GUI 进程必须申请沙盒外执行，并为该调用显式指定 `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`（当前 Windows 用户会话已验证的 GUI 启动路径）；普通构建、测试和文本处理仍优先使用 PowerShell 7：
 
 ```powershell
 $ErrorActionPreference = 'Stop'
@@ -189,14 +218,12 @@ Start-Process -FilePath 'D:\Code\codeSpace\code-switch-R\bin\dev\code-switch.exe
     -WorkingDirectory 'D:\Code\codeSpace\code-switch-R\bin\dev'
 ```
 
-代码代理启动可见桌面窗口时必须申请沙盒外执行，并为该调用显式指定 `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`；这是当前 Windows 用户会话中已验证的 GUI 启动路径。普通构建、测试和文本处理仍优先使用 PowerShell 7。启动命令返回后不能只看退出码，必须同时确认进程路径和 Relay 监听：
+**第 5 步：核对 PID 与端口。** 启动命令返回后不能只看退出码，必须同时确认进程路径和 Relay 监听，两条结果中的 PID 必须一致：
 
 ```powershell
 Get-Process -Name 'code-switch' | Select-Object Id, ProcessName, Path, StartTime
 Get-NetTCPConnection -State Listen -LocalPort 18101 | Select-Object LocalAddress, LocalPort, OwningProcess
 ```
-
-两条结果中的 PID 必须一致。重启时只停止路径为本仓库 `bin\dev\code-switch.exe` 的进程，不得终止用户安装的正式版或其他同名进程。
 
 ### 桌面联调与发布前构建
 

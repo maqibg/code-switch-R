@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -160,9 +161,10 @@ func TestOpenCodeModelReferenceRequiresExistingProviderModel(t *testing.T) {
 func TestOpenCodeModelRoundTripPreservesVariantsModalitiesAndUnknownFields(t *testing.T) {
 	input := OpenCodeModelInput{
 		ID: "flash", Name: "Flash", ContextLimit: 100, OutputLimit: 20,
-		Reasoning: true, ToolCall: true, Modalities: []string{"text", "image"},
-		Variants:  map[string]any{"high": map[string]any{"reasoningEffort": "high"}},
-		ExtraJSON: `{"futureEdited":"yes"}`,
+		Reasoning: true, ToolCall: true, Temperature: true,
+		Modalities: &OpenCodeModelModalities{Input: []string{"text", "image"}, Output: []string{"text"}},
+		Variants:   map[string]any{"high": map[string]any{"reasoningEffort": "high"}},
+		ExtraJSON:  `{"futureEdited":"yes"}`,
 	}
 	raw, err := buildModelRaw(input, json.RawMessage(`{"future":true,"variants":{"old":{}},"modalities":["text"]}`))
 	if err != nil {
@@ -174,6 +176,39 @@ func TestOpenCodeModelRoundTripPreservesVariantsModalitiesAndUnknownFields(t *te
 	}
 	if string(result["future"]) != "true" || string(result["futureEdited"]) != `"yes"` || !strings.Contains(string(result["variants"]), "reasoningEffort") || !strings.Contains(string(result["modalities"]), "image") {
 		t.Fatalf("模型字段未按预期保留/更新: %s", raw)
+	}
+}
+
+func TestOpenCodeModelRoundTripRemovesClearedLimits(t *testing.T) {
+	raw, err := buildModelRaw(OpenCodeModelInput{ID: "flash"}, json.RawMessage(`{
+"limit":{"context":100,"input":20,"output":10},
+"name":"old"
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result["limit"]; exists {
+		t.Fatalf("清空模型限制后仍保留 limit: %s", raw)
+	}
+}
+
+func TestOpenCodeModelInfoNormalizesModalitiesShapes(t *testing.T) {
+	structured := openCodeModelInfo("structured", json.RawMessage(`{"modalities":{"input":["text","image"],"output":["text"]}}`))
+	if !reflect.DeepEqual(structured.Modalities, OpenCodeModelModalities{
+		Input: []string{"text", "image"}, Output: []string{"text"},
+	}) {
+		t.Fatalf("结构化 modalities 解析错误: %#v", structured.Modalities)
+	}
+
+	legacy := openCodeModelInfo("legacy", json.RawMessage(`{"modalities":["text"]}`))
+	if !reflect.DeepEqual(legacy.Modalities, OpenCodeModelModalities{
+		Input: []string{"text"}, Output: []string{},
+	}) {
+		t.Fatalf("旧数组 modalities 兼容解析错误: %#v", legacy.Modalities)
 	}
 }
 

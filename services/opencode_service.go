@@ -1111,17 +1111,14 @@ func openCodeProviderInfo(provider Provider, managed *openCodeManagedState) Open
 func openCodeModelInfo(id string, raw json.RawMessage) OpenCodeModelInfo {
 	model, _ := providerRawMap(raw)
 	limit, _ := providerRawMap(model["limit"])
-	known := map[string]struct{}{"name": {}, "limit": {}, "modalities": {}, "attachment": {}, "reasoning": {}, "tool_call": {}, "variants": {}, "options": {}}
+	known := map[string]struct{}{"name": {}, "limit": {}, "modalities": {}, "attachment": {}, "reasoning": {}, "tool_call": {}, "temperature": {}, "variants": {}, "options": {}}
 	extra := 0
 	for key := range model {
 		if _, exists := known[key]; !exists {
 			extra++
 		}
 	}
-	var modalities []string
-	if len(model["modalities"]) > 0 {
-		_ = json.Unmarshal(model["modalities"], &modalities)
-	}
+	modalities := parseOpenCodeModelModalities(model["modalities"])
 	var variants map[string]any
 	if len(model["variants"]) > 0 {
 		_ = json.Unmarshal(model["variants"], &variants)
@@ -1134,7 +1131,7 @@ func openCodeModelInfo(id string, raw json.RawMessage) OpenCodeModelInfo {
 		ID: id, Name: rawString(model["name"]),
 		ContextLimit: rawInt64(limit["context"]), InputLimit: rawInt64(limit["input"]),
 		OutputLimit: rawInt64(limit["output"]), Reasoning: rawBool(model["reasoning"]),
-		ToolCall:        rawBool(model["tool_call"]) || rawBool(model["toolCall"]),
+		ToolCall: rawBool(model["tool_call"]) || rawBool(model["toolCall"]), Temperature: rawBool(model["temperature"]),
 		Attachment:      rawBool(model["attachment"]),
 		HasVariants:     len(model["variants"]) > 0,
 		ExtraFieldCount: extra,
@@ -1142,6 +1139,31 @@ func openCodeModelInfo(id string, raw json.RawMessage) OpenCodeModelInfo {
 		Variants:        variants,
 		OptionsJSON:     optionsJSON,
 	}
+}
+
+func parseOpenCodeModelModalities(raw json.RawMessage) OpenCodeModelModalities {
+	empty := OpenCodeModelModalities{Input: []string{}, Output: []string{}}
+	if len(raw) == 0 {
+		return empty
+	}
+	var modalities OpenCodeModelModalities
+	if json.Unmarshal(raw, &modalities) == nil && (modalities.Input != nil || modalities.Output != nil) {
+		if modalities.Input == nil {
+			modalities.Input = []string{}
+		}
+		if modalities.Output == nil {
+			modalities.Output = []string{}
+		}
+		return modalities
+	}
+	var legacy []string
+	if json.Unmarshal(raw, &legacy) == nil {
+		if legacy == nil {
+			legacy = []string{}
+		}
+		return OpenCodeModelModalities{Input: legacy, Output: []string{}}
+	}
+	return empty
 }
 
 func rawInt64(raw json.RawMessage) int64 {

@@ -1,23 +1,40 @@
 <template>
-  <div class="model-form">
-    <div v-if="showPresets" class="preset-strip">
-      <button
-        v-for="preset in presetModels"
-        :key="preset.id"
-        type="button"
-        class="preset-chip"
-        :title="preset.name"
-        @click="applyPreset(preset)"
-      >
-        {{ preset.name }}
-      </button>
-    </div>
-
-    <form class="form-grid" @submit.prevent="handleSubmit">
-      <label v-if="showId" class="form-item">
-        <span class="form-label">{{ t('components.opencode.model.id') }}</span>
-        <input v-model="draft.id" class="form-input" :disabled="isEdit" :placeholder="t('components.opencode.model.contextLimitPlaceholder')" required />
-      </label>
+  <div class="model-inline-editor">
+    <div class="form-grid">
+      <div class="form-item model-id-item">
+        <div class="form-label-row model-id-label-row">
+          <span class="form-label">{{ t('components.opencode.model.id') }}</span>
+          <button
+            v-if="showPresets"
+            type="button"
+            class="preset-toggle"
+            :aria-expanded="presetsExpanded"
+            @click="presetsExpanded = !presetsExpanded"
+          >
+            <ChevronRight :size="14" :class="{ rotated: presetsExpanded }" />
+            {{ t('components.opencode.model.selectPreset') }}
+          </button>
+        </div>
+        <input v-model="draft.id" class="form-input" :disabled="isEdit" :placeholder="t('components.opencode.model.idPlaceholder')" required />
+        <span v-if="duplicateError" class="form-error">{{ duplicateError }}</span>
+        <div v-if="presetsExpanded && showPresets" class="preset-groups">
+          <div v-for="group in presetGroups" :key="group.label" class="preset-group">
+            <span v-if="group.label" class="preset-group-label">{{ group.label }}</span>
+            <div class="preset-strip">
+              <button
+                v-for="preset in group.models"
+                :key="preset.id"
+                type="button"
+                class="preset-chip"
+                :title="preset.name"
+                @click="applyPreset(preset)"
+              >
+                {{ preset.name }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <label class="form-item">
         <span class="form-label">{{ t('components.opencode.model.name') }}</span>
         <input v-model="draft.name" class="form-input" :placeholder="t('components.opencode.model.nameOptional')" />
@@ -33,6 +50,7 @@
           <input v-model.number="draft.outputLimit" class="form-input number-input" type="number" min="0" :placeholder="t('components.opencode.model.outputLimitPlaceholder')" />
         </label>
       </div>
+      <span v-if="limitPairError" class="form-error">{{ limitPairError }}</span>
 
       <div class="form-item">
         <span class="form-label">{{ t('components.opencode.model.capabilities') }}</span>
@@ -88,17 +106,19 @@
 
       <footer class="form-actions">
         <BaseButton variant="outline" type="button" @click="$emit('close')">{{ t('common.cancel') }}</BaseButton>
-        <BaseButton type="submit" :disabled="busy || saveBlocked">{{ t('common.save') }}</BaseButton>
+        <BaseButton type="button" :disabled="busy || saveBlocked" @click="handleSubmit">{{ t('common.save') }}</BaseButton>
       </footer>
-    </form>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ChevronRight } from 'lucide-vue-next'
 import BaseButton from './BaseButton.vue'
 import type { OpenCodeModelInput } from '../../../bindings/codeswitch/services/models'
+import { OpenCodeModelModalities } from '../../../bindings/codeswitch/services/models'
 
 interface PresetOption {
   id: string
@@ -112,6 +132,7 @@ interface PresetOption {
   temperature?: boolean
   variants?: Record<string, unknown>
   options?: Record<string, unknown>
+  group?: string
 }
 
 const props = withDefaults(
@@ -149,6 +170,8 @@ const draft = reactive({
 const busy = ref(false)
 const variantsError = ref('')
 const optionsError = ref('')
+const duplicateError = ref('')
+const presetsExpanded = ref(false)
 
 const { t } = useI18n()
 
@@ -160,8 +183,18 @@ const MODALITY_OPTIONS = [
   { value: 'audio', label: 'Audio' },
 ]
 
-const showId = computed(() => !props.isEdit)
-const showPresets = computed(() => !props.isEdit && props.presetModels.length > 0)
+const showPresets = computed(() => props.presetModels.length > 0)
+const presetGroups = computed(() => {
+  const groups = new Map<string, PresetOption[]>()
+  for (const preset of props.presetModels) {
+    const label = preset.group || ''
+    const models = groups.get(label) || []
+    models.push(preset)
+    groups.set(label, models)
+  }
+  return [...groups.entries()].map(([label, models]) => ({ label, models }))
+})
+const limitPairError = ref('')
 const saveBlocked = computed(() => Boolean(variantsError.value || optionsError.value))
 
 const resetDraft = () => {
@@ -174,9 +207,12 @@ const resetDraft = () => {
   })
   variantsError.value = ''
   optionsError.value = ''
+  limitPairError.value = ''
+  duplicateError.value = ''
+  presetsExpanded.value = false
 }
 
-// 从现有模型回填表单；modalities 是扁平的 string 数组，回显时全部放进输入类型。
+// 从现有模型回填表单；输入和输出内容类型按 OpenCode 的对象结构分别回显。
 const fillFromInput = (input: OpenCodeModelInput) => {
   Object.assign(draft, {
     id: input.id || '',
@@ -186,13 +222,17 @@ const fillFromInput = (input: OpenCodeModelInput) => {
     reasoning: input.reasoning,
     toolCall: input.tool_call,
     attachment: input.attachment,
-    inputModalities: input.modalities ? [...input.modalities] : [],
-    outputModalities: [],
+    temperature: input.temperature,
+    inputModalities: input.modalities?.input ? [...input.modalities.input] : [],
+    outputModalities: input.modalities?.output ? [...input.modalities.output] : [],
     variantsJSON: input.variants && Object.keys(input.variants).length > 0 ? JSON.stringify(input.variants, null, 2) : '',
-    optionsJSON: '',
+    optionsJSON: input.options_json || '',
   })
   variantsError.value = ''
   optionsError.value = ''
+  limitPairError.value = ''
+  duplicateError.value = ''
+  presetsExpanded.value = false
 }
 
 watch(
@@ -202,6 +242,7 @@ watch(
     if (props.initialInput) fillFromInput(props.initialInput)
     else resetDraft()
   },
+  { immediate: true },
 )
 
 const parseJSONObject = (value: string): Record<string, unknown> | null => {
@@ -228,6 +269,12 @@ const validateOptions = () => {
   else optionsError.value = ''
 }
 
+const validateLimitPair = () => {
+  const hasContext = Number(draft.contextLimit) > 0
+  const hasOutput = Number(draft.outputLimit) > 0
+  limitPairError.value = hasContext === hasOutput ? '' : t('components.opencode.model.limitsBothRequired')
+}
+
 const applyPreset = (preset: PresetOption) => {
   if (!props.isEdit) {
     draft.id = preset.id
@@ -239,10 +286,10 @@ const applyPreset = (preset: PresetOption) => {
   draft.outputLimit = preset.outputLimit
   draft.inputModalities = preset.modalities?.input ? [...preset.modalities.input] : []
   draft.outputModalities = preset.modalities?.output ? [...preset.modalities.output] : []
-  if (preset.reasoning !== undefined) draft.reasoning = preset.reasoning
-  if (preset.attachment !== undefined) draft.attachment = preset.attachment
-  if (preset.tool_call !== undefined) draft.toolCall = preset.tool_call
-  if (preset.temperature !== undefined) draft.temperature = preset.temperature
+  draft.reasoning = preset.reasoning ?? true
+  draft.attachment = preset.attachment ?? false
+  draft.toolCall = preset.tool_call ?? true
+  draft.temperature = preset.temperature ?? true
   draft.variantsJSON = preset.variants && Object.keys(preset.variants).length > 0
     ? JSON.stringify(preset.variants, null, 2)
     : ''
@@ -251,31 +298,46 @@ const applyPreset = (preset: PresetOption) => {
     : ''
   variantsError.value = ''
   optionsError.value = ''
+  limitPairError.value = ''
+  duplicateError.value = ''
+  presetsExpanded.value = false
 }
 
 const handleSubmit = () => {
-  if (busy.value || saveBlocked.value) return
+  if (busy.value) return
+  duplicateError.value = ''
+  validateLimitPair()
   validateVariants()
   validateOptions()
-  if (variantsError.value || optionsError.value) return
+  if (limitPairError.value || variantsError.value || optionsError.value) return
   const id = draft.id.trim()
   if (!id) return
+  if (!props.isEdit && props.existingModelIds.some((existingId) => existingId.trim() === id)) {
+    duplicateError.value = t('components.opencode.model.idExists')
+    return
+  }
   const variants = parseJSONObject(draft.variantsJSON) || undefined
   const options = parseJSONObject(draft.optionsJSON) || undefined
-  const modalities = [...draft.inputModalities, ...draft.outputModalities].filter((value, index, list) => list.indexOf(value) === index)
+  const modalities = new OpenCodeModelModalities({
+    input: [...draft.inputModalities],
+    output: [...draft.outputModalities],
+  })
+  const extra = parseJSONObject(props.initialInput?.extra_json || '') || {}
+  extra.temperature = draft.temperature
   busy.value = true
   emit('save', {
     id,
     name: draft.name.trim(),
     context_limit: draft.contextLimit || 0,
-    input_limit: 0,
+    input_limit: props.initialInput?.input_limit ?? 0,
     output_limit: draft.outputLimit || 0,
     reasoning: draft.reasoning,
     tool_call: draft.toolCall,
+    temperature: draft.temperature,
     attachment: draft.attachment,
     modalities,
     variants: variants || {},
-    extra_json: '',
+    extra_json: JSON.stringify(extra),
     options_json: options ? JSON.stringify(options) : '',
   })
   busy.value = false
@@ -283,7 +345,15 @@ const handleSubmit = () => {
 </script>
 
 <style scoped>
-.model-form { display: grid; gap: 14px; min-width: 0; }
+.model-inline-editor { display: grid; gap: 14px; min-width: 0; }
+.model-id-label-row { justify-content: space-between; }
+.preset-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: transparent; color: var(--mac-text-secondary); font-size: 12px; cursor: pointer; }
+.preset-toggle:hover { color: var(--mac-text); }
+.preset-toggle svg { transition: transform .18s ease; }
+.preset-toggle svg.rotated { transform: rotate(90deg); }
+.preset-groups { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--mac-border); border-radius: 8px; background: color-mix(in srgb, var(--mac-surface) 70%, transparent); }
+.preset-group { display: grid; gap: 6px; min-width: 0; }
+.preset-group-label { color: var(--mac-text-secondary); font-size: 11px; }
 .preset-strip { display: flex; flex-wrap: wrap; gap: 6px; }
 .preset-chip {
   min-height: 26px;
