@@ -24,9 +24,29 @@
         </label>
         <label class="form-field">
           <span>接口格式</span>
-          <select v-model="draft.npm" class="form-input">
-            <option v-for="option in npmPackageOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
+          <Listbox v-model="draft.npm" v-slot="{ open }">
+            <div class="level-select provider-type-select">
+              <ListboxButton class="level-select-button provider-type-select-button">
+                <span class="level-label">
+                  {{ npmPackageOptions.find((option) => option.value === draft.npm)?.label || draft.npm }}
+                </span>
+                <ChevronDown :size="16" :class="{ 'provider-type-chevron-open': open }" aria-hidden="true" />
+              </ListboxButton>
+              <ListboxOptions v-if="open" class="level-select-options provider-type-select-options">
+                <ListboxOption
+                  v-for="option in npmPackageOptions"
+                  :key="option.value"
+                  :value="option.value"
+                  v-slot="{ active, selected }"
+                >
+                  <div :class="['level-option provider-type-option', { active, selected }]">
+                    <span class="level-name">{{ option.label }}</span>
+                    <span class="level-desc provider-type-value">{{ option.value }}</span>
+                  </div>
+                </ListboxOption>
+              </ListboxOptions>
+            </div>
+          </Listbox>
           <span class="field-hint">选择供应商实际提供的接口格式；客户端接口由接口格式自动确定为 {{ clientProtocolLabel }}。</span>
         </label>
         <label class="form-field">
@@ -96,6 +116,23 @@
           <div class="models-toolbar">
             <div><span class="opencode-editor-title">模型配置</span><span class="field-hint">配置可用模型。模型 ID 是接口使用的标识，显示名称只用于界面展示。</span></div>
             <div class="models-toolbar-actions">
+              <template v-if="batchDeleteMode">
+                <button
+                  type="button"
+                  class="btn btn-outline btn-sm inline-action batch-delete-action"
+                  :disabled="selectedModelIndexes.size === 0"
+                  title="删除选中模型"
+                  @click="removeSelectedModels"
+                >
+                  <Trash2 :size="14" />删除选中（{{ selectedModelIndexes.size }}）
+                </button>
+                <button type="button" class="btn btn-outline btn-sm inline-action" title="取消批量删除" @click="cancelBatchDelete">
+                  <X :size="14" />取消
+                </button>
+              </template>
+              <button v-else type="button" class="btn btn-outline btn-sm inline-action batch-delete-action" title="批量删除模型" @click="startBatchDelete">
+                <Trash2 :size="14" />批量删除
+              </button>
               <button type="button" class="btn btn-outline btn-sm inline-action" @click="openFetchModelsModal">
                 <Download :size="14" />获取模型
               </button>
@@ -108,8 +145,8 @@
               <div class="model-entry-summary">
                 <span class="model-expand-button-placeholder" aria-hidden="true"><Plus :size="15" /></span>
                 <div class="model-entry-main">
-                  <span class="model-entry-name">{{ editingModelSource ? '复制模型' : '添加模型' }}</span>
-                  <span class="model-entry-id">{{ editingModelSource?.id || '填写模型 ID' }}</span>
+                  <span class="model-entry-name">添加模型</span>
+                  <span class="model-entry-id">填写模型 ID</span>
                 </div>
                 <button type="button" class="icon-button" title="取消编辑" @click="closeModelEditor"><X :size="15" /></button>
               </div>
@@ -119,7 +156,6 @@
                 :provider-npm="draft.npm"
                 :preset-models="modelPresets"
                 :existing-model-ids="draft.models.map((m) => m.id.trim()).filter(Boolean)"
-                :initial-input="editingModelSource"
                 @close="closeModelEditor"
                 @save="saveModelFromModal"
               />
@@ -127,11 +163,21 @@
 
             <div v-for="(model, index) in draft.models" :key="`${model.id}-${index}`" class="model-entry" :class="{ 'model-entry-expanded': expandedModelTarget === index }">
               <div class="model-entry-summary">
+                <input
+                  v-if="batchDeleteMode"
+                  class="model-select-checkbox"
+                  type="checkbox"
+                  :checked="selectedModelIndexes.has(index)"
+                  :aria-label="`选择模型 ${model.name || model.id}`"
+                  @click.stop
+                  @change="toggleModelSelection(index)"
+                />
                 <button
                   type="button"
                   class="model-expand-button"
                   :aria-expanded="expandedModelTarget === index"
                   :title="expandedModelTarget === index ? '收起编辑' : '展开编辑'"
+                  :disabled="batchDeleteMode"
                   @click="toggleModelEditor(index)"
                 >
                   <ChevronRight :size="15" :class="{ rotated: expandedModelTarget === index }" />
@@ -144,8 +190,24 @@
                   <span class="model-entry-limits">{{ modelEntryLimits(model) }}</span>
                 </div>
                 <div class="model-entry-actions">
-                  <button type="button" class="icon-button" title="复制模型" @click="openCopyModelModal(index)"><Copy :size="15" /></button>
-                  <button type="button" class="icon-button danger-icon" title="删除模型" @click="removeModel(index)"><Trash2 :size="15" /></button>
+                  <template v-if="!batchDeleteMode">
+                    <button
+                      type="button"
+                      class="model-primary-button"
+                      :class="{ active: isDefaultModel(model) }"
+                      :disabled="defaultModelBusy || isDefaultModel(model)"
+                      :aria-pressed="isDefaultModel(model)"
+                      :aria-label="isDefaultModel(model) ? '当前主模型' : '设为主模型'"
+                      :title="isDefaultModel(model) ? '当前主模型' : '设为主模型'"
+                      @click.stop="setAsDefaultModel(model)"
+                    >
+                      <Check v-if="isDefaultModel(model)" :size="14" />
+                      <Star v-else :size="14" />
+                      <span>{{ isDefaultModel(model) ? '主模型' : '设为主模型' }}</span>
+                    </button>
+                    <button type="button" class="icon-button" title="修改模型" @click.stop="openEditModelModal(index)"><Pencil :size="15" /></button>
+                    <button type="button" class="icon-button danger-icon" title="删除模型" @click="removeModel(index)"><Trash2 :size="15" /></button>
+                  </template>
                 </div>
               </div>
               <ModelFormModal
@@ -192,7 +254,8 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { ChevronRight, Copy, Download, Plus, Trash2, X } from 'lucide-vue-next'
+import { Check, ChevronDown, ChevronRight, Download, Pencil, Plus, Star, Trash2, X } from 'lucide-vue-next'
+import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/vue'
 import { createOpenCodeModelInput } from '../../services/opencode'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
@@ -273,11 +336,14 @@ const props = defineProps<{
   open: boolean
   editing: boolean
   provider: OpenCodeProviderInfo | null
+  defaultModel?: string
+  defaultModelBusy?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'save', input: OpenCodeProviderInput): void
+  (e: 'set-default-model', model: string): void
 }>()
 
 const activeTab = ref<ModalTab>('basic')
@@ -289,8 +355,9 @@ const configJson = ref('')
 const configJsonError = ref('')
 const expandedModelTarget = ref<ModelEditorTarget | null>(null)
 const editingModelIndex = ref<number | null>(null)
-const editingModelSource = ref<OpenCodeModelInput | null>(null)
 const fetchModelsModalOpen = ref(false)
+const batchDeleteMode = ref(false)
+const selectedModelIndexes = ref<Set<number>>(new Set())
 let nextEditorEntryId = 1
 let syncingFromConfigJson = false
 
@@ -330,6 +397,7 @@ const defaultDraft = (): OpenCodeProviderInput => new OpenCodeProviderInput({
 
 const draft = reactive<OpenCodeProviderInput>(defaultDraft())
 const clientProtocol = computed(() => clientProtocolByNpm[draft.npm] || draft.client_protocol || 'openai_chat')
+const defaultModelBusy = computed(() => props.defaultModelBusy ?? false)
 const clientProtocolLabel = computed(() => clientProtocolLabelByNpm[draft.npm] || clientProtocol.value)
 const fetchHeaders = computed<Record<string, string>>(() => {
   const headers: Record<string, string> = {}
@@ -364,6 +432,39 @@ const removeModel = (index: number) => {
   syncConfigJsonFromDraft()
 }
 
+const modelReference = (model: OpenCodeModelInput) => `${draft.provider_key.trim()}/${model.id.trim()}`
+const isDefaultModel = (model: OpenCodeModelInput) => Boolean(model.id.trim() && modelReference(model) === (props.defaultModel || '').trim())
+const setAsDefaultModel = (model: OpenCodeModelInput) => {
+  const reference = modelReference(model)
+  if (!model.id.trim() || !draft.provider_key.trim() || defaultModelBusy.value || isDefaultModel(model)) return
+  emit('set-default-model', reference)
+}
+
+const startBatchDelete = () => {
+  batchDeleteMode.value = true
+  selectedModelIndexes.value = new Set()
+  closeModelEditor()
+}
+const cancelBatchDelete = () => {
+  batchDeleteMode.value = false
+  selectedModelIndexes.value = new Set()
+}
+const toggleModelSelection = (index: number) => {
+  const next = new Set(selectedModelIndexes.value)
+  if (next.has(index)) next.delete(index)
+  else next.add(index)
+  selectedModelIndexes.value = next
+}
+const removeSelectedModels = () => {
+  const indexes = [...selectedModelIndexes.value].sort((a, b) => a - b)
+  if (indexes.length === 0) return
+  if (!window.confirm(`确认删除选中的 ${indexes.length} 个模型？`)) return
+  const selected = new Set(indexes)
+  draft.models = draft.models.filter((_, index) => !selected.has(index))
+  syncConfigJsonFromDraft()
+  cancelBatchDelete()
+}
+
 const modelEntryLimits = (model: OpenCodeModelInput) => {
   const parts: string[] = []
   if (model.context_limit > 0) parts.push(`上下文 ${model.context_limit.toLocaleString()}`)
@@ -373,38 +474,22 @@ const modelEntryLimits = (model: OpenCodeModelInput) => {
 
 const openAddModelModal = () => {
   editingModelIndex.value = null
-  editingModelSource.value = null
   expandedModelTarget.value = 'new'
 }
 
 const openEditModelModal = (index: number) => {
+  if (batchDeleteMode.value) return
   if (!draft.models[index]) return
   editingModelIndex.value = index
-  editingModelSource.value = null
   expandedModelTarget.value = index
-}
-
-const openCopyModelModal = (index: number) => {
-  editingModelIndex.value = null
-  const source = draft.models[index]
-  if (!source) return
-  editingModelSource.value = createOpenCodeModelInput({
-    id: `${source.id}_copy`,
-    name: source.name, context_limit: source.context_limit, input_limit: source.input_limit, output_limit: source.output_limit,
-    reasoning: source.reasoning, tool_call: source.tool_call, temperature: source.temperature, attachment: source.attachment,
-    modalities: source.modalities ? { input: [...source.modalities.input], output: [...source.modalities.output] } : null,
-    variants: { ...(source.variants || {}) },
-    extra_json: source.extra_json, options_json: source.options_json,
-  })
-  expandedModelTarget.value = 'new'
 }
 
 const closeModelEditor = () => {
   expandedModelTarget.value = null
   editingModelIndex.value = null
-  editingModelSource.value = null
 }
 const toggleModelEditor = (index: number) => {
+  if (batchDeleteMode.value) return
   if (expandedModelTarget.value === index) closeModelEditor()
   else openEditModelModal(index)
 }
@@ -426,7 +511,7 @@ const saveModelFromModal = (input: OpenCodeModelInput) => {
     if (next.some((m) => m.id.trim() === id)) {
       return
     }
-    next.push({ ...input, input_limit: editingModelSource.value?.input_limit ?? input.input_limit })
+    next.push({ ...input })
   }
   draft.models = next
   syncConfigJsonFromDraft()
@@ -638,7 +723,8 @@ watch(() => props.open, (isOpen) => {
     activeTab.value = 'basic'
     expandedModelTarget.value = null
     editingModelIndex.value = null
-    editingModelSource.value = null
+    batchDeleteMode.value = false
+    selectedModelIndexes.value = new Set()
     fetchModelsModalOpen.value = false
     if (props.provider) {
       Object.assign(draft, {
@@ -717,6 +803,19 @@ const handleSave = () => {
 .field-wide { grid-column: 1 / -1; }
 .form-input { min-width: 0; width: 100%; min-height: 42px; padding: 10px 14px; border: 1px solid var(--mac-border); border-radius: 12px; background: var(--mac-surface-strong); color: var(--mac-text); font: inherit; font-size: 13px; box-sizing: border-box; transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; }
 .form-input:focus { outline: none; border-color: var(--platform-color, #5c7580); box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, #5c7580) 25%, transparent); background: var(--mac-surface); }
+.provider-type-select { position: relative; width: 100%; min-width: 0; }
+.provider-type-select-button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 42px; padding: 10px 14px; background: var(--mac-surface-strong); border: 1px solid var(--mac-border); border-radius: 12px; color: var(--mac-text); font: inherit; font-size: 13px; cursor: pointer; box-sizing: border-box; transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; }
+.provider-type-select-button:hover { border-color: color-mix(in srgb, var(--platform-color, #5c7580) 28%, var(--mac-border)); background: var(--mac-surface); }
+.provider-type-select-button:focus-visible { outline: none; border-color: var(--platform-color, #5c7580); box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, #5c7580) 25%, transparent); }
+.provider-type-select-button .level-label { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.provider-type-select-button svg { flex: 0 0 auto; margin-left: auto; color: var(--mac-text-secondary); opacity: .68; transition: transform .18s ease; }
+.provider-type-select-button svg.provider-type-chevron-open { transform: rotate(180deg); }
+.provider-type-select-options { position: absolute; top: calc(100% + 4px); left: 0; right: 0; max-height: min(280px, 40vh); overflow-y: auto; overscroll-behavior: contain; padding: 4px; background: var(--mac-surface); border: 1px solid var(--mac-border); border-radius: 8px; box-shadow: 0 12px 28px rgba(0, 0, 0, .16); z-index: 50; box-sizing: border-box; }
+.provider-type-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; min-height: 36px; padding: 8px 10px; border-radius: 6px; box-sizing: border-box; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.provider-type-option:hover, .provider-type-option.active { background: var(--mac-surface-strong); }
+.provider-type-option.selected { background: color-mix(in srgb, var(--platform-color, var(--mac-accent)) 12%, transparent); font-weight: 500; }
+.provider-type-option .level-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-type-value { flex: 0 0 auto; max-width: 52%; overflow: hidden; color: var(--mac-text-secondary); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .form-textarea { min-height: 58px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
 .number-input { text-align: right; }
 .field-hint { color: var(--mac-text-secondary); font-size: 11px; margin-top: 2px; }
@@ -743,6 +842,9 @@ const handleSave = () => {
 .editor-collapsible-content { padding-top: 2px; }
 .rotated { transform: rotate(90deg); }
 .models-toolbar-actions { display: inline-flex; flex: 0 0 auto; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.batch-delete-action { color: #b42318; border-color: color-mix(in srgb, #b42318 30%, var(--mac-border)); }
+.batch-delete-action:hover:not(:disabled) { color: #8f1d14; border-color: color-mix(in srgb, #b42318 55%, var(--mac-border)); background: color-mix(in srgb, #b42318 7%, transparent); }
+.batch-delete-action:disabled { cursor: not-allowed; opacity: .5; }
 .model-entry-list { display: grid; gap: 8px; }
 .model-entry { display: grid; gap: 0; min-width: 0; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); overflow: hidden; }
 .model-entry:hover { border-color: color-mix(in srgb, var(--platform-color, #5c7580) 35%, var(--mac-border)); }
@@ -758,9 +860,15 @@ const handleSave = () => {
 .model-entry-actions { display: inline-flex; flex: 0 0 auto; gap: 4px; align-items: center; }
 .icon-button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); cursor: pointer; transition: background .2s ease, color .2s ease; }
 .icon-button:hover { background: color-mix(in srgb, var(--platform-color, #5c7580) 12%, transparent); }
+.model-primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; min-height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); font: inherit; font-size: 11px; cursor: pointer; transition: background .2s ease, border-color .2s ease, color .2s ease; }
+.model-primary-button:hover:not(:disabled) { color: var(--mac-text); border-color: color-mix(in srgb, var(--platform-color, #5c7580) 32%, var(--mac-border)); background: color-mix(in srgb, var(--platform-color, #5c7580) 10%, transparent); }
+.model-primary-button.active { color: var(--platform-color, #5c7580); border-color: color-mix(in srgb, var(--platform-color, #5c7580) 35%, var(--mac-border)); background: color-mix(in srgb, var(--platform-color, #5c7580) 10%, transparent); cursor: default; }
+.model-primary-button:disabled:not(.active) { cursor: wait; opacity: .6; }
+.model-select-checkbox { flex: 0 0 auto; width: 16px; height: 16px; margin: 0 2px; accent-color: var(--platform-color, #5c7580); cursor: pointer; }
 .model-expand-button, .model-expand-button-placeholder { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--mac-text-secondary); }
 .model-expand-button { cursor: pointer; transition: background .2s ease, color .2s ease; }
 .model-expand-button:hover { background: color-mix(in srgb, var(--platform-color, #5c7580) 12%, transparent); color: var(--mac-text); }
+.model-expand-button:disabled { cursor: not-allowed; opacity: .45; }
 .model-expand-button svg { transition: transform .18s ease; }
 .model-expand-button svg.rotated { transform: rotate(90deg); }
 .model-entry > :deep(.model-inline-editor) { min-width: 0; padding: 16px 12px 12px; }
@@ -777,8 +885,10 @@ const handleSave = () => {
   .models-toolbar-actions { justify-content: flex-start; }
   .model-entry-summary { align-items: flex-start; }
   .model-entry-actions { margin-left: auto; }
+  .model-primary-button span { display: none; }
 }
 :global(html.dark) .form-input { background: color-mix(in srgb, var(--mac-surface) 78%, transparent); }
 :global(html.dark) .form-input:focus { border-color: var(--platform-color, #5c7580); box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, #5c7580) 30%, transparent); }
+:global(html.dark) .provider-type-select-options { background: var(--mac-surface); box-shadow: 0 12px 28px rgba(0, 0, 0, .3); }
 :global(html.dark) .opencode-editor-section { background: color-mix(in srgb, var(--mac-surface) 88%, transparent); }
 </style>

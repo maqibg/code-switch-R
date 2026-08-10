@@ -1,7 +1,7 @@
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import zh from '../../locales/zh.json'
 import VendorModal from './VendorModal.vue'
 
@@ -75,6 +75,8 @@ describe('OpenCode VendorModal model editor', () => {
 
     const tabs = wrapper.findAll('[role="tab"]')
     await tabs[1].trigger('click')
+    await wrapper.get('button[title="设为主模型"]').trigger('click')
+    expect(wrapper.emitted('set-default-model')?.[0]).toEqual(['demo/gpt-test'])
     await wrapper.get('.model-expand-button').trigger('click')
     await nextTick()
 
@@ -171,7 +173,7 @@ describe('OpenCode VendorModal model editor', () => {
     })
   })
 
-  it('支持复制、删除和再次收起模型编辑器', async () => {
+  it('支持修改、批量删除和再次收起模型编辑器', async () => {
     const wrapper = mount(VendorModal, {
       props: {
         open: true,
@@ -207,14 +209,18 @@ describe('OpenCode VendorModal model editor', () => {
     await wrapper.get('.model-expand-button').trigger('click')
     expect(wrapper.findAll('.model-inline-editor')).toHaveLength(0)
 
-    await wrapper.get('button[title="复制模型"]').trigger('click')
-    expect((wrapper.get('.model-inline-editor input.form-input').element as HTMLInputElement).value).toBe('new-model_copy')
+    await wrapper.get('button[title="修改模型"]').trigger('click')
+    expect((wrapper.get('.model-inline-editor input.form-input').element as HTMLInputElement).value).toBe('new-model')
     await wrapper.get('.model-inline-editor .form-actions button:last-child').trigger('click')
     await nextTick()
-    expect(wrapper.findAll('.model-entry')).toHaveLength(2)
 
-    await wrapper.findAll('button[title="删除模型"]')[1].trigger('click')
+    await wrapper.get('button[title="批量删除模型"]').trigger('click')
+    expect(wrapper.findAll('.model-select-checkbox')).toHaveLength(1)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await wrapper.get('.model-select-checkbox').setValue(true)
+    await wrapper.get('button[title="删除选中模型"]').trigger('click')
+    confirm.mockRestore()
     await nextTick()
-    expect(wrapper.findAll('.model-entry')).toHaveLength(1)
+    expect(wrapper.findAll('.model-entry')).toHaveLength(0)
   })
 })

@@ -139,8 +139,11 @@
       :open="vendorModalOpen"
       :editing="!!editingProvider"
       :provider="editingProvider"
+      :default-model="snapshot.default_model"
+      :default-model-busy="defaultModelBusy"
       @close="closeVendorModal"
       @save="saveProviderFromModal"
+      @set-default-model="setDefaultModelFromVendor"
     />
 
     <BaseModal :open="exportModalOpen" title="导出供应商" variant="wide" close-label="关闭" @close="closeProviderExport">
@@ -254,6 +257,7 @@ const usageLoggingBusy = ref(false)
 // 主模型 / 小模型
 const defaultModelDraft = ref('')
 const smallModelDraft = ref('')
+const defaultModelBusy = ref(false)
 
 type ModelOption = { value: string; label: string }
 type ModelOptionGroup = { label: string; options: ModelOption[] }
@@ -353,6 +357,20 @@ const saveDefaultModel = async () => {
     defaultModelDraft.value = snapshot.value.default_model || ''
     errorMessage.value = getErrorMessage(error)
   } finally { busy.value = false }
+}
+
+const setDefaultModelFromVendor = async (model: string) => {
+  if (defaultModelBusy.value) return
+  defaultModelBusy.value = true
+  errorMessage.value = ''
+  try {
+    snapshot.value = await setOpenCodeDefaultModel(model)
+    defaultModelDraft.value = snapshot.value.default_model || ''
+    showToast('已设为主模型')
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+    if (errorMessage.value.includes('外部修改')) await refresh()
+  } finally { defaultModelBusy.value = false }
 }
 
 const saveSmallModel = async () => {
