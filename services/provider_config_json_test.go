@@ -24,8 +24,7 @@ func fullyPopulatedProvider() Provider {
 		ProxyEnabled: true,
 		APIEndpoint:  "/v1/chat/completions",
 
-		SupportedModels: map[string]bool{"gpt-5": true, "claude-opus": true},
-		ModelMapping:    map[string]string{"claude-*": "anthropic/claude-*"},
+		ModelMapping: map[string]string{"claude-*": "anthropic/claude-*"},
 
 		AvailabilityMonitorEnabled: true,
 		ConnectivityAutoBlacklist:  true,

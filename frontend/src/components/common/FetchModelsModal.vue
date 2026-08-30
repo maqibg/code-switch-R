@@ -17,7 +17,7 @@
           <div class="radio-row">
             <label class="radio-check">
               <input v-model="apiType" type="radio" value="openai_compat" />
-              <span>{{ t('components.opencode.fetchModels.openaiCompat') }} <em>/models</em></span>
+              <span>{{ t('components.opencode.fetchModels.openaiCompat') }} <em>/v1/models</em></span>
             </label>
             <label v-if="supportsNative" class="radio-check">
               <input v-model="apiType" type="radio" value="native" />
@@ -124,20 +124,30 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     providerName: string
+    platform?: string
     sdkType?: string
     baseUrl?: string
     apiKey?: string
     headers?: Record<string, string>
     upstreamProtocol?: string
+    authScheme?: string
+    authHeader?: string
+    modelsEndpoint?: string
+    proxyEnabled?: boolean
     existingIds?: string[]
   }>(),
   {
     providerName: '',
+    platform: 'opencode',
     sdkType: '',
     baseUrl: '',
     apiKey: '',
     headers: () => ({}),
     upstreamProtocol: 'anthropic',
+    authScheme: '',
+    authHeader: '',
+    modelsEndpoint: '',
+    proxyEnabled: false,
     existingIds: () => [],
   },
 )
@@ -158,7 +168,11 @@ const loading = ref(false)
 const fetched = ref(false)
 const removeMissing = ref(false)
 
-const supportsNative = computed(() => props.sdkType === '@ai-sdk/google' || props.sdkType === '@ai-sdk/anthropic')
+const supportsNative = computed(() => (
+  props.upstreamProtocol === 'google'
+  || props.sdkType === '@ai-sdk/google'
+  || props.sdkType === '@ai-sdk/anthropic'
+))
 const existingSet = computed(() => new Set(props.existingIds))
 
 const filteredModels = computed(() => {
@@ -169,21 +183,29 @@ const filteredModels = computed(() => {
 const missingCount = computed(() => props.existingIds.filter((id) => !models.value.some((m) => m.id === id)).length)
 const canApply = computed(() => selectedIds.value.size > 0 || (removeMissing.value && missingCount.value > 0))
 
+const stripInferencePath = (base: string) => base.replace(/\/(?:chat\/completions|responses|messages)$/i, '')
+
 const defaultUrl = () => {
-  const base = props.baseUrl.trim().replace(/\/+$/, '')
+  const explicit = props.modelsEndpoint.trim()
+  if (explicit) return explicit
+
+  const base = stripInferencePath(props.baseUrl.trim().replace(/\/+$/, ''))
   if (!base) return ''
   if (apiType.value === 'native' && props.sdkType === '@ai-sdk/google') {
-    const versioned = /\/v\d[a-z]*$/.test(base) ? base : `${base}/v1beta`
+    const modelsBase = base.replace(/\/models$/i, '')
+    const versioned = /\/v\d+[a-z]*$/i.test(modelsBase) ? modelsBase : `${modelsBase}/v1beta`
     return `${versioned}/models`
   }
-  return `${base}/models`
+  if (/\/models$/i.test(base)) return base
+  const versioned = /\/v\d+[a-z]*$/i.test(base) ? base : `${base}/v1`
+  return `${versioned}/models`
 }
 
 watch(
   () => props.open,
   (open) => {
     if (!open) return
-    apiType.value = props.sdkType === '@ai-sdk/google' || props.sdkType === '@ai-sdk/anthropic' ? 'native' : 'openai_compat'
+    apiType.value = supportsNative.value ? 'native' : 'openai_compat'
     customUrl.value = defaultUrl()
     models.value = []
     selectedIds.value = new Set()
@@ -195,7 +217,7 @@ watch(
   },
 )
 
-watch([apiType, () => props.baseUrl, () => props.sdkType, () => props.apiKey], () => {
+watch([apiType, () => props.baseUrl, () => props.sdkType, () => props.upstreamProtocol, () => props.apiKey, () => props.modelsEndpoint], () => {
   if (props.open) customUrl.value = defaultUrl()
 })
 
@@ -215,6 +237,10 @@ const fetchModels = async () => {
       enabled: true,
       level: 1,
       upstreamProtocol: props.upstreamProtocol,
+      authScheme: props.authScheme.trim(),
+      authHeader: props.authHeader.trim(),
+      modelsEndpoint: '',
+      proxyEnabled: props.proxyEnabled,
     })
     if (endpoint && /^https?:\/\//.test(endpoint)) {
       provider.apiUrl = endpoint
@@ -222,7 +248,7 @@ const fetchModels = async () => {
       provider.modelsEndpoint = endpoint
     }
     const result = await FetchProviderModels(new ProviderModelDiscoveryRequest({
-      platform: 'opencode',
+      platform: props.platform,
       apiType: apiType.value,
       provider,
     }))

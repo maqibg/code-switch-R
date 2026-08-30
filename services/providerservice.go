@@ -35,10 +35,6 @@ type Provider struct {
 	// 留空则使用平台默认（claude: /v1/messages, codex: /responses）
 	APIEndpoint string `json:"apiEndpoint,omitempty"`
 
-	// 模型白名单 - Provider 原生支持的模型名
-	// 使用 map 实现 O(1) 查找，向后兼容（omitempty）
-	SupportedModels map[string]bool `json:"supportedModels,omitempty"`
-
 	// 模型映射 - 外部模型名 -> Provider 内部模型名
 	// 支持精确匹配和通配符（如 "claude-*" -> "anthropic/claude-*"）
 	ModelMapping map[string]string `json:"modelMapping,omitempty"`
@@ -88,8 +84,7 @@ type Provider struct {
 	// ModelsEndpoint overrides model discovery only and does not affect inference requests.
 	ModelsEndpoint string `json:"modelsEndpoint,omitempty"`
 
-	// PiModels stores the complete Pi model definitions exposed by this upstream
-	// provider. Empty keeps the legacy supportedModels-derived gateway behavior.
+	// PiModels stores the complete Pi model definitions exposed by this upstream provider.
 	PiModels []PiModelEntry `json:"piModels,omitempty"`
 	// PiModelOverrides are merged into matching generated models before writing
 	// the custom code-switch-r provider. Pi cannot apply overrides to unknown custom models itself.
@@ -123,7 +118,7 @@ type Provider struct {
 
 	// openCode 承载 OpenCode provider map entry 的专有数据。
 	// OpenCode 使用字符串 providerKey、npm 和嵌套模型，不能压缩进传统
-	// Provider 的 Name/APIURL/SupportedModels 字段；对外由 OpenCodeService
+	// Provider 的 Name/APIURL 字段；对外由 OpenCodeService
 	// 返回脱敏 DTO，避免把原始 JSON 和 API Key 暴露给 Wails。
 	openCode *openCodeProviderPayload `json:"-"`
 }
@@ -283,7 +278,6 @@ func prepareProviderSave(kind string, providers, existingProviders []Provider, a
 			validationErrors = append(validationErrors, fmt.Sprintf("[%s] Pi Provider 名称不能为空且不能包含 '/'", p.Name))
 		}
 		if strings.EqualFold(strings.TrimSpace(kind), "pi") {
-			syncPiModelsToSupportedModels(p)
 			for _, errMsg := range validatePiProviderConfiguration(*p) {
 				validationErrors = append(validationErrors, fmt.Sprintf("[%s] %s", p.Name, errMsg))
 			}
@@ -434,21 +428,9 @@ func (ps *ProviderService) invalidateProviderCache(path string) {
 func cloneProviderList(source []Provider) []Provider {
 	cloned := append([]Provider(nil), source...)
 	for i := range cloned {
-		cloned[i].SupportedModels = cloneProviderBoolMap(source[i].SupportedModels)
 		cloned[i].ModelMapping = cloneProviderStringMap(source[i].ModelMapping)
 		cloned[i].Headers = cloneProviderStringMap(source[i].Headers)
 		cloned[i].configErrors = append([]string(nil), source[i].configErrors...)
-	}
-	return cloned
-}
-
-func cloneProviderBoolMap(source map[string]bool) map[string]bool {
-	if source == nil {
-		return nil
-	}
-	cloned := make(map[string]bool, len(source))
-	for key, value := range source {
-		cloned[key] = value
 	}
 	return cloned
 }
@@ -549,13 +531,6 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 	}
 
 	// 6. 深拷贝 map（避免共享引用）
-	if source.SupportedModels != nil {
-		cloned.SupportedModels = make(map[string]bool, len(source.SupportedModels))
-		for k, v := range source.SupportedModels {
-			cloned.SupportedModels[k] = v
-		}
-	}
-
 	if source.ModelMapping != nil {
 		cloned.ModelMapping = make(map[string]string, len(source.ModelMapping))
 		for k, v := range source.ModelMapping {
@@ -585,45 +560,20 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 	return cloned, nil
 }
 
-// IsModelSupported 检查 provider 是否支持指定的模型
-// 支持条件：1) 模型在 SupportedModels 中（精确或通配符匹配）
-//  2. 模型在 ModelMapping 的 key 中（精确或通配符匹配）
-func (p *Provider) IsModelSupported(modelName string) bool {
-	// 向后兼容：如果未配置白名单和映射，假设支持所有模型
-	if (p.SupportedModels == nil || len(p.SupportedModels) == 0) &&
-		(p.ModelMapping == nil || len(p.ModelMapping) == 0) {
+// MatchesModelMapping 判断入站模型是否命中显式模型映射。
+// 未配置映射时不限制模型；配置映射后只接受精确或通配符匹配的入站模型。
+func (p *Provider) MatchesModelMapping(modelName string) bool {
+	if len(p.ModelMapping) == 0 {
 		return true
 	}
-
-	// 场景 A：Provider 原生支持该模型（精确匹配）
-	if p.SupportedModels != nil && p.SupportedModels[modelName] {
+	if _, exists := p.ModelMapping[modelName]; exists {
 		return true
 	}
-
-	// 场景 A+：Provider 原生支持该模型（通配符匹配）
-	if p.SupportedModels != nil {
-		for supportedModel := range p.SupportedModels {
-			if matchWildcard(supportedModel, modelName) {
-				return true
-			}
-		}
-	}
-
-	// 场景 B：Provider 通过映射支持该模型（精确匹配）
-	if p.ModelMapping != nil {
-		if _, exists := p.ModelMapping[modelName]; exists {
+	for pattern := range p.ModelMapping {
+		if matchWildcard(pattern, modelName) {
 			return true
 		}
-
-		// 场景 B+：通过通配符映射支持
-		for pattern := range p.ModelMapping {
-			if matchWildcard(pattern, modelName) {
-				return true
-			}
-		}
 	}
-
-	// 场景 C：不支持
 	return false
 }
 
@@ -760,9 +710,6 @@ func validateGrokProviderConfiguration(provider Provider) []string {
 	if len(provider.ModelMapping) != 1 {
 		errors = append(errors, "Grok Build 只允许一个 grok-build 入站模型映射")
 	}
-	if !provider.SupportedModels[upstreamModel] {
-		errors = append(errors, fmt.Sprintf("上游模型 %q 必须在 supportedModels 中启用", upstreamModel))
-	}
 	return errors
 }
 
@@ -771,43 +718,7 @@ func validateGrokProviderConfiguration(provider Provider) []string {
 func (p *Provider) ValidateConfiguration() []string {
 	errors := make([]string, 0)
 
-	// 规则 1：ModelMapping 的 value 必须在 SupportedModels 中
-	// 仅当两者都有实际内容时才校验（空 map 不触发校验）
-	if len(p.ModelMapping) > 0 && len(p.SupportedModels) > 0 {
-		for externalModel, internalModel := range p.ModelMapping {
-			// 检查是否为通配符映射
-			if strings.Contains(internalModel, "*") {
-				// 通配符映射暂不验证（需要具体请求才能展开）
-				continue
-			}
-
-			// 精确映射需要验证
-			supported := false
-			if p.SupportedModels[internalModel] {
-				supported = true
-			} else {
-				// 检查通配符白名单
-				for supportedPattern := range p.SupportedModels {
-					if matchWildcard(supportedPattern, internalModel) {
-						supported = true
-						break
-					}
-				}
-			}
-
-			if !supported {
-				errors = append(errors, fmt.Sprintf(
-					"模型映射无效：'%s' -> '%s'，目标模型 '%s' 不在 supportedModels 中",
-					externalModel, internalModel, internalModel,
-				))
-			}
-		}
-	}
-
-	// 允许仅配置 modelMapping（无 supportedModels 时不阻塞保存）
-	// 用户可能只想映射模型名，不需要白名单过滤
-
-	// 规则 3 移除：自映射不会破坏功能，最多是无效配置，不阻塞保存
+	// ModelMapping 只负责入站模型到上游模型的路由，不要求目标模型另行登记。
 
 	if scheme := strings.ToLower(strings.TrimSpace(p.AuthScheme)); scheme != "" {
 		switch scheme {

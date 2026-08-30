@@ -284,20 +284,6 @@ type PiConfigDiagnostic struct {
 func boolPointer(value bool) *bool { return &value }
 func intPointer(value int) *int    { return &value }
 
-func syncPiModelsToSupportedModels(provider *Provider) {
-	if provider == nil || len(provider.PiModels) == 0 {
-		return
-	}
-	if provider.SupportedModels == nil {
-		provider.SupportedModels = make(map[string]bool, len(provider.PiModels))
-	}
-	for _, model := range provider.PiModels {
-		if id := strings.TrimSpace(model.ID); id != "" && !strings.Contains(id, "*") {
-			provider.SupportedModels[id] = true
-		}
-	}
-}
-
 func clonePiModelEntries(source []PiModelEntry) []PiModelEntry {
 	if len(source) == 0 {
 		return nil
@@ -322,12 +308,6 @@ func validatePiProviderConfiguration(provider Provider) []string {
 	errors := make([]string, 0)
 	seen := make(map[string]struct{}, len(provider.PiModels))
 	knownModels := make(map[string]struct{})
-	for modelID, enabled := range provider.SupportedModels {
-		trimmedID := strings.TrimSpace(modelID)
-		if enabled && trimmedID != "" && !strings.Contains(trimmedID, "*") {
-			knownModels[trimmedID] = struct{}{}
-		}
-	}
 	for modelID := range provider.ModelMapping {
 		trimmedID := strings.TrimSpace(modelID)
 		if trimmedID != "" && !strings.Contains(trimmedID, "*") {

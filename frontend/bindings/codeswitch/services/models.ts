@@ -5186,12 +5186,6 @@ export class Provider {
     "apiEndpoint"?: string;
 
     /**
-     * 模型白名单 - Provider 原生支持的模型名
-     * 使用 map 实现 O(1) 查找，向后兼容（omitempty）
-     */
-    "supportedModels"?: { [_ in string]?: boolean };
-
-    /**
      * 模型映射 - 外部模型名 -> Provider 内部模型名
      * 支持精确匹配和通配符（如 "claude-*" -> "anthropic/claude-*"）
      */
@@ -5264,8 +5258,7 @@ export class Provider {
     "modelsEndpoint"?: string;
 
     /**
-     * PiModels stores the complete Pi model definitions exposed by this upstream
-     * provider. Empty keeps the legacy supportedModels-derived gateway behavior.
+     * PiModels stores the complete Pi model definitions exposed by this upstream provider.
      */
     "piModels"?: PiModelEntry[];
 
@@ -5341,38 +5334,34 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField11_0 = $$createType78;
-        const $$createField12_0 = $$createType4;
-        const $$createField16_0 = $$createType80;
-        const $$createField23_0 = $$createType4;
+        const $$createField11_0 = $$createType4;
+        const $$createField15_0 = $$createType79;
+        const $$createField22_0 = $$createType4;
+        const $$createField25_0 = $$createType81;
         const $$createField26_0 = $$createType82;
-        const $$createField27_0 = $$createType83;
-        const $$createField29_0 = $$createType60;
-        const $$createField30_0 = $$createType62;
+        const $$createField28_0 = $$createType60;
+        const $$createField29_0 = $$createType62;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("supportedModels" in $$parsedSource) {
-            $$parsedSource["supportedModels"] = $$createField11_0($$parsedSource["supportedModels"]);
-        }
         if ("modelMapping" in $$parsedSource) {
-            $$parsedSource["modelMapping"] = $$createField12_0($$parsedSource["modelMapping"]);
+            $$parsedSource["modelMapping"] = $$createField11_0($$parsedSource["modelMapping"]);
         }
         if ("availabilityConfig" in $$parsedSource) {
-            $$parsedSource["availabilityConfig"] = $$createField16_0($$parsedSource["availabilityConfig"]);
+            $$parsedSource["availabilityConfig"] = $$createField15_0($$parsedSource["availabilityConfig"]);
         }
         if ("headers" in $$parsedSource) {
-            $$parsedSource["headers"] = $$createField23_0($$parsedSource["headers"]);
+            $$parsedSource["headers"] = $$createField22_0($$parsedSource["headers"]);
         }
         if ("requestIdentity" in $$parsedSource) {
-            $$parsedSource["requestIdentity"] = $$createField26_0($$parsedSource["requestIdentity"]);
+            $$parsedSource["requestIdentity"] = $$createField25_0($$parsedSource["requestIdentity"]);
         }
         if ("modelRequestIdentities" in $$parsedSource) {
-            $$parsedSource["modelRequestIdentities"] = $$createField27_0($$parsedSource["modelRequestIdentities"]);
+            $$parsedSource["modelRequestIdentities"] = $$createField26_0($$parsedSource["modelRequestIdentities"]);
         }
         if ("piModels" in $$parsedSource) {
-            $$parsedSource["piModels"] = $$createField29_0($$parsedSource["piModels"]);
+            $$parsedSource["piModels"] = $$createField28_0($$parsedSource["piModels"]);
         }
         if ("piModelOverrides" in $$parsedSource) {
-            $$parsedSource["piModelOverrides"] = $$createField30_0($$parsedSource["piModelOverrides"]);
+            $$parsedSource["piModelOverrides"] = $$createField29_0($$parsedSource["piModelOverrides"]);
         }
         return new Provider($$parsedSource as Partial<Provider>);
     }
@@ -5504,7 +5493,7 @@ export class ProviderModelDiscoveryResult {
      * Creates a new ProviderModelDiscoveryResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ProviderModelDiscoveryResult {
-        const $$createField0_0 = $$createType85;
+        const $$createField0_0 = $$createType84;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("models" in $$parsedSource) {
             $$parsedSource["models"] = $$createField0_0($$parsedSource["models"]);
@@ -5572,7 +5561,7 @@ export class ProviderRequestTemplate {
      */
     static createFrom($$source: any = {}): ProviderRequestTemplate {
         const $$createField2_0 = $$createType4;
-        const $$createField4_0 = $$createType82;
+        const $$createField4_0 = $$createType81;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
@@ -5698,7 +5687,7 @@ export class RecordCleanupResult {
      * Creates a new RecordCleanupResult instance from a string or object.
      */
     static createFrom($$source: any = {}): RecordCleanupResult {
-        const $$createField2_0 = $$createType86;
+        const $$createField2_0 = $$createType85;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("storage" in $$parsedSource) {
             $$parsedSource["storage"] = $$createField2_0($$parsedSource["storage"]);
@@ -6291,12 +6280,11 @@ const $$createType74 = $Create.Array($$createType73);
 const $$createType75 = PricingRates.createFrom;
 const $$createType76 = PricingTier.createFrom;
 const $$createType77 = $Create.Array($$createType76);
-const $$createType78 = $Create.Map($Create.Any, $Create.Any);
-const $$createType79 = AvailabilityConfig.createFrom;
-const $$createType80 = $Create.Nullable($$createType79);
-const $$createType81 = ProviderRequestIdentity.createFrom;
-const $$createType82 = $Create.Nullable($$createType81);
-const $$createType83 = $Create.Map($Create.Any, $$createType81);
-const $$createType84 = DiscoveredModel.createFrom;
-const $$createType85 = $Create.Array($$createType84);
-const $$createType86 = RecordStorageInfo.createFrom;
+const $$createType78 = AvailabilityConfig.createFrom;
+const $$createType79 = $Create.Nullable($$createType78);
+const $$createType80 = ProviderRequestIdentity.createFrom;
+const $$createType81 = $Create.Nullable($$createType80);
+const $$createType82 = $Create.Map($Create.Any, $$createType80);
+const $$createType83 = DiscoveredModel.createFrom;
+const $$createType84 = $Create.Array($$createType83);
+const $$createType85 = RecordStorageInfo.createFrom;

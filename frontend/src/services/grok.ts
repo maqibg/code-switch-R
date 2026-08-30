@@ -82,7 +82,6 @@ export const grokDraftToProvider = (draft: GrokProviderDraft, original?: Provide
     authHeader: draft.authScheme === 'custom' ? draft.authHeader.trim() : '',
     headers: draft.headers,
     level: Math.min(10, Math.max(1, Math.round(draft.level || 1))),
-    supportedModels: { [upstreamModel]: true },
     modelMapping: { 'grok-build': upstreamModel },
   })
 }

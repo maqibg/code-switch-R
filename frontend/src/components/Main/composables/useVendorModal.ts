@@ -25,7 +25,6 @@ type VendorForm = {
   icon: string
   enabled: boolean
   proxyEnabled?: boolean
-  supportedModels?: Record<string, boolean>
   modelMapping?: Record<string, string>
   level?: number
   apiEndpoint?: string
@@ -80,7 +79,6 @@ export function useVendorModal(
     level: 1,
     enabled: true,
     proxyEnabled: false,
-    supportedModels: {},
     modelMapping: {},
     cliConfig: {},
     apiEndpoint: '',
@@ -214,9 +212,10 @@ export function useVendorModal(
       ? modalState.form.upstreamProtocol || (isGrokProviderModal.value ? 'openai_responses' : 'auto')
       : 'auto'
 
-  // ---------- 模型发现（白名单编辑器拉取上游模型列表用） ----------
+  // ---------- 模型发现 ----------
 
   const modelDiscoveryProvider = computed(() => ({
+    name: modalState.form.name,
     apiUrl: modalState.form.apiUrl,
     apiKey: modalState.form.apiKey,
     apiEndpoint: modalState.form.apiEndpoint,
@@ -319,7 +318,6 @@ export function useVendorModal(
       level: card.level || 1,
       enabled: card.enabled,
       proxyEnabled: !!card.proxyEnabled,
-      supportedModels: card.supportedModels || {},
       modelMapping: card.modelMapping || {},
       cliConfig: card.cliConfig || {},
       apiEndpoint: card.apiEndpoint || '',
@@ -393,9 +391,6 @@ export function useVendorModal(
       showToast(t('grok.toast.required'), 'error')
       return false
     }
-    const submittedSupportedModels = isGrokProviderModal.value
-      ? { [grokUpstreamModel]: true }
-      : modalState.form.supportedModels || {}
     const submittedModelMapping = isGrokProviderModal.value
       ? { 'grok-build': grokUpstreamModel }
       : modalState.form.modelMapping || {}
@@ -432,7 +427,6 @@ export function useVendorModal(
         level: nextLevel,
         enabled: modalState.form.enabled,
         proxyEnabled: !!modalState.form.proxyEnabled,
-        supportedModels: submittedSupportedModels,
         modelMapping: submittedModelMapping,
         cliConfig: modalState.form.cliConfig || {},
         apiEndpoint: modalState.form.apiEndpoint || '',
@@ -474,7 +468,6 @@ export function useVendorModal(
         level: normalizeLevel(modalState.form.level),
         enabled: modalState.form.enabled,
         proxyEnabled: !!modalState.form.proxyEnabled,
-        supportedModels: submittedSupportedModels,
         modelMapping: submittedModelMapping,
         cliConfig: modalState.form.cliConfig || {},
         apiEndpoint: modalState.form.apiEndpoint || '',

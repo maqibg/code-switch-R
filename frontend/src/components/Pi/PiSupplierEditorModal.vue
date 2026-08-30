@@ -147,14 +147,15 @@ const requestTemplateLabel = (template: ProviderRequestTemplate) => {
 }
 const upstreamModels = computed(() => Array.from(new Set([
   ...routes.value.map((item) => item.target),
-  ...Object.keys(draft.value.supportedModels ?? {}),
   ...(draft.value.piModels ?? []).map((item) => item.id),
 ])).filter(Boolean).sort())
 const defaultProvider = () => new Provider({
   enabled: true, level: 1, piPlatform: props.platform.providerId, authScheme: props.platform.api === 'anthropic-messages' ? 'x-api-key' : 'bearer',
   upstreamProtocol: defaultProtocol.value,
-  headers: {}, supportedModels: {}, modelMapping: {}, piModels: [], piModelOverrides: {}, userAgentPreset: 'inherit',
+  headers: {}, modelMapping: {}, piModels: [], piModelOverrides: {}, userAgentPreset: 'inherit',
 })
+
+const configuredModelIDs = (provider: Provider) => new Set((provider.piModels ?? []).map((model) => model.id.trim()).filter(Boolean))
 
 const buildRoutes = (provider: Provider) => props.platform.models.map((model) => {
   const mapped = provider.modelMapping?.[model.id]
@@ -162,7 +163,7 @@ const buildRoutes = (provider: Provider) => props.platform.models.map((model) =>
   const identity = provider.modelRequestIdentities?.[target]
   return {
     external: model.id, name: model.name, target,
-    enabled: Boolean(mapped || provider.supportedModels?.[target]), isNew: false,
+    enabled: Boolean(mapped || configuredModelIDs(provider).has(target)), isNew: false,
     profileId: resolveModelIdentityProfile(identity, new Set(requestTemplates.value.map((item) => item.id))),
     identity: identity ? new ProviderRequestIdentity({ ...identity, headers: { ...(identity.headers || {}) } }) : undefined,
   }
@@ -365,14 +366,12 @@ const save = async () => {
     next.userAgentPreset = requestIdentity.userAgentPreset || 'inherit'
     next.customUserAgent = requestIdentity.customUserAgent || ''
     next.metadataUserId = requestIdentity.metadataMode === 'fixed' ? requestIdentity.metadataUserId : ''
-    next.supportedModels = {}
     next.modelMapping = {}
     next.modelRequestIdentities = {}
     const existingDefinitions = new Map((draft.value.piModels ?? []).map((item) => [item.id, item]))
     const modelDefinitions = new Map<string, PiModelEntry>()
     for (const route of selected) {
       const target = route.target.trim()
-      next.supportedModels[target] = true
       if (route.external !== target) next.modelMapping[route.external] = target
       if (route.profileId && route.identity) {
         const modelIdentity = new ProviderRequestIdentity({ ...route.identity, headers: { ...(route.identity.headers || {}) } })

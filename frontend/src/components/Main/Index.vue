@@ -509,15 +509,6 @@
                   />
                 </label>
 
-                <label v-show="providerModalTab === 'basic'" class="form-field">
-                  <span>{{ t('components.main.form.labels.officialSite') }}</span>
-                  <BaseInput
-                    v-model="modalState.form.officialSite"
-                    type="text"
-                    :placeholder="t('components.main.form.placeholders.officialSite')"
-                  />
-                </label>
-
                 <label v-if="!isOAuthCredential" v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.apiKey') }}</span>
                   <BaseInput
@@ -580,6 +571,15 @@
                   <span class="field-hint">{{ t('components.main.form.hints.apiEndpoint') }}</span>
                 </label>
 
+                <label v-show="providerModalTab === 'basic'" class="form-field">
+                  <span>{{ t('components.main.form.labels.officialSite') }}</span>
+                  <BaseInput
+                    v-model="modalState.form.officialSite"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.officialSite')"
+                  />
+                </label>
+
                 <!-- 上游协议类型 -->
                 <div v-if="showUpstreamProtocolField" v-show="providerModalTab === 'basic'" class="form-field">
                   <span>{{ t('components.main.form.labels.upstreamProtocol') }}</span>
@@ -620,8 +620,8 @@
                   <span class="field-hint">{{ t('grok.form.upstreamModelHint') }}</span>
                 </div>
 
-                <!-- 认证方式 -->
-                <div v-show="providerModalTab === 'basic'" class="form-field">
+                <!-- 高级设置顶部：认证方式 -->
+                <div v-show="providerModalTab === 'advanced'" class="form-field">
                   <span>{{ t('components.main.form.labels.connectivityAuthType') }}</span>
                   <Listbox v-model="selectedAuthType" v-slot="{ open }">
                     <div class="level-select">
@@ -656,7 +656,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.connectivityAuthType') }}</span>
                 </div>
 
-                <label v-show="providerModalTab === 'basic'" class="form-field">
+                <label v-show="providerModalTab === 'advanced'" class="form-field">
                   <span>{{ t('components.main.form.labels.modelsEndpoint') }}</span>
                   <BaseInput
                     v-model="modalState.form.modelsEndpoint"
@@ -738,15 +738,12 @@
                 </div>
 
                 <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'advanced'" class="form-field">
-                  <ModelWhitelistEditor
-                    v-model="modalState.form.supportedModels"
+                  <ModelMappingEditor
+                    v-model="modalState.form.modelMapping"
                     :platform="modalState.tabId"
+                    :modal-open="modalState.open"
                     :provider="modelDiscoveryProvider"
                   />
-                </div>
-
-                <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'advanced'" class="form-field">
-                  <ModelMappingEditor v-model="modalState.form.modelMapping" />
                 </div>
 
                 <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'advanced'" class="form-field">
@@ -877,7 +874,6 @@ import GrokOAuthPanel from './GrokOAuthPanel.vue'
 import GrokRuntimeBar from './GrokRuntimeBar.vue'
 import GrokUpstreamModelField from './GrokUpstreamModelField.vue'
 import GeminiStatusPanel from './GeminiStatusPanel.vue'
-import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import HeaderEditor from '../common/HeaderEditor.vue'
 import CLIConfigEditor from '../common/CLIConfigEditor.vue'
@@ -1039,7 +1035,7 @@ const hasEligibleGrokRelayProvider = computed(() => state.cards.grok.some((card)
   const authScheme = (card.authScheme || card.connectivityAuthType || 'bearer').trim().toLowerCase()
   const upstreamModel = card.modelMapping?.['grok-build']?.trim() || ''
   return card.enabled && Boolean(card.apiUrl.trim()) && Boolean(upstreamModel) &&
-    Boolean(card.supportedModels?.[upstreamModel]) && (authScheme === 'none' || Boolean(card.apiKey.trim()))
+    (authScheme === 'none' || Boolean(card.apiKey.trim()))
 }))
 const grokRelayToggleTooltip = computed(() => {
   if (!grokRelayActive.value && !hasEligibleGrokRelayProvider.value) return t('grok.toast.noEligibleProvider')
@@ -2046,7 +2042,7 @@ onUnmounted(() => {
   gap: 8px;
   width: 100%;
   padding: 10px 16px;
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: var(--platform-color, var(--mac-accent));
   color: white;
   border: none;
   border-radius: 8px;

@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-`code-switch-R` 是一个仅发布 Windows amd64 便携版的 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP Relay 管理 Claude Code、Codex、Gemini CLI、Reasonix、Pi 与 Grok Build 的供应商配置。Relay 使用随机 Token，仅允许 localhost 或当前 WSL 宿主机地址，按供应商优先级、模型白名单和黑名单状态执行降级转发，并记录请求、Token 和成本数据。
+`code-switch-R` 是一个仅发布 Windows amd64 便携版的 Wails 3 桌面应用，用 Go 后端、Vue 3 前端和本地 HTTP Relay 管理 Claude Code、Codex、Gemini CLI、Reasonix、Pi 与 Grok Build 的供应商配置。Relay 使用随机 Token，仅允许 localhost 或当前 WSL 宿主机地址，按供应商优先级、显式模型映射和黑名单状态执行降级转发，并记录请求、Token 和成本数据。
 
 当前主要技术栈：
 

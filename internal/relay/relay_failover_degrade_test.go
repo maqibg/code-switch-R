@@ -92,8 +92,8 @@ func TestFailoverAllProvidersFailReturns502(t *testing.T) {
 	}
 }
 
-// 模型白名单过滤：没有 provider 支持请求的模型时返回 404，且不触达任何上游
-func TestFailoverNoProviderSupportsModelReturns404(t *testing.T) {
+// 未配置模型映射时不限制请求模型，仍按普通路由转发
+func TestFailoverWithoutModelMappingForwardsRequest(t *testing.T) {
 	env := newFailoverEnv(t)
 	env.enableDegradeMode(t)
 
@@ -101,7 +101,7 @@ func TestFailoverNoProviderSupportsModelReturns404(t *testing.T) {
 	if err := env.providers.SaveProviders("claude", []services.Provider{
 		{
 			ID: 1, Name: "OnlyOpus", APIURL: upstream.server.URL, APIKey: "k",
-			Enabled: true, Level: 1, SupportedModels: map[string]bool{"claude-3-opus": true},
+			Enabled: true, Level: 1,
 		},
 	}); err != nil {
 		t.Fatalf("保存 providers 失败: %v", err)
@@ -109,11 +109,11 @@ func TestFailoverNoProviderSupportsModelReturns404(t *testing.T) {
 
 	recorder := env.post("/v1/messages", messagesBody("claude-3-5-sonnet"))
 
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("期望 404，得到 %d：%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("未配置模型映射的 provider 应正常转发，得到 %d：%s", recorder.Code, recorder.Body.String())
 	}
-	if got := upstream.Hits(); got != 0 {
-		t.Errorf("不支持的模型不应触达上游，实际命中 %d", got)
+	if got := upstream.Hits(); got != 1 {
+		t.Errorf("应触达上游 1 次，实际命中 %d", got)
 	}
 }
 

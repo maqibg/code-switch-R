@@ -308,21 +308,7 @@ func (prs *ProviderRelayService) validateConfig() []string {
 				}
 			}
 
-			// 检查是否配置了模型白名单或映射
-			if (p.SupportedModels == nil || len(p.SupportedModels) == 0) &&
-				(p.ModelMapping == nil || len(p.ModelMapping) == 0) {
-				warnings = append(warnings, fmt.Sprintf(
-					"[%s/%s] 未配置 supportedModels 或 modelMapping，将假设支持所有模型（可能导致降级失败）",
-					kind, p.Name))
 			}
-
-			// 检查是否只配置了映射但没有白名单
-			if len(p.ModelMapping) > 0 && len(p.SupportedModels) == 0 {
-				warnings = append(warnings, fmt.Sprintf(
-					"[%s/%s] 配置了 modelMapping 但未配置 supportedModels，映射目标将不做校验，请确认目标模型在供应商处可用",
-					kind, p.Name))
-			}
-		}
 
 		if enabledCount == 0 {
 			warnings = append(warnings, fmt.Sprintf("[%s] 没有启用的 provider", kind))
@@ -537,8 +523,8 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				continue
 			}
 
-			// 核心过滤：只保留支持请求模型的 provider
-			if requestedModel != "" && !provider.IsModelSupported(requestedModel) {
+			// 配置模型映射时，只保留命中入站模型的 provider。
+			if requestedModel != "" && !provider.MatchesModelMapping(requestedModel) {
 				relayDebugf("[INFO] Provider %s 不支持模型 %s，已跳过\n", provider.Name, requestedModel)
 				skippedCount++
 				continue

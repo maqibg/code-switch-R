@@ -235,16 +235,16 @@ func TestApplyWildcardMapping(t *testing.T) {
 	}
 }
 
-// ==================== IsModelSupported 测试 ====================
+// ==================== MatchesModelMapping 测试 ====================
 
-func TestProvider_IsModelSupported(t *testing.T) {
+func TestProvider_MatchesModelMapping(t *testing.T) {
 	tests := []struct {
 		name      string
 		provider  Provider
 		modelName string
 		expected  bool
 	}{
-		// 向后兼容：未配置白名单和映射
+		// 未配置映射时不限制入站模型
 		{
 			name:      "向后兼容-未配置",
 			provider:  Provider{},
@@ -252,58 +252,9 @@ func TestProvider_IsModelSupported(t *testing.T) {
 			expected:  true,
 		},
 
-		// 场景 A：原生支持（精确匹配）
 		{
-			name: "原生支持-精确匹配-成功",
+			name: "精确映射命中",
 			provider: Provider{
-				SupportedModels: map[string]bool{
-					"claude-sonnet-4": true,
-					"claude-opus-4":   true,
-				},
-			},
-			modelName: "claude-sonnet-4",
-			expected:  true,
-		},
-		{
-			name: "原生支持-精确匹配-失败",
-			provider: Provider{
-				SupportedModels: map[string]bool{
-					"claude-sonnet-4": true,
-				},
-			},
-			modelName: "gpt-4",
-			expected:  false,
-		},
-
-		// 场景 A+：原生支持（通配符匹配）
-		{
-			name: "原生支持-通配符匹配-成功",
-			provider: Provider{
-				SupportedModels: map[string]bool{
-					"claude-*": true,
-				},
-			},
-			modelName: "claude-sonnet-4",
-			expected:  true,
-		},
-		{
-			name: "原生支持-通配符匹配-失败",
-			provider: Provider{
-				SupportedModels: map[string]bool{
-					"claude-*": true,
-				},
-			},
-			modelName: "gpt-4",
-			expected:  false,
-		},
-
-		// 场景 B：映射支持（精确匹配）
-		{
-			name: "映射支持-精确匹配-成功",
-			provider: Provider{
-				SupportedModels: map[string]bool{
-					"anthropic/claude-sonnet-4": true,
-				},
 				ModelMapping: map[string]string{
 					"claude-sonnet-4": "anthropic/claude-sonnet-4",
 				},
@@ -312,13 +263,19 @@ func TestProvider_IsModelSupported(t *testing.T) {
 			expected:  true,
 		},
 
-		// 场景 B+：映射支持（通配符匹配）
 		{
-			name: "映射支持-通配符匹配-成功",
+			name: "精确映射未命中",
 			provider: Provider{
-				SupportedModels: map[string]bool{
-					"anthropic/claude-*": true,
+				ModelMapping: map[string]string{
+					"claude-sonnet-4": "anthropic/claude-sonnet-4",
 				},
+			},
+			modelName: "gpt-4",
+			expected:  false,
+		},
+		{
+			name: "通配符映射命中",
+			provider: Provider{
 				ModelMapping: map[string]string{
 					"claude-*": "anthropic/claude-*",
 				},
@@ -326,42 +283,23 @@ func TestProvider_IsModelSupported(t *testing.T) {
 			modelName: "claude-sonnet-4",
 			expected:  true,
 		},
-
-		// 混合模式
 		{
-			name: "混合模式-原生+映射",
+			name: "通配符映射未命中",
 			provider: Provider{
-				SupportedModels: map[string]bool{
-					"native-model":    true,
-					"vendor/external": true,
-				},
 				ModelMapping: map[string]string{
-					"external": "vendor/external",
+					"claude-*": "anthropic/claude-*",
 				},
 			},
-			modelName: "external",
-			expected:  true,
-		},
-		{
-			name: "混合模式-只在原生",
-			provider: Provider{
-				SupportedModels: map[string]bool{
-					"native-model": true,
-				},
-				ModelMapping: map[string]string{
-					"external": "vendor/external",
-				},
-			},
-			modelName: "native-model",
-			expected:  true,
+			modelName: "gpt-4",
+			expected:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.provider.IsModelSupported(tt.modelName)
+			result := tt.provider.MatchesModelMapping(tt.modelName)
 			if result != tt.expected {
-				t.Errorf("IsModelSupported(%q) = %v, 期望 %v",
+				t.Errorf("MatchesModelMapping(%q) = %v, 期望 %v",
 					tt.modelName, result, tt.expected)
 			}
 		})
@@ -468,10 +406,6 @@ func TestProvider_ValidateConfiguration(t *testing.T) {
 			name: "有效配置-完整",
 			provider: Provider{
 				Name: "test-provider",
-				SupportedModels: map[string]bool{
-					"model-a":          true,
-					"internal-model-b": true,
-				},
 				ModelMapping: map[string]string{
 					"external-model-b": "internal-model-b",
 				},
@@ -479,29 +413,13 @@ func TestProvider_ValidateConfiguration(t *testing.T) {
 			expectErrors: false,
 		},
 
-		// 无效映射：目标模型不在白名单
+		// 映射目标不需要另行登记
 		{
-			name: "无效映射-目标不在白名单",
+			name: "映射目标无需登记",
 			provider: Provider{
 				Name: "test-provider",
-				SupportedModels: map[string]bool{
-					"model-a": true,
-				},
 				ModelMapping: map[string]string{
 					"external": "model-b",
-				},
-			},
-			expectErrors:  true,
-			errorContains: "不在 supportedModels 中",
-		},
-
-		// 警告：只配置映射未配置白名单
-		{
-			name: "警告-无白名单",
-			provider: Provider{
-				Name: "test-provider",
-				ModelMapping: map[string]string{
-					"external": "internal",
 				},
 			},
 			expectErrors: false,
@@ -512,9 +430,6 @@ func TestProvider_ValidateConfiguration(t *testing.T) {
 			name: "警告-自映射",
 			provider: Provider{
 				Name: "test-provider",
-				SupportedModels: map[string]bool{
-					"model-a": true,
-				},
 				ModelMapping: map[string]string{
 					"model-a": "model-a",
 				},
@@ -527,9 +442,6 @@ func TestProvider_ValidateConfiguration(t *testing.T) {
 			name: "通配符映射-跳过验证",
 			provider: Provider{
 				Name: "test-provider",
-				SupportedModels: map[string]bool{
-					"anthropic/claude-*": true,
-				},
 				ModelMapping: map[string]string{
 					"claude-*": "anthropic/claude-*",
 				},
@@ -866,10 +778,6 @@ func TestDuplicateProvider(t *testing.T) {
 				APIKey:  "sk-or-xxx",
 				Enabled: true,
 				Level:   3,
-				SupportedModels: map[string]bool{
-					"anthropic/claude-*": true,
-					"openai/gpt-*":       true,
-				},
 				ModelMapping: map[string]string{
 					"claude-*": "anthropic/claude-*",
 					"gpt-*":    "openai/gpt-*",
@@ -893,13 +801,6 @@ func TestDuplicateProvider(t *testing.T) {
 			}
 
 			// 深拷贝 map
-			if tt.original.SupportedModels != nil {
-				cloned.SupportedModels = make(map[string]bool, len(tt.original.SupportedModels))
-				for k, v := range tt.original.SupportedModels {
-					cloned.SupportedModels[k] = v
-				}
-			}
-
 			if tt.original.ModelMapping != nil {
 				cloned.ModelMapping = make(map[string]string, len(tt.original.ModelMapping))
 				for k, v := range tt.original.ModelMapping {
@@ -923,13 +824,6 @@ func TestDuplicateProvider(t *testing.T) {
 			}
 
 			// 验证深拷贝（修改副本不影响原件）
-			if tt.original.SupportedModels != nil {
-				cloned.SupportedModels["test-model"] = true
-				if _, exists := tt.original.SupportedModels["test-model"]; exists {
-					t.Errorf("深拷贝失败：修改副本影响了原件的 SupportedModels")
-				}
-			}
-
 			if tt.original.ModelMapping != nil {
 				cloned.ModelMapping["test-key"] = "test-value"
 				if _, exists := tt.original.ModelMapping["test-key"]; exists {

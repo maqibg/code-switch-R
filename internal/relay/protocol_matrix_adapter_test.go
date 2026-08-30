@@ -335,7 +335,7 @@ func TestPiChatToAnthropicMatrixRoute(t *testing.T) {
 	providerService := services.NewProviderService()
 	if err := providerService.SaveProviders("pi", []services.Provider{{
 		ID: 1, Name: "anthropic", APIURL: upstream.URL, APIKey: "key", Enabled: true,
-		PiPlatform: "anthropic", UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true},
+		PiPlatform: "anthropic", UpstreamProtocol: "anthropic",
 	}}); err != nil {
 		t.Fatalf("保存 Pi Provider 失败: %v", err)
 	}

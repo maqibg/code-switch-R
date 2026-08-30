@@ -7,7 +7,7 @@
       </div>
       <div class="pi-model-actions">
         <BaseButton v-if="showFetchButton" type="button" variant="outline" :disabled="fetching || !provider?.apiUrl" @click="fetchModels">
-          {{ fetching ? t('components.provider.modelWhitelist.fetching') : t('components.provider.modelWhitelist.fetch') }}
+          {{ fetching ? t('components.provider.piModel.fetching') : t('components.provider.piModel.fetch') }}
         </BaseButton>
         <BaseButton v-if="allowAdd" type="button" variant="outline" @click="addModel">
           {{ t('components.provider.piModel.add') }}
@@ -191,8 +191,6 @@ import { validateHeaderRecord } from '../../utils/httpHeaders'
 const props = withDefaults(defineProps<{
   modelValue?: PiModelDefinition[]
   modelOverrides?: Record<string, PiModelOverride>
-  supportedModels?: Record<string, boolean>
-  supportedModelFactory?: (id: string) => PiModelDefinition
   provider?: Record<string, unknown>
   showFetchButton?: boolean
   showModelOverrides?: boolean
@@ -205,7 +203,6 @@ const props = withDefaults(defineProps<{
 }>(), {
   modelValue: () => [],
   modelOverrides: () => ({}),
-  supportedModels: () => ({}),
   provider: () => ({}),
   showFetchButton: true,
   showModelOverrides: true,
@@ -220,7 +217,6 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (event: 'update:modelValue', value: PiModelDefinition[]): void
   (event: 'update:modelOverrides', value: Record<string, PiModelOverride>): void
-  (event: 'update:supportedModels', value: Record<string, boolean>): void
   (event: 'validity', valid: boolean): void
 }>()
 
@@ -299,18 +295,6 @@ const syncLocalModels = (value: PiModelDefinition[]) => {
   modelKeys.value = localModels.value.map(() => nextKey++)
 }
 
-const ensureSupportedModels = () => {
-  const existing = new Set(localModels.value.map((model) => model.id.trim()).filter(Boolean))
-  const additions = Object.keys(props.supportedModels)
-    .filter((id) => props.supportedModels[id] && id.trim() && !id.includes('*') && !existing.has(id.trim()))
-    .map((id) => props.supportedModelFactory?.(id.trim()) || defaultModel(id.trim()))
-  if (additions.length) {
-    localModels.value.push(...additions)
-    modelKeys.value.push(...additions.map(() => nextKey++))
-    emitModels()
-  }
-}
-
 watch(
   () => props.modelValue,
   (value) => {
@@ -321,7 +305,6 @@ watch(
     }
     lastEmittedModels = ''
     syncLocalModels(value || [])
-    ensureSupportedModels()
   },
   { immediate: true, deep: true },
 )
@@ -340,7 +323,6 @@ watch(
   { immediate: true, deep: true },
 )
 
-watch(() => props.supportedModels, ensureSupportedModels, { deep: true })
 watch(
   [() => props.initialModelId, () => props.modelValue, () => props.modelOverrides],
   () => void revealInitialModel(),
@@ -351,15 +333,6 @@ const emitModels = () => {
   const value = clone(localModels.value)
   lastEmittedModels = JSON.stringify(value)
   emit('update:modelValue', value)
-  const supported: Record<string, boolean> = {}
-  for (const [id, enabled] of Object.entries(props.supportedModels)) {
-    if (enabled && id.includes('*')) supported[id] = true
-  }
-  for (const model of value) {
-    const id = model.id.trim()
-    if (id) supported[id] = true
-  }
-  emit('update:supportedModels', supported)
 }
 
 const addModel = () => {
@@ -644,7 +617,7 @@ const fetchModels = async () => {
       added++
     }
     emitModels()
-    discoveryMessage.value = t('components.provider.modelWhitelist.fetchSuccess', { count: added })
+    discoveryMessage.value = t('components.provider.piModel.fetchSuccess', { count: added })
   } catch (error) {
     discoveryError.value = true
     discoveryMessage.value = error instanceof Error ? error.message : String(error)

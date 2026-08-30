@@ -164,7 +164,7 @@ describe('Pi editor state guards', () => {
 
   it('clears a previously loaded supplier draft when the next load fails', async () => {
     const getSupplier = vi.fn()
-      .mockResolvedValueOnce({ name: 'Supplier A', apiUrl: 'https://api.example', enabled: true, level: 1, supportedModels: { 'model-a': true } })
+      .mockResolvedValueOnce({ name: 'Supplier A', apiUrl: 'https://api.example', enabled: true, level: 1, piModels: [{ id: 'model-a' }] })
       .mockRejectedValueOnce(new Error('supplier load failed'))
     const wrapper = mount(PiSupplierEditorModal, {
       props: {

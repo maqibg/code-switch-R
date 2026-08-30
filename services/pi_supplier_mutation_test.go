@@ -13,7 +13,7 @@ func TestPiSupplierMutationAddsSelectedModelsAndSavesProvider(t *testing.T) {
 	runtime, _ := service.RuntimeSnapshot()
 	result, err := service.SaveSupplierMutation(PiSupplierMutationRequest{
 		Action: PiSupplierMutationUpsert, ExpectedRevision: runtime.Revision,
-		Provider:          Provider{Name: "upstream", PiPlatform: "custom", APIURL: "https://upstream.example/v1", APIKey: "secret", Enabled: true, SupportedModels: map[string]bool{"new-model": true}, PiModels: []PiModelEntry{{ID: "new-model", Input: []string{"text"}}}},
+		Provider:          Provider{Name: "upstream", PiPlatform: "custom", APIURL: "https://upstream.example/v1", APIKey: "secret", Enabled: true, PiModels: []PiModelEntry{{ID: "new-model", Input: []string{"text"}}}},
 		NewPlatformModels: []PiModelEntry{{ID: "new-model"}},
 	})
 	if err != nil {
@@ -40,7 +40,7 @@ func TestPiSupplierMutationAddsModelsToManagedPlatformWithoutBreakingGateway(t *
 	runtime, _ := service.RuntimeSnapshot()
 	result, err := service.SaveSupplierMutation(PiSupplierMutationRequest{
 		Action: PiSupplierMutationUpsert, ExpectedRevision: runtime.Revision,
-		Provider:          Provider{Name: "second", PiPlatform: "custom", APIURL: "https://second.example/v1", APIKey: "secret", Enabled: true, SupportedModels: map[string]bool{"new-model": true}, PiModels: []PiModelEntry{{ID: "new-model", Input: []string{"text"}}}},
+		Provider:          Provider{Name: "second", PiPlatform: "custom", APIURL: "https://second.example/v1", APIKey: "secret", Enabled: true, PiModels: []PiModelEntry{{ID: "new-model", Input: []string{"text"}}}},
 		NewPlatformModels: []PiModelEntry{{ID: "new-model"}},
 	})
 	if err != nil {
@@ -77,7 +77,7 @@ func TestPiSupplierMutationRollsBackModelsWhenProviderSaveFails(t *testing.T) {
 	runtime, _ := service.RuntimeSnapshot()
 	_, err := service.SaveSupplierMutation(PiSupplierMutationRequest{
 		Action: PiSupplierMutationUpsert, ExpectedRevision: runtime.Revision,
-		Provider:          Provider{Name: "upstream", PiPlatform: "custom", APIURL: "https://upstream.example/v1", APIKey: "secret", Enabled: true, SupportedModels: map[string]bool{"new-model": true}, PiModels: []PiModelEntry{{ID: "new-model", Input: []string{"text"}}}},
+		Provider:          Provider{Name: "upstream", PiPlatform: "custom", APIURL: "https://upstream.example/v1", APIKey: "secret", Enabled: true, PiModels: []PiModelEntry{{ID: "new-model", Input: []string{"text"}}}},
 		NewPlatformModels: []PiModelEntry{{ID: "new-model"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "injected sync failure") {

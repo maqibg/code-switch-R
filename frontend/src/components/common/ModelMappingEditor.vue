@@ -3,26 +3,24 @@
     <div class="editor-header">
       <label class="editor-label">
         <span>{{ $t('components.provider.modelMapping.label') }}</span>
-        <button
-          type="button"
-          class="help-icon"
-          :data-tooltip="$t('components.provider.modelMapping.tooltip')"
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path
-              d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 13A6 6 0 118 2a6 6 0 010 12zm0-9.5a.75.75 0 01.75.75v4a.75.75 0 01-1.5 0v-4A.75.75 0 018 4.5zm0 7.5a1 1 0 100-2 1 1 0 000 2z"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
       </label>
+      <BaseButton
+        type="button"
+        variant="outline"
+        class="fetch-models-button"
+        :disabled="!canFetchModels"
+        @click="openFetchModels"
+      >
+        <Download :size="14" aria-hidden="true" />
+        {{ $t('components.opencode.fetchModels.button') }}
+      </BaseButton>
     </div>
 
     <!-- 已添加的映射规则列表 -->
-    <div v-if="mappingList.length > 0" class="mapping-list">
+    <div v-if="mappingList.length > 0 || pendingModels.length > 0" class="mapping-list">
       <div
         v-for="(mapping, index) in mappingList"
-        :key="index"
+        :key="`saved-${mapping.key}`"
         class="mapping-row"
       >
         <div class="mapping-content">
@@ -48,6 +46,49 @@
           class="mapping-remove"
           :aria-label="$t('components.provider.modelMapping.remove')"
           @click="removeMapping(index)"
+        >
+          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+            <path
+              d="M3 3l6 6M9 3l-6 6"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div
+        v-for="pending in pendingModels"
+        :key="`pending-${pending.id}`"
+        class="mapping-row pending-row"
+      >
+        <div class="mapping-content">
+          <BaseInput
+            v-model="pending.key"
+            class="pending-key-input"
+            type="text"
+            :placeholder="$t('components.provider.modelMapping.keyPlaceholder')"
+            @keydown.enter.prevent="commitPendingMapping(pending)"
+            @blur="commitPendingMapping(pending)"
+          />
+          <svg class="mapping-arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M6 4l4 4-4 4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <code class="mapping-value">{{ pending.value }}</code>
+        </div>
+        <button
+          type="button"
+          class="mapping-remove"
+          :aria-label="$t('components.provider.modelMapping.remove')"
+          @click="removePendingMapping(pending.id)"
         >
           <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
             <path
@@ -115,23 +156,50 @@
         </li>
       </ul>
     </div>
+
+    <FetchModelsModal
+      :open="fetchModelsOpen"
+      :provider-name="props.provider?.name || ''"
+      :platform="props.platform"
+      :base-url="props.provider?.apiUrl || ''"
+      :api-key="props.provider?.apiKey || ''"
+      :headers="discoveryHeaders"
+      :upstream-protocol="props.provider?.upstreamProtocol"
+      :auth-scheme="props.provider?.authScheme"
+      :auth-header="props.provider?.authHeader"
+      :models-endpoint="props.provider?.modelsEndpoint"
+      :proxy-enabled="props.provider?.proxyEnabled"
+      :existing-ids="discoveryExistingIds"
+      @close="closeFetchModels"
+      @apply="applyFetchedModels"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { Download } from 'lucide-vue-next'
+import type { Provider } from '../../../bindings/codeswitch/services/models'
 import BaseInput from './BaseInput.vue'
 import BaseButton from './BaseButton.vue'
+import FetchModelsModal, { type DiscoveredModel } from './FetchModelsModal.vue'
 
 interface Props {
   modelValue?: Record<string, string>
+  platform?: string
+  provider?: Partial<Provider>
+  modalOpen?: boolean
 }
 
 interface Emits {
   (e: 'update:modelValue', value: Record<string, string>): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  modelValue: () => ({}),
+  platform: 'opencode',
+  modalOpen: true,
+})
 const emit = defineEmits<Emits>()
 
 // 将 Record<string, string> 转换为数组便于展示
@@ -143,6 +211,32 @@ const mappingList = computed(() => {
 const newKey = ref('')
 const newValue = ref('')
 const valueInputRef = ref<InstanceType<typeof BaseInput> | null>(null)
+const pendingModels = ref<Array<{ id: number; key: string; value: string }>>([])
+const fetchModelsOpen = ref(false)
+let nextPendingModelId = 1
+
+const canFetchModels = computed(() => Boolean(props.provider?.apiUrl?.trim()))
+const discoveryHeaders = computed<Record<string, string>>(() => {
+  return Object.entries(props.provider?.headers || {}).reduce<Record<string, string>>(
+    (headers, [key, value]) => {
+      if (typeof value === 'string') headers[key] = value
+      return headers
+    },
+    {},
+  )
+})
+const discoveryExistingIds = computed(() => {
+  const ids = new Set(
+    Object.values(props.modelValue || {})
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+  for (const pending of pendingModels.value) {
+    const value = pending.value.trim()
+    if (value) ids.add(value)
+  }
+  return [...ids]
+})
 
 const isWildcard = (text: string) => text.includes('*')
 
@@ -178,6 +272,55 @@ const addMapping = () => {
   newValue.value = ''
 }
 
+const openFetchModels = () => {
+  if (!canFetchModels.value) return
+  fetchModelsOpen.value = true
+}
+
+const closeFetchModels = () => {
+  fetchModelsOpen.value = false
+}
+
+const applyFetchedModels = (payload: { selected: DiscoveredModel[]; removedIds: string[] }) => {
+  const removedIds = new Set(payload.removedIds.map((id) => id.trim()).filter(Boolean))
+  let updated = { ...(props.modelValue || {}) }
+  let changed = false
+
+  if (removedIds.size > 0) {
+    updated = Object.fromEntries(
+      Object.entries(updated).filter(([, value]) => !removedIds.has(value.trim())),
+    )
+    changed = Object.keys(updated).length !== Object.keys(props.modelValue || {}).length
+    pendingModels.value = pendingModels.value.filter((pending) => !removedIds.has(pending.value.trim()))
+  }
+  if (changed) emit('update:modelValue', updated)
+
+  const existingIds = new Set([
+    ...Object.values(updated).map((value) => value.trim()).filter(Boolean),
+    ...pendingModels.value.map((pending) => pending.value.trim()).filter(Boolean),
+  ])
+  for (const model of payload.selected) {
+    const value = model.id.trim()
+    if (!value || existingIds.has(value)) continue
+    existingIds.add(value)
+    pendingModels.value.push({ id: nextPendingModelId++, key: '', value })
+  }
+  closeFetchModels()
+}
+
+const commitPendingMapping = (pending: { id: number; key: string; value: string }) => {
+  const key = pending.key.trim()
+  if (!key) return
+
+  const updated = { ...(props.modelValue || {}), [key]: pending.value }
+  emit('update:modelValue', updated)
+  pendingModels.value = pendingModels.value.filter((item) => item.id !== pending.id && item.key.trim() !== key)
+}
+
+const removePendingMapping = (id: number) => {
+  pendingModels.value = pendingModels.value.filter((pending) => pending.id !== id)
+}
+
 const removeMapping = (index: number) => {
   const mapping = mappingList.value[index]
   if (!mapping) return
@@ -186,6 +329,12 @@ const removeMapping = (index: number) => {
   delete updated[mapping.key]
   emit('update:modelValue', updated)
 }
+
+watch(() => props.modalOpen, (open) => {
+  if (open) return
+  pendingModels.value = []
+  fetchModelsOpen.value = false
+})
 </script>
 
 <style scoped>
@@ -199,6 +348,7 @@ const removeMapping = (index: number) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .editor-label {
@@ -210,22 +360,11 @@ const removeMapping = (index: number) => {
   color: var(--foreground);
 }
 
-.help-icon {
+.fetch-models-button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border: none;
-  background: none;
-  color: var(--foreground-muted);
-  cursor: help;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.help-icon:hover {
-  color: var(--foreground);
-  background-color: var(--background-hover);
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .mapping-list {
@@ -263,6 +402,9 @@ const removeMapping = (index: number) => {
 
 .mapping-key,
 .mapping-value {
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
   padding: 3px 7px;
   background-color: var(--background-secondary);
   border: 1px solid var(--border);
@@ -270,7 +412,19 @@ const removeMapping = (index: number) => {
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 0.75rem;
   color: var(--foreground);
-  word-break: break-all;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-row {
+  border-color: color-mix(in srgb, var(--platform-color, var(--accent-primary)) 35%, var(--border));
+  background-color: color-mix(in srgb, var(--platform-color, var(--accent-primary)) 5%, var(--background));
+}
+
+.pending-key-input {
+  min-width: 0;
+  flex: 1 1 0;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
 }
 
 .mapping-key.wildcard,

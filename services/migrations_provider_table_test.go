@@ -179,9 +179,6 @@ func TestProviderImportPreservesLongTailConfig(t *testing.T) {
 		t.Fatalf("还原配置失败: %v", err)
 	}
 
-	if len(restored.SupportedModels) != len(original.SupportedModels) {
-		t.Errorf("模型白名单丢失: %+v", restored.SupportedModels)
-	}
 	if restored.ModelMapping["claude-*"] != original.ModelMapping["claude-*"] {
 		t.Errorf("模型映射丢失: %+v", restored.ModelMapping)
 	}

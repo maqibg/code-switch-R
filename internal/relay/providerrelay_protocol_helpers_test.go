@@ -58,8 +58,7 @@ func newGrokRouteTestRouterWithProvider(t *testing.T, handler http.HandlerFunc, 
 	provider := services.Provider{
 		ID: 1, Name: "GrokRouteProvider", APIURL: upstreamServer.URL,
 		APIKey: "test-api-key", Enabled: true, Level: 1,
-		SupportedModels: map[string]bool{"real-grok-model": true},
-		ModelMapping:    map[string]string{"grok-build": "real-grok-model"},
+		ModelMapping: map[string]string{"grok-build": "real-grok-model"},
 	}
 	if overrides.UpstreamProtocol != "" {
 		provider.UpstreamProtocol = overrides.UpstreamProtocol

@@ -214,13 +214,18 @@ func (s *PiSettingsService) RuntimeSnapshot() (PiRuntimeSnapshot, error) {
 		}
 		for _, provider := range providers {
 			models := make(map[string]struct{})
-			for id, enabled := range provider.SupportedModels {
-				if enabled {
+			for _, model := range provider.PiModels {
+				if id := strings.TrimSpace(model.ID); id != "" {
 					models[id] = struct{}{}
 				}
 			}
 			for id := range provider.ModelMapping {
 				models[id] = struct{}{}
+			}
+			for id := range provider.PiModelOverrides {
+				if id = strings.TrimSpace(id); id != "" {
+					models[id] = struct{}{}
+				}
 			}
 			identity := providerRequestIdentityForModel(provider, "")
 			identityName := identity.Name

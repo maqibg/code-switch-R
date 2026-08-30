@@ -358,15 +358,20 @@ func (s *PiSettingsService) ensureFirstPlatformSupplier(providerID string, sourc
 }
 
 func providerFromPiPlatform(providerID string, source piModelsProviderFile, id int64, authCredential string, authCredentialExists bool) (Provider, error) {
-	models := make(map[string]bool, len(source.Models)+len(source.ModelOverrides))
-	for _, model := range source.Models {
+	piModels := clonePiModelEntries(source.Models)
+	knownModelIDs := make(map[string]struct{}, len(piModels))
+	for _, model := range piModels {
 		if modelID := strings.TrimSpace(model.ID); modelID != "" {
-			models[modelID] = true
+			knownModelIDs[modelID] = struct{}{}
 		}
 	}
 	for modelID := range source.ModelOverrides {
-		if modelID = strings.TrimSpace(modelID); modelID != "" {
-			models[modelID] = true
+		modelID = strings.TrimSpace(modelID)
+		if modelID != "" {
+			if _, exists := knownModelIDs[modelID]; !exists {
+				piModels = append(piModels, PiModelEntry{ID: modelID, Input: []string{"text"}})
+				knownModelIDs[modelID] = struct{}{}
+			}
 		}
 	}
 	headers := make(map[string]string)
@@ -408,7 +413,7 @@ func providerFromPiPlatform(providerID string, source piModelsProviderFile, id i
 	}
 	return Provider{
 		ID: id, Name: providerID + " default", APIURL: strings.TrimSpace(source.BaseURL), APIKey: credential,
-		Enabled: true, Level: 1, SupportedModels: models, Headers: headers,
+		Enabled: true, Level: 1, PiModels: piModels, PiModelOverrides: clonePiModelOverrides(source.ModelOverrides), Headers: headers,
 		PiPlatform: providerID, UpstreamProtocol: protocol, AuthScheme: authScheme, AuthHeader: authHeader,
 	}, nil
 }

@@ -914,22 +914,6 @@
       }
     },
     "provider": {
-      "modelWhitelist": {
-        "label": "Supported Models",
-        "tooltip": "Declare which models this provider supports. Supports exact match (claude-sonnet-4) and wildcard (claude-*)",
-        "placeholder": "e.g., claude-*",
-        "add": "Add",
-        "fetch": "Fetch & Add",
-        "fetching": "Fetching...",
-        "fetchSuccess": "Added {count} models",
-        "remove": "Remove model",
-        "examples": {
-          "title": "Examples:",
-          "exact": "Exact match",
-          "prefix": "Prefix match all Claude models",
-          "vendor": "Match models with vendor prefix"
-        }
-      },
       "headers": {
         "label": "Additional Request Headers",
         "add": "Add Header",
@@ -965,11 +949,14 @@
       },
       "piModel": {
         "title": "Complete Pi model definitions",
-        "description": "Configure complete models[] metadata produced by supplier template enrichment. Model IDs also become gateway routing allowlist entries.",
+        "description": "Configure complete models[] metadata produced by supplier template enrichment. Model IDs are also used for gateway routing.",
         "nativeTitle": "Complete models[] definitions",
         "nativeDescription": "Only complete custom models written to models[] appear here. Partial overrides for built-in Pi models are shown under modelOverrides below.",
         "add": "Add model",
         "remove": "Remove model",
+        "fetch": "Fetch models",
+        "fetching": "Fetching...",
+        "fetchSuccess": "Added {count} models",
         "unnamed": "Unnamed model",
         "empty": "No models configured. Add one manually or fetch from the provider API.",
         "id": "Model ID",
@@ -1030,7 +1017,6 @@
       },
       "modelMapping": {
         "label": "Model Mapping",
-        "tooltip": "Map CLI requested model names to provider-specific names. Supports wildcard expansion",
         "keyPlaceholder": "CLI model (e.g., claude-*)",
         "valuePlaceholder": "Provider model (e.g., kimi-k2-thinking)",
         "add": "Add",

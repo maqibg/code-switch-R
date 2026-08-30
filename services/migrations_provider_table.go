@@ -26,7 +26,7 @@ import (
 // providerTableCreateSQL provider 主数据表。
 //
 // 只把会被 SQL 查询或排序的字段做成列，其余约 25 个长尾配置
-// （模型白名单、映射、认证方式、自定义头、Pi 相关、Codex 续写开关等）
+// （模型映射、认证方式、自定义头、Pi 相关、Codex 续写开关等）
 // 打包进 config_json。全部规范化没有收益，没有任何地方按它们过滤；
 // 将来确实需要按某字段查询时再把它提升成列。
 const providerTableCreateSQL = `CREATE TABLE IF NOT EXISTS provider (

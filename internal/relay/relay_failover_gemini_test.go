@@ -118,7 +118,7 @@ func TestFailoverGeminiTriesLevelsInOrder(t *testing.T) {
 }
 
 // 未启用或缺 BaseURL 的 provider 被过滤掉；全都不可用时返回 404。
-// 注意 Gemini 的过滤条件只有这两条——没有模型白名单、没有配置验证。
+// 注意 Gemini 的过滤条件只有这两条——不按模型过滤，也不做通用配置验证。
 func TestFailoverGeminiFiltersDisabledAndEmptyBaseURL(t *testing.T) {
 	env := newFailoverEnv(t)
 	env.enableDegradeMode(t)

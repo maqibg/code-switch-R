@@ -371,11 +371,6 @@ func BuildPiGatewayProvider(providers []Provider, baseURL string) (PiGatewayProv
 			return PiGatewayProvider{}, fmt.Errorf("Pi Provider 名称不能为空且不能包含 '/': %q", provider.Name)
 		}
 		modelNames := make(map[string]struct{})
-		for model, enabled := range provider.SupportedModels {
-			if enabled && strings.TrimSpace(model) != "" && !strings.Contains(model, "*") {
-				modelNames[model] = struct{}{}
-			}
-		}
 		for model := range provider.ModelMapping {
 			if strings.TrimSpace(model) != "" && !strings.Contains(model, "*") {
 				modelNames[model] = struct{}{}
@@ -526,11 +521,6 @@ func applyPiModelOverride(model PiModelEntry, override PiModelOverride) PiModelE
 func piQualifiedModelIDs(provider Provider) []string {
 	name := strings.TrimSpace(provider.Name)
 	ids := make(map[string]struct{})
-	for model, enabled := range provider.SupportedModels {
-		if enabled && strings.TrimSpace(model) != "" && !strings.Contains(model, "*") {
-			ids[name+"/"+strings.TrimSpace(model)] = struct{}{}
-		}
-	}
 	for model := range provider.ModelMapping {
 		if strings.TrimSpace(model) != "" && !strings.Contains(model, "*") {
 			ids[name+"/"+strings.TrimSpace(model)] = struct{}{}

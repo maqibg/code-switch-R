@@ -18,7 +18,7 @@ func TestPiRuntimeSnapshotMergesSourcesWithoutSecrets(t *testing.T) {
 	}
 	if err := providerService.SaveProviders("pi", []Provider{{
 		ID: 1, Name: "upstream", PiPlatform: "anthropic", APIURL: "https://upstream.example/v1", APIKey: "supplier-secret",
-		UpstreamProtocol: "anthropic", Enabled: true, SupportedModels: map[string]bool{"claude-test": true},
+		UpstreamProtocol: "anthropic", Enabled: true,
 		RequestIdentity: requestIdentityPointer(ProviderRequestIdentity{
 			TemplateID: "builtin-claude-code-full", Name: "Claude Code strict", Mode: ProviderRequestModeReplace, TargetCLI: "claude-code",
 			UserAgentPreset: "claude-code", MetadataMode: ProviderMetadataModeOmit,

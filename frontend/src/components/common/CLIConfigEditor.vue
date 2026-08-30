@@ -1364,7 +1364,7 @@ onUnmounted(() => {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 4px;
-  background: var(--mac-accent);
+  background: var(--platform-color, var(--mac-accent));
   color: white;
   font-weight: 500;
 }

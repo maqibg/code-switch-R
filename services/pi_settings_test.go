@@ -20,7 +20,7 @@ func newTestPiSettingsService(t *testing.T, providers []Provider) *PiSettingsSer
 func TestPiSettingsEnableDisablePreservesForeignEntries(t *testing.T) {
 	service := newTestPiSettingsService(t, []Provider{{
 		Name: "primary", Enabled: true, UpstreamProtocol: "openai_chat",
-		SupportedModels: map[string]bool{"gpt-5": true},
+		PiModels: []PiModelEntry{{ID: "gpt-5"}},
 	}})
 	originalModels := map[string]any{"version": 3, "providers": map[string]any{
 		"foreign":            map[string]any{"api": "anthropic-messages"},
@@ -83,7 +83,7 @@ func TestPiSettingsEnableDisablePreservesForeignEntries(t *testing.T) {
 }
 
 func TestPiSettingsDisableRejectsManagedEntryConflict(t *testing.T) {
-	service := newTestPiSettingsService(t, []Provider{{Name: "primary", Enabled: true, SupportedModels: map[string]bool{"gpt-5": true}}})
+	service := newTestPiSettingsService(t, []Provider{{Name: "primary", Enabled: true, PiModels: []PiModelEntry{{ID: "gpt-5"}}}})
 	if err := service.EnableProxy(); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestPiSettingsDisableRejectsManagedEntryConflict(t *testing.T) {
 
 func TestPiSettingsEnableDisableRestoresMissingFiles(t *testing.T) {
 	service := newTestPiSettingsService(t, []Provider{{
-		Name: "primary", Enabled: true, SupportedModels: map[string]bool{"gpt-5": true},
+		Name: "primary", Enabled: true, PiModels: []PiModelEntry{{ID: "gpt-5"}},
 	}})
 	if err := service.EnableProxy(); err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestPiSettingsEnableDisableRestoresMissingFiles(t *testing.T) {
 
 func TestPiSettingsDisableRemovesInjectedProvidersObject(t *testing.T) {
 	service := newTestPiSettingsService(t, []Provider{{
-		Name: "primary", Enabled: true, SupportedModels: map[string]bool{"gpt-5": true},
+		Name: "primary", Enabled: true, PiModels: []PiModelEntry{{ID: "gpt-5"}},
 	}})
 	if err := AtomicWriteJSON(service.modelsPath(), map[string]any{"version": 3}); err != nil {
 		t.Fatal(err)
@@ -145,8 +145,8 @@ func TestPiSettingsDisableRemovesInjectedProvidersObject(t *testing.T) {
 
 func TestBuildPiGatewayProviderProtocols(t *testing.T) {
 	gateway, err := BuildPiGatewayProvider([]Provider{
-		{Name: "anthropic", Enabled: true, UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"claude-sonnet": true}},
-		{Name: "responses", Enabled: true, UpstreamProtocol: "openai_responses", SupportedModels: map[string]bool{"gpt-5": true}},
+		{Name: "anthropic", Enabled: true, UpstreamProtocol: "anthropic", PiModels: []PiModelEntry{{ID: "claude-sonnet"}}},
+		{Name: "responses", Enabled: true, UpstreamProtocol: "openai_responses", PiModels: []PiModelEntry{{ID: "gpt-5"}}},
 	}, "http://127.0.0.1:18100/pi/v1")
 	if err != nil {
 		t.Fatal(err)

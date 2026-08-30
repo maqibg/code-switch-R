@@ -130,15 +130,6 @@ func TestModelMappingEndToEnd(t *testing.T) {
 	// 模拟真实场景：用户请求 claude-sonnet-4，需要映射到 OpenRouter 的格式
 	provider := services.Provider{
 		Name: "OpenRouter",
-		SupportedModels: map[string]bool{
-			"anthropic/claude-sonnet-4":   true,
-			"anthropic/claude-opus-4":     true,
-			"openai/gpt-4":                true,
-			"google/gemini-pro":           true,
-			"meta-llama/llama-3.1-405b":   true,
-			"anthropic/claude-3.5-sonnet": true,
-			"anthropic/claude-3.5-haiku":  true,
-		},
 		ModelMapping: map[string]string{
 			"claude-*": "anthropic/claude-*",
 			"gpt-*":    "openai/gpt-*",
@@ -161,17 +152,17 @@ func TestModelMappingEndToEnd(t *testing.T) {
 		{"gemini-pro", true, "google/gemini-pro"},
 		{"llama-3.1-405b", true, "meta-llama/llama-3.1-405b"},
 
-		// 不支持的模型
+		// 未配置映射的模型
 		{"deepseek-v3", false, "deepseek-v3"},
 		{"qwen-max", false, "qwen-max"},
 	}
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.requestedModel, func(t *testing.T) {
-			// 1. 检查是否支持
-			supported := provider.IsModelSupported(scenario.requestedModel)
+			// 1. 检查是否命中显式模型映射
+			supported := provider.MatchesModelMapping(scenario.requestedModel)
 			if supported != scenario.shouldSupport {
-				t.Errorf("IsModelSupported(%q) = %v, 期望 %v",
+				t.Errorf("MatchesModelMapping(%q) = %v, 期望 %v",
 					scenario.requestedModel, supported, scenario.shouldSupport)
 			}
 
@@ -205,10 +196,6 @@ func TestProviderConfigValidation(t *testing.T) {
 	// 场景 1：完美配置
 	validProvider := services.Provider{
 		Name: "ValidProvider",
-		SupportedModels: map[string]bool{
-			"anthropic/claude-sonnet-4": true,
-			"anthropic/claude-opus-4":   true,
-		},
 		ModelMapping: map[string]string{
 			"claude-sonnet-4": "anthropic/claude-sonnet-4",
 			"claude-opus-4":   "anthropic/claude-opus-4",
@@ -220,29 +207,22 @@ func TestProviderConfigValidation(t *testing.T) {
 		t.Errorf("完美配置不应有错误，但返回了: %v", errors)
 	}
 
-	// 场景 2：错误配置 - 映射目标不存在
+	// 场景 2：映射目标无需另行登记
 	invalidProvider := services.Provider{
 		Name: "InvalidProvider",
-		SupportedModels: map[string]bool{
-			"model-a": true,
-		},
 		ModelMapping: map[string]string{
 			"external": "non-existent-model",
 		},
 	}
 
 	errors = invalidProvider.ValidateConfiguration()
-	if len(errors) == 0 {
-		t.Errorf("错误配置应该返回验证错误")
+	if len(errors) != 0 {
+		t.Errorf("映射目标无需登记，但返回了验证错误: %v", errors)
 	}
 
 	// 场景 3：通配符配置
 	wildcardProvider := services.Provider{
 		Name: "WildcardProvider",
-		SupportedModels: map[string]bool{
-			"anthropic/claude-*": true,
-			"openai/gpt-*":       true,
-		},
 		ModelMapping: map[string]string{
 			"claude-*": "anthropic/claude-*",
 			"gpt-*":    "openai/gpt-*",
@@ -257,14 +237,8 @@ func TestProviderConfigValidation(t *testing.T) {
 
 // ==================== 性能测试 ====================
 
-func BenchmarkIsModelSupported(b *testing.B) {
+func BenchmarkMatchesModelMapping(b *testing.B) {
 	provider := services.Provider{
-		SupportedModels: map[string]bool{
-			"claude-sonnet-4": true,
-			"claude-opus-4":   true,
-			"gpt-4":           true,
-			"gpt-4-turbo":     true,
-		},
 		ModelMapping: map[string]string{
 			"claude-*": "anthropic/claude-*",
 			"gpt-*":    "openai/gpt-*",
@@ -273,7 +247,7 @@ func BenchmarkIsModelSupported(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = provider.IsModelSupported("claude-sonnet-4")
+		_ = provider.MatchesModelMapping("claude-sonnet-4")
 	}
 }
 

@@ -915,21 +915,12 @@
       }
     },
     "provider": {
-      "modelWhitelist": {
-        "label": "模型白名单",
-        "tooltip": "声明该供应商支持的模型。支持精确匹配（claude-sonnet-4）和通配符（claude-*）",
-        "placeholder": "输入模型名称，如 claude-*",
-        "add": "添加",
-        "fetch": "抓取并添加",
-        "fetching": "抓取中...",
-        "fetchSuccess": "已添加 {count} 个模型",
-        "remove": "删除模型",
-        "examples": {
-          "title": "示例：",
-          "exact": "精确匹配",
-          "prefix": "前缀匹配所有 Claude 模型",
-          "vendor": "匹配带供应商前缀的模型"
-        }
+      "headers": {
+        "label": "附加请求头",
+        "add": "添加请求头",
+        "remove": "删除请求头",
+        "keyPlaceholder": "请求头名称",
+        "valuePlaceholder": "请求头值"
       },
       "requestTemplate": {
         "label": "请求头模板",
@@ -959,11 +950,14 @@
       },
       "piModel": {
         "title": "Pi 完整模型定义",
-        "description": "配置供应商模板补全后写入 models[] 的完整模型元数据；模型 ID 同时作为网关路由白名单。",
+        "description": "配置供应商模板补全后写入 models[] 的完整模型元数据；模型 ID 同时用于网关路由。",
         "nativeTitle": "models[] 完整模型定义",
         "nativeDescription": "这里只显示写入 models[] 的自定义完整模型；Pi 内置模型的局部覆盖显示在下方 modelOverrides。",
         "add": "添加模型",
         "remove": "删除模型",
+        "fetch": "获取模型",
+        "fetching": "获取中...",
+        "fetchSuccess": "已添加 {count} 个模型",
         "unnamed": "未命名模型",
         "empty": "尚未配置模型。可手动添加或从供应商 API 抓取。",
         "id": "模型 ID",
@@ -1024,7 +1018,6 @@
       },
       "modelMapping": {
         "label": "模型映射",
-        "tooltip": "将 CLI 请求的模型名映射到供应商实际支持的模型名。支持通配符展开",
         "keyPlaceholder": "CLI 模型（如 claude-*）",
         "valuePlaceholder": "供应商模型（如 kimi-k2-thinking）",
         "add": "添加",

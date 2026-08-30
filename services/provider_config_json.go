@@ -21,8 +21,7 @@ type providerConfigPayload struct {
 	ProxyEnabled bool   `json:"proxyEnabled,omitempty"`
 	APIEndpoint  string `json:"apiEndpoint,omitempty"`
 
-	SupportedModels map[string]bool   `json:"supportedModels,omitempty"`
-	ModelMapping    map[string]string `json:"modelMapping,omitempty"`
+	ModelMapping map[string]string `json:"modelMapping,omitempty"`
 
 	// 已移除功能的兼容字段：继续保存以便回退，读取侧不再使用
 	AvailabilityMonitorEnabled bool                `json:"availabilityMonitorEnabled,omitempty"`
@@ -111,8 +110,7 @@ func marshalProviderConfig(provider Provider) (string, error) {
 		ProxyEnabled: provider.ProxyEnabled,
 		APIEndpoint:  provider.APIEndpoint,
 
-		SupportedModels: provider.SupportedModels,
-		ModelMapping:    provider.ModelMapping,
+		ModelMapping: provider.ModelMapping,
 
 		AvailabilityMonitorEnabled: provider.AvailabilityMonitorEnabled,
 		ConnectivityAutoBlacklist:  provider.ConnectivityAutoBlacklist,
@@ -174,7 +172,6 @@ func applyProviderConfig(provider *Provider, configJSON string) error {
 	provider.ProxyEnabled = payload.ProxyEnabled
 	provider.APIEndpoint = payload.APIEndpoint
 
-	provider.SupportedModels = payload.SupportedModels
 	provider.ModelMapping = payload.ModelMapping
 
 	provider.AvailabilityMonitorEnabled = payload.AvailabilityMonitorEnabled

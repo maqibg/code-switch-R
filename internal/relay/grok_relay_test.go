@@ -172,7 +172,7 @@ func TestGrokCompactSkipsNonResponsesProviders(t *testing.T) {
 	defer responsesServer.Close()
 	base := func(id int64, name, apiURL, protocol string) services.Provider {
 		return services.Provider{ID: id, Name: name, APIURL: apiURL, APIKey: "key", Enabled: true, Level: 1,
-			UpstreamProtocol: protocol, SupportedModels: map[string]bool{"real": true}, ModelMapping: map[string]string{"grok-build": "real"}}
+			UpstreamProtocol: protocol, ModelMapping: map[string]string{"grok-build": "real"}}
 	}
 	providerService := services.NewProviderService()
 	if err := providerService.SaveProviders("grok", []services.Provider{

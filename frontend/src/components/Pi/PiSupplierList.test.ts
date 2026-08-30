@@ -12,7 +12,7 @@ describe('PiSupplierList', () => {
       },
       global: { plugins: [testI18n()] },
     })
-    const controls = wrapper.findAll('.supplier-actions input, .supplier-actions button')
+    const controls = wrapper.findAll('.td-actions input, .td-actions button')
     expect(controls).toHaveLength(3)
     expect(controls.every((control) => control.attributes('disabled') !== undefined)).toBe(true)
   })

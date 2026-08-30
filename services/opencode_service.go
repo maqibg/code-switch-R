@@ -693,7 +693,6 @@ func (s *OpenCodeService) saveProviderLocked(input OpenCodeProviderInput) (Provi
 		Enabled:          true,
 		Level:            1,
 		UpstreamProtocol: string(upstreamProtocol),
-		SupportedModels:  openCodeSupportedModels(baseRaw),
 		openCode: &openCodeProviderPayload{
 			ProviderKey: key, NPM: npm, ClientProtocol: clientProtocol,
 			RawProvider: rawData,
@@ -1030,17 +1029,13 @@ func providerFromOpenCodeRaw(key string, raw json.RawMessage) (Provider, error) 
 		baseURL = rawString(options["baseUrl"])
 	}
 	apiKey := rawString(options["apiKey"])
-	models, _ := openCodeProviderModelMap(providerMap)
 	provider := Provider{
 		Name: key, APIURL: baseURL, APIKey: apiKey, Enabled: true, Level: 1,
-		UpstreamProtocol: string(upstream), SupportedModels: make(map[string]bool),
+		UpstreamProtocol: string(upstream),
 		openCode: &openCodeProviderPayload{
 			ProviderKey: key, NPM: npm, ClientProtocol: clientProtocol,
 			RawProvider: cloneRaw(raw),
 		},
-	}
-	for modelID := range models {
-		provider.SupportedModels[modelID] = true
 	}
 	return provider, nil
 }
@@ -1050,18 +1045,6 @@ func cloneRaw(raw json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return append(json.RawMessage(nil), raw...)
-}
-
-func openCodeSupportedModels(raw map[string]json.RawMessage) map[string]bool {
-	models, _ := openCodeProviderModelMap(raw)
-	if len(models) == 0 {
-		return nil
-	}
-	result := make(map[string]bool, len(models))
-	for key := range models {
-		result[key] = true
-	}
-	return result
 }
 
 func openCodeProviderInfo(provider Provider, managed *openCodeManagedState) OpenCodeProviderInfo {

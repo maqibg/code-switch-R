@@ -79,7 +79,6 @@ func TestPiSaveProvidersWithRenameIsAtomicOnSyncFailure(t *testing.T) {
 	original := Provider{
 		ID: 1, Name: "old", APIURL: "https://api.example", Enabled: true,
 		UpstreamProtocol: "anthropic", PiTemplate: "anthropic",
-		SupportedModels: map[string]bool{"claude-test": true},
 	}
 	saveProviderFixtureForKind(t, "pi", []Provider{original})
 	seedRequestLog(t, "pi", "old", 1)
@@ -145,7 +144,6 @@ func TestPiSaveProvidersWithRenameUpdatesConfigHistoryAndGateway(t *testing.T) {
 	original := Provider{
 		ID: 1, Name: "old", APIURL: "https://old.example", Enabled: true,
 		UpstreamProtocol: "anthropic", PiTemplate: "anthropic",
-		SupportedModels: map[string]bool{"claude-test": true},
 	}
 	saveProviderFixtureForKind(t, "pi", []Provider{original})
 	seedRequestLog(t, "pi", "old", 1)

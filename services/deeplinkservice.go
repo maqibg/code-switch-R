@@ -265,13 +265,6 @@ func (s *DeepLinkService) buildProviderFromRequest(request *DeepLinkImportReques
 		}
 	}
 
-	// 如果提供了模型信息，可以设置到 SupportedModels
-	if request.Model != nil && *request.Model != "" {
-		provider.SupportedModels = map[string]bool{
-			*request.Model: true,
-		}
-	}
-
 	return provider, nil
 }
 

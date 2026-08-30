@@ -110,20 +110,7 @@ func GeminiCatalogForProvider(provider Provider) []GeminiModel {
 	if provider.gemini != nil && len(provider.gemini.Catalog) > 0 {
 		return cloneGeminiModels(provider.gemini.Catalog)
 	}
-	models := make([]GeminiModel, 0, len(provider.SupportedModels)+1)
-	for id, enabled := range provider.SupportedModels {
-		if enabled && strings.TrimSpace(id) != "" {
-			models = append(models, GeminiModel{ID: NormalizeGeminiModelID(id), Name: NormalizeGeminiModelID(id), Source: "user_override"})
-		}
-	}
-	if len(models) == 0 {
-		if model := provider.GeminiDefaultModel(); model != "" {
-			models = append(models, GeminiModel{ID: NormalizeGeminiModelID(model), Name: NormalizeGeminiModelID(model), Source: "user_override"})
-		}
-	}
-	if len(models) == 0 {
-		models = BuiltinGeminiModels()
-	}
+	models := BuiltinGeminiModels()
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 	return models
 }
@@ -139,14 +126,13 @@ func GeminiModelDetail(provider Provider, modelID string) (GeminiModel, bool) {
 }
 
 // GeminiProviderModelCandidate resolves one inbound model through the provider's
-// explicit route policy and catalog. An empty SupportedModels/ModelMapping keeps
-// the catalog as the route source; it no longer means "accept every unknown model".
+// explicit route mapping and catalog.
 func GeminiProviderModelCandidate(provider Provider, requestedModel string) (GeminiModel, string, bool) {
 	wanted := NormalizeGeminiModelID(requestedModel)
 	if wanted == "" {
 		return GeminiModel{}, "", false
 	}
-	if (len(provider.SupportedModels) > 0 || len(provider.ModelMapping) > 0) && !provider.IsModelSupported(wanted) {
+	if !provider.MatchesModelMapping(wanted) {
 		return GeminiModel{}, "", false
 	}
 	effective := NormalizeGeminiModelID(provider.GetEffectiveModel(wanted))

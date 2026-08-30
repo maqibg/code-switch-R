@@ -48,8 +48,8 @@ func TestPiRelayFiltersSuppliersByPlatformAndPrivateFields(t *testing.T) {
 
 	providerService := services.NewProviderService()
 	providers := []services.Provider{
-		{ID: 1, Name: "fallback", APIURL: fallback.URL, APIKey: "fallback-key", Enabled: true, Level: 1, PiPlatform: "other-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
-		{ID: 2, Name: "preferred", APIURL: preferred.URL, APIKey: "preferred-key", Enabled: true, Level: 10, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
+		{ID: 1, Name: "fallback", APIURL: fallback.URL, APIKey: "fallback-key", Enabled: true, Level: 1, PiPlatform: "other-platform", UpstreamProtocol: "openai_chat"},
+		{ID: 2, Name: "preferred", APIURL: preferred.URL, APIKey: "preferred-key", Enabled: true, Level: 10, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat"},
 	}
 	if err := providerService.SaveProviders("pi", providers); err != nil {
 		t.Fatalf("保存 Pi Provider 失败: %v", err)
@@ -101,8 +101,8 @@ func TestPiRelayFallsBackWithinPlatform(t *testing.T) {
 
 	providerService := services.NewProviderService()
 	if err := providerService.SaveProviders("pi", []services.Provider{
-		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 1, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
-		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 2, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true}},
+		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 1, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat"},
+		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 2, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat"},
 	}); err != nil {
 		t.Fatalf("保存 Pi Provider 失败: %v", err)
 	}
@@ -155,7 +155,6 @@ func TestPiRelayForwardsGoogleNativePathAndStripsClientCredential(t *testing.T) 
 	if err := providerService.SaveProviders("pi", []services.Provider{{
 		ID: 1, Name: "google", APIURL: upstream.URL, APIKey: "real-key", Enabled: true,
 		PiPlatform: "google", UpstreamProtocol: "google", AuthScheme: "custom", AuthHeader: "x-goog-api-key",
-		SupportedModels: map[string]bool{"gemini-test": true},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +183,7 @@ func TestPiRelayAllowsNoAuthProviderWithEmptyAPIKey(t *testing.T) {
 	providerService := services.NewProviderService()
 	if err := providerService.SaveProviders("pi", []services.Provider{{
 		ID: 1, Name: "local", APIURL: upstream.URL, APIKey: "", AuthScheme: "none",
-		Enabled: true, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"gpt-test": true},
+		Enabled: true, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +220,7 @@ func TestPiRelayStreamsAnthropicToolCallsIncrementally(t *testing.T) {
 	providerService := services.NewProviderService()
 	if err := providerService.SaveProviders("pi", []services.Provider{{
 		ID: 1, Name: "anthropic", APIURL: upstream.URL, APIKey: "key", Enabled: true,
-		PiPlatform: "test-platform", UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true},
+		PiPlatform: "test-platform", UpstreamProtocol: "anthropic",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -258,8 +257,8 @@ func TestPiRelayDoesNotFallbackAfterStreamResponseCommitted(t *testing.T) {
 
 	providerService := services.NewProviderService()
 	if err := providerService.SaveProviders("pi", []services.Provider{
-		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 1, PiPlatform: "test-platform", UpstreamProtocol: "anthropic", SupportedModels: map[string]bool{"m": true}},
-		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 2, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat", SupportedModels: map[string]bool{"m": true}},
+		{ID: 1, Name: "preferred", APIURL: preferred.URL, APIKey: "key", Enabled: true, Level: 1, PiPlatform: "test-platform", UpstreamProtocol: "anthropic"},
+		{ID: 2, Name: "fallback", APIURL: fallback.URL, APIKey: "key", Enabled: true, Level: 2, PiPlatform: "test-platform", UpstreamProtocol: "openai_chat"},
 	}); err != nil {
 		t.Fatal(err)
 	}

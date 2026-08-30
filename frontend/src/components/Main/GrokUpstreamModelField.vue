@@ -3,7 +3,7 @@
     <div class="field-header">
       <span>{{ t('grok.form.upstreamModel') }}</span>
       <BaseButton type="button" variant="outline" :disabled="fetching || !provider.apiUrl" @click="fetchModels">
-        {{ fetching ? t('components.provider.modelWhitelist.fetching') : t('grok.form.fetchModels') }}
+        {{ fetching ? t('components.provider.piModel.fetching') : t('grok.form.fetchModels') }}
       </BaseButton>
     </div>
     <BaseInput :model-value="modelValue" :placeholder="t('grok.form.upstreamModelPlaceholder')" required @update:model-value="emit('update:modelValue', $event)" />
@@ -47,7 +47,7 @@ const fetchModels = async () => {
     models.value = (result.models ?? [])
       .map((model) => ({ id: model.id?.trim() ?? '', name: model.name?.trim() }))
       .filter((model) => model.id)
-    message.value = t('components.provider.modelWhitelist.fetchSuccess', { count: models.value.length })
+    message.value = t('components.provider.piModel.fetchSuccess', { count: models.value.length })
   } catch (error) {
     failed.value = true
     message.value = error instanceof Error ? error.message : String(error)
