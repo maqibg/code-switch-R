@@ -24,7 +24,6 @@ func TestScopeForKindResolvesAllForms(t *testing.T) {
 		"claude-code": {platform: "claude"},
 		"claude_code": {platform: "claude"},
 		"codex":       {platform: "codex"},
-		"reasonix":    {platform: "reasonix"},
 		"pi":          {platform: "pi"},
 		"gemini":      {platform: "gemini"},
 		"opencode":    {platform: "opencode"},
@@ -192,7 +191,7 @@ func TestProviderRepositoryIsolatesScopes(t *testing.T) {
 func TestProviderRepositoryAssignsIDForNewProviders(t *testing.T) {
 	setupProviderRepoEnv(t)
 	ctx := context.Background()
-	scope := providerScope{platform: "reasonix"}
+	scope := providerScope{platform: "pi"}
 
 	if _, err := replaceProvidersInDB(ctx, scope, []Provider{
 		{Name: "NewOne", APIURL: "u", APIKey: "k", Enabled: true},

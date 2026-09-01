@@ -11,9 +11,9 @@ import (
 
 // 本文件抽出 JSON 型 CLI 配置的代理启停通用实现。
 //
-// 背景：claudesettings.go 与 reasonixsettings.go 曾是逐行同构的手工拷贝，
-// 连错误消息都逐字相同。两者只有五处真实差异（配置结构嵌套与否、字段键名、
-// baseURL 是否带路径后缀、状态文件的 EnvExisted 语义、写后是否清理空对象），
+// 背景：claudesettings.go 曾是多份逐行同构的手工拷贝之一，
+// 连错误消息都逐字相同。各 JSON 型平台只有五处真实差异（配置结构嵌套与否、
+// 字段键名、baseURL 是否带路径后缀、状态文件的 EnvExisted 语义、写后是否清理空对象），
 // 其余全部一致。拷贝导致同一个 bug 要修多份——B5 那个"解析失败用空配置
 // 覆盖用户文件"的问题就在 5 个地方各存在一份。
 //
@@ -21,7 +21,7 @@ import (
 // 改动方法集会连带改前端。这里只承接内部实现。
 
 // jsonProxyFieldAccess 描述"在配置对象里读写代理字段"的方式。
-// 用于抹平 Claude 的 env 嵌套结构与 Reasonix 的顶层扁平结构。
+// 用于抹平 Claude 的 env 嵌套结构与扁平 JSON 平台的顶层结构。
 type jsonProxyFieldAccess struct {
 	// baseURLKey / authTokenKey 代理地址与凭据的字段名
 	baseURLKey   string
@@ -47,7 +47,7 @@ type jsonProxyPlatform struct {
 	backupFile string
 	// authToken 启用代理时写入当前随机 Relay Token。
 	authToken func() string
-	// urlSuffix 代理地址的路径后缀，如 "/reasonix"；Claude 为空
+	// urlSuffix 代理地址的路径后缀（如 "/pi"）；Claude 为空
 	urlSuffix string
 	// logPrefix 日志前缀，如 "[ClaudeSettingsService]"
 	logPrefix string

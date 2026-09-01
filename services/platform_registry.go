@@ -33,10 +33,6 @@ var providerPlatformDefinitions = []PlatformDefinition{
 		ProviderFile: "grok-build.json",
 	},
 	{
-		ID: "reasonix", ClientProtocol: relayprotocol.OpenAIChat, DefaultEndpoint: "/chat/completions",
-		ProviderFile: "reasonix.json",
-	},
-	{
 		ID: "pi", ClientProtocol: relayprotocol.OpenAIChat, DefaultEndpoint: "/v1/chat/completions",
 		ProviderFile: "pi.json",
 	},

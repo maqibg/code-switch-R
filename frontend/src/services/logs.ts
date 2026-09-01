@@ -11,7 +11,7 @@
  */
 import * as LogService from '../../bindings/codeswitch/services/logservice'
 
-export type LogPlatform = 'claude' | 'codex' | 'grok' | 'gemini' | 'reasonix' | 'pi' | 'opencode'
+export type LogPlatform = 'claude' | 'codex' | 'grok' | 'gemini' | 'pi' | 'opencode'
 export type StatsRange = 'today' | '7d' | '30d' | 'month' | 'all'
 
 export type RequestLog = {

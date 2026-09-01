@@ -12,7 +12,6 @@
  */
 import * as ClaudeSettingsService from '../../bindings/codeswitch/services/claudesettingsservice'
 import * as CodexSettingsService from '../../bindings/codeswitch/services/codexsettingsservice'
-import * as ReasonixSettingsService from '../../bindings/codeswitch/services/reasonixsettingsservice'
 
 // 本地类型定义，避免依赖 CI 生成的绑定文件
 export interface ClaudeProxyStatus {
@@ -20,15 +19,10 @@ export interface ClaudeProxyStatus {
   base_url: string
 }
 
-export type CliSettingsPlatform = 'claude' | 'codex' | 'reasonix'
+export type CliSettingsPlatform = 'claude' | 'codex'
 type Platform = CliSettingsPlatform
 
-// 三个平台的代理开关与直连应用方法。
-//
-// 返回类型各平台略有不同（reasonix 是 ReasonixProxyStatus，另两个是
-// ClaudeProxyStatus），所以 ProxyStatus 声明成 PromiseLike<unknown>
-// 交给下面的 normalizeProxyStatus 收口；用 PromiseLike 而不是 Promise
-// 是因为绑定返回的 $CancellablePromise 多了 cancel 方法。
+// 两个平台的代理开关与直连应用方法。
 type PlatformProxyBindings = {
   ProxyStatus: () => PromiseLike<unknown>
   EnableProxy: () => PromiseLike<void>
@@ -40,7 +34,6 @@ type PlatformProxyBindings = {
 const platformBindings: Record<Platform, PlatformProxyBindings> = {
   claude: ClaudeSettingsService,
   codex: CodexSettingsService,
-  reasonix: ReasonixSettingsService,
 }
 
 // 归一化代理状态字段（兼容 Wails 返回的 Go 导出字段名 Enabled/BaseURL）

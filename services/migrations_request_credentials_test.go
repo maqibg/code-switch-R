@@ -7,10 +7,10 @@ func TestRequestCredentialMigrationRepairsVersionedLegacySchema(t *testing.T) {
 	if err := ensureSchemaVersionTable(db); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`CREATE TABLE request_log (id INTEGER PRIMARY KEY)`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE request_log (id INTEGER PRIMARY KEY, platform TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`CREATE TABLE relay_attempt (id INTEGER PRIMARY KEY)`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE relay_attempt (id INTEGER PRIMARY KEY, platform TEXT)`); err != nil {
 		t.Fatal(err)
 	}
 	for version := 1; version <= 13; version++ {

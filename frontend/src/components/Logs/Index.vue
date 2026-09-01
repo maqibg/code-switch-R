@@ -43,7 +43,6 @@
             <option value="codex">Codex</option>
             <option value="gemini">Gemini</option>
             <option value="grok">Grok Build</option>
-            <option value="reasonix">Reasonix</option>
             <option value="pi">Pi</option>
             <option value="opencode">OpenCode</option>
           </select>

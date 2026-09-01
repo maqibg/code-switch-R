@@ -95,8 +95,8 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if app == "" {
 		return nil, fmt.Errorf("缺少 'app' 参数")
 	}
-	if app != "claude" && app != "codex" && app != "gemini" && app != "reasonix" && app != "pi" {
-		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 'gemini', 'reasonix' 或 'pi', 得到 '%s'", app)
+	if app != "claude" && app != "codex" && app != "gemini" && app != "pi" {
+		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 'gemini' 或 'pi', 得到 '%s'", app)
 	}
 
 	name := params.Get("name")
@@ -204,10 +204,8 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 		kind = "claude"
 	case "codex":
 		kind = "codex"
-		case "gemini":
-			kind = "gemini"
-	case "reasonix":
-		kind = "reasonix"
+	case "gemini":
+		kind = "gemini"
 	case "pi":
 		kind = "pi"
 	default:
@@ -327,10 +325,8 @@ func (s *DeepLinkService) parseAndMergeConfig(request *DeepLinkImportRequest) (*
 		s.mergeCodexConfig(&merged, configData)
 	case "gemini":
 		s.mergeGeminiConfig(&merged, configData)
-	case "reasonix":
-		s.mergeReasonixConfig(&merged, configData)
 	case "pi":
-		s.mergeReasonixConfig(&merged, configData)
+		s.mergePiConfig(&merged, configData)
 	}
 
 	return &merged, nil
@@ -450,8 +446,8 @@ func (s *DeepLinkService) mergeGeminiConfig(request *DeepLinkImportRequest, conf
 	}
 }
 
-// mergeReasonixConfig 合并 Reasonix 配置（扁平 JSON 结构）
-func (s *DeepLinkService) mergeReasonixConfig(request *DeepLinkImportRequest, config map[string]interface{}) {
+// mergePiConfig 合并 Pi 配置（扁平 JSON 结构）
+func (s *DeepLinkService) mergePiConfig(request *DeepLinkImportRequest, config map[string]interface{}) {
 	if request.APIKey == "" {
 		if apiKey, ok := config["apiKey"].(string); ok {
 			request.APIKey = apiKey

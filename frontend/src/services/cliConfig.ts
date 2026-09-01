@@ -10,7 +10,7 @@
 import * as CliConfigService from '../../bindings/codeswitch/services/cliconfigservice'
 
 // CLI 平台类型
-export type CLIPlatform = 'claude' | 'codex' | 'gemini' | 'reasonix'
+export type CLIPlatform = 'claude' | 'codex' | 'gemini'
 
 // 配置字段信息
 export interface CLIConfigField {

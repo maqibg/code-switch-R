@@ -688,7 +688,7 @@ func ResolveProviderUpstreamProtocol(platform string, provider Provider, effecti
 	switch strings.ToLower(strings.TrimSpace(platform)) {
 	case "codex", "grok":
 		return UpstreamProtocolOpenAIResponses
-	case "reasonix", "pi":
+	case "pi":
 		return UpstreamProtocolOpenAIChat
 	case "gemini":
 		return UpstreamProtocolGoogle

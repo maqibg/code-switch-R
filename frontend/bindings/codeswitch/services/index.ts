@@ -26,7 +26,6 @@ import * as PricingService from "./pricingservice.js";
 import * as PromptService from "./promptservice.js";
 import * as ProviderModelDiscoveryService from "./providermodeldiscoveryservice.js";
 import * as ProviderService from "./providerservice.js";
-import * as ReasonixSettingsService from "./reasonixsettingsservice.js";
 import * as SettingsService from "./settingsservice.js";
 import * as SuiStore from "./suistore.js";
 import * as UpdateService from "./updateservice.js";
@@ -56,7 +55,6 @@ export {
     PromptService,
     ProviderModelDiscoveryService,
     ProviderService,
-    ReasonixSettingsService,
     SettingsService,
     SuiStore,
     UpdateService
@@ -180,7 +178,6 @@ export {
     ProviderRequestTemplate,
     ProxyConfig,
     ProxyTestResult,
-    ReasonixProxyStatus,
     RecordCleanupResult,
     RecordStorageInfo,
     RequestLog,

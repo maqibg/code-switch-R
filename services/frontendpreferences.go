@@ -43,7 +43,7 @@ func defaultFrontendPreferences() FrontendPreferences {
 	}
 }
 
-var defaultHomePlatformOrder = []string{"claude", "codex", "gemini", "reasonix", "others"}
+var defaultHomePlatformOrder = []string{"claude", "codex", "gemini", "others"}
 
 func normalizeFrontendPreferences(prefs FrontendPreferences) FrontendPreferences {
 	switch prefs.Theme {
@@ -83,7 +83,6 @@ var platformPageIDs = map[string]struct{}{
 	"codex":    {},
 	"pi":       {},
 	"grok":     {},
-	"reasonix": {},
 	"gemini":   {},
 	"opencode": {},
 }

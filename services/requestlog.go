@@ -39,7 +39,7 @@ const (
 type RequestLog struct {
 	ID               int64  `json:"id"`
 	RequestID        string `json:"request_id,omitempty"`
-	Platform         string `json:"platform"` // claude、codex、gemini、reasonix、pi、grok 或 opencode
+	Platform         string `json:"platform"` // claude、codex、gemini、pi、grok 或 opencode
 	SourceID         string `json:"source_id,omitempty"`
 	ClientProtocol   string `json:"client_protocol,omitempty"`
 	UpstreamProtocol string `json:"upstream_protocol,omitempty"`

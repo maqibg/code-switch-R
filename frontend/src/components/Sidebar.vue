@@ -9,7 +9,6 @@ import geminiIcon from '../assets/icons/gemini.svg?raw'
 import grokIcon from '../assets/icons/grok.svg?raw'
 import piIcon from '../assets/icons/pi.svg?raw'
 import opencodeIcon from '../assets/icons/opencode.svg?raw'
-import reasonixIcon from '../assets/icons/reasonix.svg?raw'
 import {
   getStoredHiddenPlatformPages,
   getStoredSidebarCollapsed,
@@ -32,7 +31,6 @@ const platforms: Array<{ id: PlatformPageID; name: string; mark: string; icon?: 
   { id: 'codex', name: 'Codex', mark: 'X', icon: codexIcon, color: 'var(--mac-text)' },
   { id: 'pi', name: 'Pi', mark: 'P', icon: piIcon, color: 'var(--mac-text)' },
   { id: 'grok', name: 'Grok Build', mark: 'G', icon: grokIcon, color: 'var(--mac-text)' },
-  { id: 'reasonix', name: 'Reasonix', mark: 'R', icon: reasonixIcon, color: '#6c7cff' },
   { id: 'gemini', name: 'Gemini', mark: 'G', icon: geminiIcon, color: '#3d70c9' },
   { id: 'opencode', name: 'OpenCode', mark: 'O', icon: opencodeIcon, color: 'var(--mac-text)' },
 ]
@@ -201,7 +199,7 @@ onUnmounted(() => window.removeEventListener('platform-visibility-updated', hand
 .platform-list { display: grid; gap: 1px; padding: 2px 0 4px 10px; }
 .platform-item { min-height: 32px; }
 .platform-mark { display: inline-grid; width: 20px; height: 20px; place-items: center; flex: 0 0 auto; color: var(--platform-color, var(--mac-accent)); overflow: hidden; }
-.platform-mark svg { width: 18px; height: 18px; display: block; }.platform-mark[data-platform="claude"] { --platform-color: #b76645; }.platform-mark[data-platform="codex"] { --platform-color: #277b71; }.platform-mark[data-platform="pi"] { --platform-color: #89507d; }.platform-mark[data-platform="grok"] { --platform-color: #506b80; }.platform-mark[data-platform="reasonix"] { --platform-color: #82633f; }.platform-mark[data-platform="gemini"] { --platform-color: #3d70c9; }.platform-mark[data-platform="opencode"] { --platform-color: #5c7580; }
+.platform-mark svg { width: 18px; height: 18px; display: block; }.platform-mark[data-platform="claude"] { --platform-color: #b76645; }.platform-mark[data-platform="codex"] { --platform-color: #277b71; }.platform-mark[data-platform="pi"] { --platform-color: #89507d; }.platform-mark[data-platform="grok"] { --platform-color: #506b80; }.platform-mark[data-platform="gemini"] { --platform-color: #3d70c9; }.platform-mark[data-platform="opencode"] { --platform-color: #5c7580; }
 .platform-mark-img { border-radius: 5px; object-fit: contain; }
 .sidebar-footer { padding: 8px 8px 14px; border-top: 1px solid var(--mac-sidebar-border); }
 .footer-settings { margin-bottom: 8px; }

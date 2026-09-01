@@ -10,7 +10,6 @@ export const defaultTabs = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'codex', label: 'Codex' },
   { id: 'gemini', label: 'Gemini' },
-  { id: 'reasonix', label: 'Reasonix' },
   { id: 'grok', label: 'Grok Build' },
   { id: 'grok-oauth', label: 'Grok Build OAuth' },
 ] as const
@@ -23,7 +22,6 @@ export const providerTabIds: ProviderTab[] = [
   'claude',
   'codex',
   'gemini',
-  'reasonix',
   'grok',
 ]
 

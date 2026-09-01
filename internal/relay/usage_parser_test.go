@@ -43,9 +43,9 @@ func TestNegativeUsageTokenIsInvalid(t *testing.T) {
 	}
 }
 
-func TestReasonixUsageAcceptsStandardOpenAICacheDetails(t *testing.T) {
+func TestOpenAIChatUsageAcceptsStandardOpenAICacheDetails(t *testing.T) {
 	var usage services.RequestLog
-	ReasonixParseTokenUsageFromResponse(`{"usage":{"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens":3}}`, &usage)
+	OpenAIChatParseTokenUsageFromResponse(`{"usage":{"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens":3}}`, &usage)
 	if usage.InputTokens != 8 || usage.CacheReadTokens != 2 || usage.OutputTokens != 3 {
 		t.Fatalf("OpenAI Chat 标准缓存字段解析错误: input=%d cache=%d output=%d", usage.InputTokens, usage.CacheReadTokens, usage.OutputTokens)
 	}
@@ -60,7 +60,7 @@ func TestAnthropicToChatUsageRestoresOpenAITotalInputBeforeParsing(t *testing.T)
 	stream += converter.ProcessLine("event: message_stop")
 	stream += converter.ProcessLine(`data: {"type":"message_stop"}`)
 	var usage services.RequestLog
-	parseEventPayload(strings.TrimSpace(stream), ReasonixParseTokenUsageFromResponse, &usage)
+	parseEventPayload(strings.TrimSpace(stream), OpenAIChatParseTokenUsageFromResponse, &usage)
 	if usage.InputTokens != 10 || usage.CacheReadTokens != 2 || usage.OutputTokens != 3 {
 		t.Fatalf("Anthropic -> Chat usage 转换错误: input=%d cache=%d output=%d stream=%q", usage.InputTokens, usage.CacheReadTokens, usage.OutputTokens, stream)
 	}

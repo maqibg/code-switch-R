@@ -16,7 +16,7 @@ func TestNormalizeFrontendPreferencesPlatformOrder(t *testing.T) {
 		HiddenPlatformPages: []string{" gemini ", "unknown", "gemini", "opencode"},
 	})
 
-	wantHome := []string{"codex", "claude", "gemini", "reasonix", "others"}
+	wantHome := []string{"codex", "claude", "gemini", "others"}
 	if !slices.Equal(prefs.HomePlatformOrder, wantHome) {
 		t.Fatalf("home platform order = %#v, want %#v", prefs.HomePlatformOrder, wantHome)
 	}

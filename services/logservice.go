@@ -49,7 +49,7 @@ const cacheInputTokensSQL = `CASE
 		OR (
 			LOWER(TRIM(COALESCE(usage_status, ''))) IN ('legacy', '')
 			AND LOWER(TRIM(COALESCE(upstream_protocol, ''))) = ''
-			AND LOWER(TRIM(COALESCE(platform, ''))) IN ('codex', 'reasonix', 'gemini', 'grok'))
+			AND LOWER(TRIM(COALESCE(platform, ''))) IN ('codex', 'gemini', 'grok'))
 	)
 		THEN COALESCE(input_tokens, 0)
 	ELSE COALESCE(input_tokens, 0) + COALESCE(cache_create_tokens, 0) + COALESCE(cache_read_tokens, 0)

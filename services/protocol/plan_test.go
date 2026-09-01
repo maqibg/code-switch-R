@@ -65,7 +65,7 @@ func TestBuildRoutePlanNativePlatforms(t *testing.T) {
 		want     Protocol
 	}{
 		{platform: "gemini", want: GeminiNative},
-		{platform: "reasonix", want: OpenAIChat},
+		{platform: "pi", want: OpenAIChat},
 	}
 
 	for _, tc := range cases {

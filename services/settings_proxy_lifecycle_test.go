@@ -33,7 +33,6 @@ func proxyLifecycleCases(t *testing.T) []proxyLifecycleCase {
 	t.Helper()
 	claude := NewClaudeSettingsService("127.0.0.1:18100")
 	codex := NewCodexSettingsService("127.0.0.1:18100")
-	reasonix := NewReasonixSettingsService("127.0.0.1:18100")
 
 	return []proxyLifecycleCase{
 		{
@@ -59,19 +58,6 @@ func proxyLifecycleCases(t *testing.T) []proxyLifecycleCase {
 			disable:         codex.DisableProxy,
 			status: func() (bool, error) {
 				s, err := codex.ProxyStatus()
-				return s.Enabled, err
-			},
-		},
-		{
-			name:            "reasonix",
-			relPath:         filepath.Join(".reasonix", "config.json"),
-			validContent:    `{"theme":"dark","customField":"keep-me"}`,
-			brokenContent:   `{"theme":"dark"`,
-			preservedMarker: "keep-me",
-			enable:          reasonix.EnableProxy,
-			disable:         reasonix.DisableProxy,
-			status: func() (bool, error) {
-				s, err := reasonix.ProxyStatus()
 				return s.Enabled, err
 			},
 		},
@@ -428,7 +414,6 @@ func TestRefreshManagedRelayCredentialsContinuesAfterPlatformConflict(t *testing
 		claude,
 		NewCodexSettingsService("127.0.0.1:18100"),
 		gemini,
-		NewReasonixSettingsService("127.0.0.1:18100"),
 		NewPiSettingsService("127.0.0.1:18100", nil),
 		NewGrokBuildService("127.0.0.1:18100", nil, nil),
 	)

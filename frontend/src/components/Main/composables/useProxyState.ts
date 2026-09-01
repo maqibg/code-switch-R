@@ -44,8 +44,6 @@ export function useProxyState(state: MainState, t: Translate) {
         return t('components.main.relayToggle.hostCodex')
       case 'gemini':
         return t('components.main.relayToggle.hostGemini')
-      case 'reasonix':
-        return t('components.main.relayToggle.hostReasonix')
     }
   })
 

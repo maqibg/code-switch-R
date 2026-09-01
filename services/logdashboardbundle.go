@@ -249,11 +249,10 @@ func queryTrendStats(db *sql.DB, window statsWindow, snapshot aggregateSnapshot)
 
 func queryPlatformStats(db *sql.DB, window statsWindow) (map[string]LogStats, aggregateSnapshot, error) {
 	result := map[string]LogStats{
-		"claude":   {RangeKey: window.key, Series: []LogStatsSeries{}},
-		"codex":    {RangeKey: window.key, Series: []LogStatsSeries{}},
-		"gemini":   {RangeKey: window.key, Series: []LogStatsSeries{}},
-		"reasonix": {RangeKey: window.key, Series: []LogStatsSeries{}},
-		"pi":       {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"claude": {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"codex":  {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"gemini": {RangeKey: window.key, Series: []LogStatsSeries{}},
+		"pi":     {RangeKey: window.key, Series: []LogStatsSeries{}},
 	}
 	query := `
 		SELECT

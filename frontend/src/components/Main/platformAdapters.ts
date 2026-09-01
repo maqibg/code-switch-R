@@ -64,7 +64,7 @@ const replaceCards = (state: MainState, tab: ProviderTab, data: AutomationCard[]
   sortProvidersByLevel(state.cards[tab])
 }
 
-// ---------- claude / codex / reasonix：ProviderService JSON 存储 + 数字 ID ----------
+// ---------- claude / codex：ProviderService JSON 存储 + 数字 ID ----------
 
 const jsonPlatformAdapter = (tab: CliSettingsPlatform): PlatformAdapter => ({
   async loadCards(state) {
@@ -306,7 +306,6 @@ const grokAdapter: PlatformAdapter = {
 export const platformAdapters: Record<ProviderTab, PlatformAdapter> = {
   claude: jsonPlatformAdapter('claude'),
   codex: jsonPlatformAdapter('codex'),
-  reasonix: jsonPlatformAdapter('reasonix'),
   gemini: geminiAdapter,
   grok: grokAdapter,
 }

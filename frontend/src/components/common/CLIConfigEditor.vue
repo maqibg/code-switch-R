@@ -443,7 +443,6 @@ const platformLabels: Record<CLIPlatform, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   gemini: 'Gemini',
-  reasonix: 'Reasonix',
 }
 
 const platformLabel = computed(() => platformLabels[props.platform] || props.platform)

@@ -32,25 +32,6 @@ var claudeProxyPlatform = jsonProxyPlatform{
 	},
 }
 
-// reasonixProxyPlatform Reasonix：配置字段在顶层
-var reasonixProxyPlatform = jsonProxyPlatform{
-	platform:        reasonixPlatform,
-	configDir:       reasonixSettingsDir,
-	configFile:      reasonixSettingsFileName,
-	backupFile:      reasonixBackupFileName,
-	authToken:       relayTokenForConfig,
-	urlSuffix:       "/reasonix",
-	logPrefix:       "[ReasonixSettingsService]",
-	access: jsonProxyFieldAccess{
-		baseURLKey:   "baseUrl",
-		authTokenKey: "apiKey",
-		container:    topLevelContainer,
-		afterWrite:   nil, // 扁平结构无需收尾
-		// 扁平结构下字段始终"存在"于顶层，没有需要清理的容器
-		containerExisted: func(map[string]any) bool { return true },
-	},
-}
-
 // nestedEnvContainer 取出（或创建）env 子对象
 func nestedEnvContainer(payload map[string]any, create bool) map[string]any {
 	env, _ := payload["env"].(map[string]any)

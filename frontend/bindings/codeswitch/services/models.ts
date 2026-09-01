@@ -2377,7 +2377,6 @@ export class MCPServer {
     "enabled_in_claude": boolean;
     "enabled_in_codex": boolean;
     "enabled_in_gemini": boolean;
-    "enabled_in_reasonix": boolean;
     "missing_placeholders": string[];
 
     /** Creates a new MCPServer instance. */
@@ -2403,9 +2402,6 @@ export class MCPServer {
         if (!("enabled_in_gemini" in $$source)) {
             this["enabled_in_gemini"] = false;
         }
-        if (!("enabled_in_reasonix" in $$source)) {
-            this["enabled_in_reasonix"] = false;
-        }
         if (!("missing_placeholders" in $$source)) {
             this["missing_placeholders"] = [];
         }
@@ -2420,7 +2416,7 @@ export class MCPServer {
         const $$createField3_0 = $$createType18;
         const $$createField4_0 = $$createType4;
         const $$createField9_0 = $$createType18;
-        const $$createField14_0 = $$createType18;
+        const $$createField13_0 = $$createType18;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("args" in $$parsedSource) {
             $$parsedSource["args"] = $$createField3_0($$parsedSource["args"]);
@@ -2432,7 +2428,7 @@ export class MCPServer {
             $$parsedSource["enable_platform"] = $$createField9_0($$parsedSource["enable_platform"]);
         }
         if ("missing_placeholders" in $$parsedSource) {
-            $$parsedSource["missing_placeholders"] = $$createField14_0($$parsedSource["missing_placeholders"]);
+            $$parsedSource["missing_placeholders"] = $$createField13_0($$parsedSource["missing_placeholders"]);
         }
         return new MCPServer($$parsedSource as Partial<MCPServer>);
     }
@@ -5634,31 +5630,6 @@ export class ProxyTestResult {
     }
 }
 
-export class ReasonixProxyStatus {
-    "enabled": boolean;
-    "base_url": string;
-
-    /** Creates a new ReasonixProxyStatus instance. */
-    constructor($$source: Partial<ReasonixProxyStatus> = {}) {
-        if (!("enabled" in $$source)) {
-            this["enabled"] = false;
-        }
-        if (!("base_url" in $$source)) {
-            this["base_url"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ReasonixProxyStatus instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ReasonixProxyStatus {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ReasonixProxyStatus($$parsedSource as Partial<ReasonixProxyStatus>);
-    }
-}
-
 export class RecordCleanupResult {
     "deleted_request_logs": number;
     "deleted_relay_attempts": number;
@@ -5748,7 +5719,7 @@ export class RequestLog {
     "request_id"?: string;
 
     /**
-     * claude、codex、gemini、reasonix、pi、grok 或 opencode
+     * claude、codex、gemini、pi、grok 或 opencode
      */
     "platform": string;
     "source_id"?: string;

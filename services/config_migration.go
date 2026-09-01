@@ -31,7 +31,6 @@ var configMigrationFiles = map[string]struct{}{
 	"mcp-claude-code.json":           {},
 	"mcp-codex.json":                 {},
 	"mcp-gemini.json":                {},
-	"mcp-reasonix.json":              {},
 	filepath.Join("model-pricing", pricingRulesFilename): {},
 }
 

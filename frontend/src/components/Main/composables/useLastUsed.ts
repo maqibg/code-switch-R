@@ -29,7 +29,6 @@ export function useLastUsed(
     claude: null,
     codex: null,
     gemini: null,
-    reasonix: null,
     pi: null,
   })
   const highlightedProvider = ref<string | null>(null)

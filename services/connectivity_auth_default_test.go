@@ -12,7 +12,6 @@ func TestDefaultConnectivityAuthType(t *testing.T) {
 		{platform: "claude", want: "bearer"},
 		{platform: "claude-code", want: "bearer"},
 		{platform: "codex", want: "bearer"},
-		{platform: "reasonix", want: "bearer"},
 	}
 
 	for _, tc := range cases {

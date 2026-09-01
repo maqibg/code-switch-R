@@ -53,7 +53,6 @@ export const tabRecord = <T>(value: () => T): Record<ProviderTab, T> => ({
   claude: value(),
   codex: value(),
   gemini: value(),
-  reasonix: value(),
   grok: value(),
 })
 
@@ -69,7 +68,6 @@ export function createMainState() {
     claude: createAutomationCards(automationCardGroups.claude),
     codex: createAutomationCards(automationCardGroups.codex),
     gemini: [],
-    reasonix: [],
     grok: [],
   })
   const activeCards = computed(() => (

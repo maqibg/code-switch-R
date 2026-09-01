@@ -117,7 +117,7 @@ func protocolMatrixHook(converter *ProtocolMatrixSSEConverter, target relayproto
 func protocolUsageParser(protocol relayprotocol.Protocol) func(string, *services.RequestLog) {
 	switch protocol {
 	case relayprotocol.OpenAIChat:
-		return ReasonixParseTokenUsageFromResponse
+		return OpenAIChatParseTokenUsageFromResponse
 	case relayprotocol.OpenAIResponses:
 		return CodexParseTokenUsageFromResponse
 	case relayprotocol.GeminiNative:

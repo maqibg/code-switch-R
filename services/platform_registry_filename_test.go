@@ -14,7 +14,7 @@ import (
 func TestProviderFilePathVariantsAgreeOnFilename(t *testing.T) {
 	kinds := []string{
 		"claude", "claude-code", "claude_code",
-		"codex", "reasonix", "pi",
+		"codex", "pi",
 	}
 
 	for _, kind := range kinds {
@@ -45,7 +45,6 @@ func TestResolvePlatformIDNormalizesAliases(t *testing.T) {
 		"claude_code":  "claude",
 		"CLAUDE":       "claude",
 		"  codex  ":    "codex",
-		"reasonix":     "reasonix",
 		"pi":           "pi",
 		"unknown-plat": "",
 		"custom:x":     "",

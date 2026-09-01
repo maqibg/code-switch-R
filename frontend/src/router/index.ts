@@ -5,7 +5,7 @@ const routes = [
   { path: '/platform/pi/:tab?', component: () => import('../components/Pi/Index.vue') },
   { path: '/platform/opencode/:tab?', component: () => import('../components/OpenCode/Index.vue') },
   // 只允许已有的平台进入通用平台页。未知参数不能再被页面静默当成 Claude。
-  { path: '/platform/:platform(claude|codex|gemini|reasonix|grok)/:tab?', component: () => import('../components/Platform/Index.vue') },
+  { path: '/platform/:platform(claude|codex|gemini|grok)/:tab?', component: () => import('../components/Platform/Index.vue') },
   {
     path: '/platform/:platform/:tab?',
     redirect: (to) => {

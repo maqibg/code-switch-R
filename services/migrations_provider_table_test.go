@@ -113,7 +113,6 @@ func TestProviderMigrationRemovesCustomCLI(t *testing.T) {
 
 	writeProviderFixture(t, "claude-code.json", []Provider{{ID: 1, Name: "C", APIURL: "u", APIKey: "k", Enabled: true}})
 	writeProviderFixture(t, "codex.json", []Provider{{ID: 2, Name: "X", APIURL: "u", APIKey: "k", Enabled: true}})
-	writeProviderFixture(t, "reasonix.json", []Provider{{ID: 3, Name: "R", APIURL: "u", APIKey: "k", Enabled: true}})
 	writeProviderFixture(t, "pi.json", []Provider{{ID: 4, Name: "P", APIURL: "u", APIKey: "k", Enabled: true, PiPlatform: "anthropic"}})
 	writeProviderFixture(t, filepath.Join("providers", "my-tool.json"), []Provider{
 		{ID: 5, Name: "T", APIURL: "u", APIKey: "k", Enabled: true},
@@ -123,14 +122,13 @@ func TestProviderMigrationRemovesCustomCLI(t *testing.T) {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
-	if got := providerRowCount(t, db); got != 4 {
-		t.Fatalf("应只保留 4 个注册平台的 Provider，实际 %d", got)
+	if got := providerRowCount(t, db); got != 3 {
+		t.Fatalf("应只保留 3 个注册平台的 Provider，实际 %d", got)
 	}
 
 	cases := map[int64]struct{ platform, sourceID string }{
 		1: {"claude", ""},
 		2: {"codex", ""},
-		3: {"reasonix", ""},
 		4: {"pi", ""},
 	}
 	for id, want := range cases {

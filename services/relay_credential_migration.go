@@ -18,7 +18,6 @@ func RefreshManagedRelayCredentials(
 	claude *ClaudeSettingsService,
 	codex *CodexSettingsService,
 	gemini *GeminiService,
-	reasonix *ReasonixSettingsService,
 	pi *PiSettingsService,
 	grok *GrokBuildService,
 ) error {
@@ -29,7 +28,6 @@ func RefreshManagedRelayCredentials(
 		{"Claude Code", func() error { return claudeProxyPlatform.refreshManagedCredential(claude.relayAddr) }},
 		{"Codex", codex.refreshManagedCredential},
 		{"Gemini", gemini.refreshManagedCredential},
-		{"Reasonix", func() error { return reasonixProxyPlatform.refreshManagedCredential(reasonix.relayAddr) }},
 		{"Pi", pi.refreshManagedCredentials},
 		{"Grok", grok.refreshManagedRelayCredential},
 	}

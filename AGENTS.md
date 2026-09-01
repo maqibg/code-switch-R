@@ -4,7 +4,7 @@
 
 ## 项目是什么
 
-仅发布 Windows amd64 便携版的 Wails 3 桌面应用。用 Go 后端、Vue 3 前端和本地 HTTP Relay 管理多个 AI CLI（Claude Code、Codex、Gemini CLI、Reasonix、Pi、OpenCode、Grok Build）的供应商配置。Relay 用随机 Token 鉴权、只监听 localhost，按供应商启用状态、显式模型映射、Level 分组和黑名单状态做降级转发，并记录请求、Token、成本。
+仅发布 Windows amd64 便携版的 Wails 3 桌面应用。用 Go 后端、Vue 3 前端和本地 HTTP Relay 管理多个 AI CLI（Claude Code、Codex、Gemini CLI、Pi、OpenCode、Grok Build）的供应商配置。Relay 用随机 Token 鉴权、只监听 localhost，按供应商启用状态、显式模型映射、Level 分组和黑名单状态做降级转发，并记录请求、Token、成本。
 
 | 层级 | 实现 |
 |---|---|
@@ -88,8 +88,6 @@ GET  /v1/models                       -> claude
 GET  /grok/v1/models                  -> grok（固定返一个 grok-build model）
 GET|POST /gemini/v1beta/*any          -> gemini
 GET|POST /gemini/v1/*any              -> gemini
-POST /reasonix/chat/completions       -> reasonix
-GET  /reasonix/models                 -> reasonix
 POST /pi/providers/:provider/*any     -> Pi 平台级协议网关
 ```
 

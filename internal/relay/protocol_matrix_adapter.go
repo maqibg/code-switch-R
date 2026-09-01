@@ -930,7 +930,7 @@ func synthesizeResponsesStream(body []byte) ([]byte, error) {
 func parseConvertedUsage(body []byte, protocol relayprotocol.Protocol, usage *services.RequestLog) {
 	switch protocol {
 	case relayprotocol.OpenAIChat:
-		ReasonixParseTokenUsageFromResponse(string(body), usage)
+		OpenAIChatParseTokenUsageFromResponse(string(body), usage)
 	case relayprotocol.OpenAIResponses:
 		CodexParseTokenUsageFromResponse(string(body), usage)
 	case relayprotocol.GeminiNative:

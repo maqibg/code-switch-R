@@ -11,9 +11,8 @@ import claudeIcon from '../../assets/icons/claude.svg?raw'
 import codexIcon from '../../assets/icons/codex.svg?raw'
 import geminiIcon from '../../assets/icons/gemini.svg?raw'
 import grokIcon from '../../assets/icons/grok.svg?raw'
-import reasonixIcon from '../../assets/icons/reasonix.svg?raw'
 
-type PlatformID = 'claude' | 'codex' | 'gemini' | 'reasonix' | 'grok'
+type PlatformID = 'claude' | 'codex' | 'gemini' | 'grok'
 type PlatformTab = 'providers' | 'accounts' | 'catalog'
 
 const platformMeta: Record<PlatformID, {
@@ -36,10 +35,6 @@ const platformMeta: Record<PlatformID, {
   gemini: {
     name: 'Gemini', mark: 'G', color: '#3d70c9', icon: geminiIcon, iconColor: '#3d70c9',
     tabs: [{ id: 'providers', label: '供应商' }, { id: 'accounts', label: '账号' }, { id: 'catalog', label: '模型目录' }],
-  },
-  reasonix: {
-    name: 'Reasonix', mark: 'R', color: '#6c7cff', icon: reasonixIcon,
-    tabs: [{ id: 'providers', label: '供应商' }],
   },
   grok: {
     name: 'Grok Build', mark: 'G', color: '#000000', icon: grokIcon, iconColor: 'var(--mac-text)',

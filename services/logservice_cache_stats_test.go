@@ -34,8 +34,7 @@ func TestQueryLogStatsUsesProtocolAwareCacheInputDenominator(t *testing.T) {
 		VALUES
 		(?, 'claude', 'anthropic_messages', 10, 3, 7),
 		(?, 'codex', 'openai_responses', 20, 0, 80),
-		(?, 'pi', 'openai_chat', 10, 0, 40),
-		(?, 'reasonix', '', 20, 0, 10)`, createdAt, createdAt, createdAt, createdAt)
+		(?, 'pi', 'openai_chat', 10, 0, 40)`, createdAt, createdAt, createdAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +53,7 @@ func TestQueryLogStatsUsesProtocolAwareCacheInputDenominator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.InputTokens != 160 || stats.CacheReadTokens != 157 || stats.CacheInputTokens != 300 {
+	if stats.InputTokens != 140 || stats.CacheReadTokens != 147 || stats.CacheInputTokens != 270 {
 		t.Fatalf("缓存分母未按协议归一化: input=%d cache_read=%d cache_input=%d", stats.InputTokens, stats.CacheReadTokens, stats.CacheInputTokens)
 	}
 
@@ -78,7 +77,7 @@ func TestQueryLogStatsUsesProtocolAwareCacheInputDenominator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if platformStats["codex"].CacheInputTokens != 200 || total.CacheInputTokens != 300 {
+	if platformStats["codex"].CacheInputTokens != 200 || total.CacheInputTokens != 270 {
 		t.Fatalf("平台聚合未保留缓存分母: codex=%d total=%d", platformStats["codex"].CacheInputTokens, total.CacheInputTokens)
 	}
 
@@ -90,7 +89,7 @@ func TestQueryLogStatsUsesProtocolAwareCacheInputDenominator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trend.CacheInputTokens != 300 {
+	if trend.CacheInputTokens != 270 {
 		t.Fatalf("趋势聚合未保留缓存分母: got=%d", trend.CacheInputTokens)
 	}
 

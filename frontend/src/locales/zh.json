@@ -762,7 +762,6 @@
       "codex": "Codex",
       "grok": "Grok Build",
       "gemini": "Gemini",
-      "reasonix": "Reasonix",
       "pi": "Pi",
       "opencode": "OpenCode"
     },
@@ -1061,7 +1060,6 @@
         "hostClaude": "托管 Claude Code",
         "hostCodex": "托管 Codex",
         "hostGemini": "托管 Gemini CLI",
-        "hostReasonix": "托管 Reasonix",
         "hostPi": "托管 Pi",
         "tooltip": "通过本地转发托管 API 访问，统一管理密钥与配额。",
         "statusOn": "已托管",
@@ -1570,8 +1568,7 @@
       "platforms": {
         "claude": "Claude Code",
         "codex": "Codex",
-        "gemini": "Gemini CLI",
-        "reasonix": "Reasonix"
+        "gemini": "Gemini CLI"
       },
       "form": {
         "createTitle": "新增 MCP 服务器",

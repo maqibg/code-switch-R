@@ -158,7 +158,7 @@ export function useVendorModal(
 
   // ---------- 上游协议 ----------
 
-  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'reasonix', 'grok', 'gemini'])
+  const protocolFieldPlatforms = new Set<ProviderTab>(['claude', 'codex', 'grok', 'gemini'])
   const showUpstreamProtocolField = computed(() => protocolFieldPlatforms.has(modalState.tabId))
   const isGrokProviderModal = computed(() => modalState.tabId === 'grok')
   const isGeminiProviderModal = computed(() => modalState.tabId === 'gemini')
@@ -190,7 +190,6 @@ export function useVendorModal(
     codex: ['auto', 'openai_responses', 'openai_chat', 'anthropic', 'google'],
     gemini: ['auto', 'google', 'openai_responses', 'openai_chat', 'anthropic'],
     grok: ['auto', 'openai_chat', 'openai_responses', 'anthropic', 'google'],
-    reasonix: ['auto', 'openai_chat', 'openai_responses', 'anthropic', 'google'],
   }
   const effectiveUpstreamProtocolOptions = computed<UpstreamProtocolOption[]>(() => {
     const order = protocolOrderMap[modalState.tabId]
@@ -238,7 +237,6 @@ export function useVendorModal(
     const defaults: Record<string, string> = {
       claude: '/v1/messages',
       codex: '/responses',
-      reasonix: '/chat/completions',
       grok: '/v1/responses',
     }
     return defaults[platform] || '/v1/chat/completions'
@@ -501,7 +499,7 @@ export function useVendorModal(
 
     // 保存 CLI 配置
     const cliConfig = modalState.form.cliConfig
-    const supportedPlatforms: CLIPlatform[] = ['claude', 'codex', 'gemini', 'reasonix']
+    const supportedPlatforms: CLIPlatform[] = ['claude', 'codex', 'gemini']
     if (cliConfig && Object.keys(cliConfig).length > 0 && supportedPlatforms.includes(modalState.tabId as CLIPlatform)) {
       try {
         await saveCLIConfig(modalState.tabId as CLIPlatform, cliConfig)

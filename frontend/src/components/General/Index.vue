@@ -120,7 +120,6 @@ const platformVisibility = [
   { id: 'codex', name: 'Codex' },
   { id: 'pi', name: 'Pi' },
   { id: 'grok', name: 'Grok Build' },
-  { id: 'reasonix', name: 'Reasonix' },
   { id: 'gemini', name: 'Gemini' },
   { id: 'opencode', name: 'OpenCode' },
 ] as const

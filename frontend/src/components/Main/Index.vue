@@ -933,12 +933,11 @@ const platformIconMap: Record<string, string> = {
   codex: codexIcon,
   gemini: geminiIcon,
   grok: grokIcon,
-  reasonix: '',
 }
 const platformIcon = computed(() => platformIconMap[props.platform || ''] || '')
 const platformCardBg = computed(() => {
   const base: Record<string, string> = {
-    claude: '#b76645', codex: '#277b71', gemini: '#3d70c9', grok: '#000000', reasonix: '#82633f',
+    claude: '#b76645', codex: '#277b71', gemini: '#3d70c9', grok: '#000000',
   }
   return base[props.platform || ''] || 'var(--mac-accent)'
 })

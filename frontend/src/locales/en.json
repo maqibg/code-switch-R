@@ -762,7 +762,6 @@
       "codex": "Codex",
       "grok": "Grok Build",
       "gemini": "Gemini",
-      "reasonix": "Reasonix",
       "pi": "Pi",
       "opencode": "OpenCode"
     },
@@ -1060,7 +1059,6 @@
         "hostClaude": "Host Claude Code",
         "hostCodex": "Host Codex",
         "hostGemini": "Host Gemini CLI",
-        "hostReasonix": "Host Reasonix",
         "hostPi": "Host Pi",
         "tooltip": "Route traffic through the local relay to manage API keys centrally.",
         "statusOn": "Managed",
@@ -1569,8 +1567,7 @@
       "platforms": {
         "claude": "Claude Code",
         "codex": "Codex",
-        "gemini": "Gemini CLI",
-        "reasonix": "Reasonix"
+        "gemini": "Gemini CLI"
       },
       "form": {
         "createTitle": "Create MCP server",

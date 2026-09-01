@@ -28,7 +28,6 @@ const (
 	platClaudeCode     = "claude-code"
 	platCodex          = "codex"
 	platGemini         = "gemini"
-	platReasonix       = "reasonix"
 )
 
 var builtInServers = map[string]rawMCPServer{
@@ -83,7 +82,6 @@ type MCPServer struct {
 	EnabledInClaude     bool              `json:"enabled_in_claude"`
 	EnabledInCodex      bool              `json:"enabled_in_codex"`
 	EnabledInGemini     bool              `json:"enabled_in_gemini"`
-	EnabledInReasonix   bool              `json:"enabled_in_reasonix"`
 	MissingPlaceholders []string          `json:"missing_placeholders"`
 }
 
@@ -150,7 +148,6 @@ func (ms *MCPService) ListServersForPlatform(platform string) ([]MCPServer, erro
 	claudeEnabled := loadClaudeEnabledServers()
 	codexEnabled := loadCodexEnabledServers()
 	geminiEnabled := loadGeminiEnabledServers()
-	reasonixEnabled := loadReasonixEnabledServers()
 
 	names := make([]string, 0, len(config))
 	for name := range config {
@@ -176,7 +173,6 @@ func (ms *MCPService) ListServersForPlatform(platform string) ([]MCPServer, erro
 			EnabledInClaude:   containsNormalized(claudeEnabled, name),
 			EnabledInCodex:    containsNormalized(codexEnabled, name),
 			EnabledInGemini:   containsNormalized(geminiEnabled, name),
-			EnabledInReasonix: containsNormalized(reasonixEnabled, name),
 		}
 		server.MissingPlaceholders = detectPlaceholders(server.URL, server.Args)
 		servers = append(servers, server)
@@ -232,7 +228,6 @@ func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServe
 			EnabledInClaude:   server.EnabledInClaude,
 			EnabledInCodex:    server.EnabledInCodex,
 			EnabledInGemini:   server.EnabledInGemini,
-			EnabledInReasonix: server.EnabledInReasonix,
 		}
 		raw[name] = rawMCPServer{
 			Type:           typ,
@@ -294,10 +289,6 @@ func (ms *MCPService) SaveServersForPlatform(platform string, servers []MCPServe
 		}
 	case platGemini:
 		if err := ms.syncGeminiServers(normalized); err != nil {
-			return rollbackStore(err)
-		}
-	case platReasonix:
-		if err := ms.syncReasonixServers(normalized); err != nil {
 			return rollbackStore(err)
 		}
 	}
@@ -550,8 +541,6 @@ func normalizePlatform(value string) (string, bool) {
 		return platClaudeCode, true // MCP store 沿用 "claude-code" 作为键
 	case "codex":
 		return "codex", true
-	case "reasonix":
-		return "reasonix", true
 	default:
 		// pi 没有 MCP 配置，与未知平台一样返回 false
 		return "", false
@@ -698,52 +687,6 @@ func loadGeminiEnabledServers() map[string]struct{} {
 		result[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
 	}
 	return result
-}
-
-func reasonixConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".reasonix", "config.json"), nil
-}
-
-func loadReasonixEnabledServers() map[string]struct{} {
-	result := map[string]struct{}{}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return result
-	}
-	path := filepath.Join(home, ".reasonix", "config.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return result
-	}
-	var payload struct {
-		Servers map[string]json.RawMessage `json:"mcpServers"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return result
-	}
-	for name := range payload.Servers {
-		result[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
-	}
-	return result
-}
-
-func (ms *MCPService) syncReasonixServers(servers []MCPServer) error {
-	path, err := reasonixConfigPath()
-	if err != nil {
-		return err
-	}
-	desired := make(map[string]claudeDesktopServer)
-	for _, server := range servers {
-		if !server.Enabled || !platformContains(server.EnablePlatform, platReasonix) {
-			continue
-		}
-		desired[server.Name] = buildClaudeDesktopEntry(server)
-	}
-	return syncManagedJSONMCPServers(path, "mcpServers", platReasonix, desired, 0o600)
 }
 
 func (ms *MCPService) mergeImportedServers(target, imported map[string]rawMCPServer) bool {

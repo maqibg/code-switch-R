@@ -131,6 +131,11 @@ var schemaMigrations = []schemaMigration{
 		name:    "request-credential-log",
 		up:      migrateRequestCredentialLogColumns,
 	},
+	{
+		version: 15,
+		name:    "remove-reasonix-data",
+		up:      migrateRemoveReasonixData,
+	},
 }
 
 // ensureSchemaVersionTable 创建版本记录表

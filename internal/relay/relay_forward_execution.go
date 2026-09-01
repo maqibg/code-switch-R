@@ -205,7 +205,7 @@ func requestLogProtocolHook(protocol relayprotocol.Protocol, usage *services.Req
 		payload := strings.TrimSpace(string(data))
 		switch protocol {
 		case relayprotocol.OpenAIChat:
-			parseEventPayload(payload, ReasonixParseTokenUsageFromResponse, usage)
+			parseEventPayload(payload, OpenAIChatParseTokenUsageFromResponse, usage)
 		case relayprotocol.OpenAIResponses:
 			parseEventPayload(payload, CodexParseTokenUsageFromResponse, usage)
 		case relayprotocol.GeminiNative:

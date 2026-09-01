@@ -164,7 +164,6 @@ func main() {
 	grokBuildService := services.NewGrokBuildService(providerRelay.Addr(), appSettings, providerService)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
-	reasonixSettings := services.NewReasonixSettingsService(providerRelay.Addr())
 	providerModelDiscovery := services.NewProviderModelDiscoveryService(appSettings)
 	geminiCatalogService := services.NewGeminiCatalogService(providerService, appSettings)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
@@ -201,7 +200,6 @@ func main() {
 		claudeSettings,
 		codexSettings,
 		geminiService,
-		reasonixSettings,
 		piSettings,
 		grokBuildService,
 	); err != nil {
@@ -291,7 +289,6 @@ func main() {
 			application.NewService(geminiCliAccountService),
 			application.NewService(consoleService),
 			application.NewService(networkService),
-			application.NewService(reasonixSettings),
 			application.NewService(piSettings),
 			application.NewService(pricingService),
 			application.NewService(providerModelDiscovery),

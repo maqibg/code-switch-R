@@ -12,8 +12,8 @@ export const HOME_PLATFORM_ORDER_KEY = 'home-platform-order'
 export const PI_PLATFORM_ORDER_KEY = 'pi-platform-order'
 export const HIDDEN_PLATFORM_PAGES_KEY = 'hidden-platform-pages'
 
-export const DEFAULT_HOME_PLATFORM_ORDER = ['claude', 'codex', 'gemini', 'reasonix', 'grok', 'grok-oauth', 'others'] as const
-export const PLATFORM_PAGE_IDS = ['claude', 'codex', 'pi', 'grok', 'reasonix', 'gemini', 'opencode'] as const
+export const DEFAULT_HOME_PLATFORM_ORDER = ['claude', 'codex', 'gemini', 'grok', 'grok-oauth', 'others'] as const
+export const PLATFORM_PAGE_IDS = ['claude', 'codex', 'pi', 'grok', 'gemini', 'opencode'] as const
 export type PlatformPageID = (typeof PLATFORM_PAGE_IDS)[number]
 
 export const normalizeThemeMode = (value: unknown): FrontendThemeMode => {

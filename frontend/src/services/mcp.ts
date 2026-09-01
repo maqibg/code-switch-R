@@ -12,7 +12,7 @@ import * as MCPService from '../../bindings/codeswitch/services/mcpservice'
 import * as ImportService from '../../bindings/codeswitch/services/importservice'
 import type { MCPServer as GeneratedMcpServer } from '../../bindings/codeswitch/services/models'
 
-export type McpPlatform = 'claude-code' | 'codex' | 'gemini' | 'reasonix'
+export type McpPlatform = 'claude-code' | 'codex' | 'gemini'
 export type McpServerType = 'stdio' | 'http'
 
 export type McpServer = {
@@ -29,9 +29,6 @@ export type McpServer = {
   enabled_in_claude: boolean
   enabled_in_codex: boolean
   enabled_in_gemini: boolean
-  // 原先漏了这个字段，而 reasonix 是 platformOptions 里的可选平台，
-  // 于是该平台下已启用的 server 在 UI 上永远显示未启用。
-  enabled_in_reasonix: boolean
   missing_placeholders: string[]
 }
 

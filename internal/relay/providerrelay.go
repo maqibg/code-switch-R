@@ -185,7 +185,7 @@ func (prs *ProviderRelayService) isRoundRobinSettingEnabled() bool {
 // roundRobinOrder 对同 Level 的 providers 进行轮询排序
 // 算法：基于 name 追踪，将上次起始 provider 移到末尾，实现轮询效果
 // 参数：
-//   - platform: 平台标识（claude/codex/gemini/reasonix/grok/pi）
+//   - platform: 平台标识（claude/codex/gemini/grok/pi）
 //   - level: 当前 Level
 //   - providers: 同 Level 的 providers 列表（已过滤、按用户排序）
 //
@@ -431,10 +431,6 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.GET("/gemini/v1/*any", prs.geminiProxyHandler("/v1"))
 	router.POST("/gemini/v1beta/*any", prs.geminiProxyHandler("/v1beta"))
 	router.POST("/gemini/v1/*any", prs.geminiProxyHandler("/v1"))
-
-	// Reasonix 端点 — 请求格式为 OpenAI Chat Completions
-	router.POST("/reasonix/chat/completions", prs.proxyHandler("reasonix", "/chat/completions"))
-	router.GET("/reasonix/models", prs.modelsHandler("reasonix"))
 
 	// Pi 的每个 models.json Provider 使用独立路由，避免跨平台模型 ID 冲突。
 	router.POST("/pi/providers/:provider/*any", prs.piPlatformProxyHandler())
@@ -908,8 +904,6 @@ func RequestLogHook(c *gin.Context, kind string, usage *services.RequestLog) fun
 			parserFn = CodexParseTokenUsageFromResponse
 		case "gemini":
 			parserFn = GeminiParseTokenUsageFromResponse
-		case "reasonix":
-			parserFn = ReasonixParseTokenUsageFromResponse
 		}
 		parseEventPayload(payload, parserFn, usage)
 
@@ -1089,8 +1083,8 @@ func CodexParseTokenUsageFromResponse(data string, usage *services.RequestLog) {
 	finalizeUsageStatus(usage)
 }
 
-// reasonix usage parser(DeepSeek OpenAI-compatible Chat Completions API)
-func ReasonixParseTokenUsageFromResponse(data string, usage *services.RequestLog) {
+// openaiChat usage parser(OpenAI-compatible Chat Completions API)
+func OpenAIChatParseTokenUsageFromResponse(data string, usage *services.RequestLog) {
 	node := gjson.Get(data, "usage")
 	if !node.Exists() || usage == nil {
 		return
