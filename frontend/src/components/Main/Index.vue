@@ -737,7 +737,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.level') }}</span>
                 </div>
 
-                <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'advanced'" class="form-field">
+                <div v-if="!isGrokProviderModal" v-show="providerModalTab === 'basic'" class="form-field">
                   <ModelMappingEditor
                     v-model="modalState.form.modelMapping"
                     :platform="modalState.tabId"
