@@ -300,9 +300,14 @@ const apply = () => {
 .reset-url:hover:not(:disabled) { color: var(--mac-text); border-color: var(--platform-color, #5c7580); }
 .reset-url:disabled { cursor: not-allowed; opacity: .5; }
 
+/* 本弹窗的输入框自带一份基础样式：scoped 样式不会继承其他组件的 .form-input 定义，
+   缺失时输入框会退化成浏览器默认外观，并与下方写死的图标定位对不上。 */
+.form-input { min-width: 0; width: 100%; min-height: 38px; padding: 8px 12px; border: 1px solid var(--mac-border); border-radius: 9px; background: var(--mac-surface-strong); color: var(--mac-text); font: inherit; font-size: 13px; box-sizing: border-box; transition: border-color .2s ease, box-shadow .2s ease; }
+.form-input:focus { outline: none; border-color: var(--platform-color, #5c7580); box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-color, #5c7580) 25%, transparent); }
+
 .result-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .search-box { position: relative; flex: 1 1 220px; min-width: 0; }
-.search-box svg { position: absolute; left: 11px; top: 12px; color: var(--mac-text-secondary); pointer-events: none; }
+.search-box svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--mac-text-secondary); pointer-events: none; }
 .search-box .form-input { padding-left: 32px; }
 .fetch-error { display: grid; gap: 4px; margin: 0; color: #b42318; font-size: 12px; line-height: 1.5; padding: 10px 12px; border: 1px solid color-mix(in srgb, #b42318 30%, var(--mac-border)); border-radius: 8px; background: color-mix(in srgb, #b42318 6%, transparent); }
 

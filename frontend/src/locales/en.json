@@ -1020,6 +1020,7 @@
         "valuePlaceholder": "Provider model (e.g., kimi-k2-thinking)",
         "add": "Add",
         "remove": "Remove mapping",
+        "editHint": "Click to edit this mapping",
         "examples": {
           "title": "Examples:",
           "exact": "Exact mapping",

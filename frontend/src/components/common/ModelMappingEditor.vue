@@ -1,5 +1,5 @@
 <template>
-  <div class="model-mapping-editor">
+  <div ref="editorRoot" class="model-mapping-editor">
     <div class="editor-header">
       <label class="editor-label">
         <span>{{ $t('components.provider.modelMapping.label') }}</span>
@@ -22,40 +22,87 @@
         v-for="(mapping, index) in mappingList"
         :key="`saved-${mapping.key}`"
         class="mapping-row"
+        :class="{ 'editing-row': editingKey === mapping.key }"
       >
-        <div class="mapping-content">
-          <code class="mapping-key" :class="{ wildcard: isWildcard(mapping.key) }">
-            {{ mapping.key }}
-          </code>
-          <svg class="mapping-arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path
-              d="M6 4l4 4-4 4"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+        <template v-if="editingKey === mapping.key">
+          <div class="mapping-content">
+            <BaseInput
+              v-model="editDraft.key"
+              class="mapping-edit-input"
+              type="text"
+              :placeholder="$t('components.provider.modelMapping.keyPlaceholder')"
+              @keydown.enter.prevent="commitEdit"
+              @keydown.esc.prevent="cancelEdit"
             />
-          </svg>
-          <code class="mapping-value" :class="{ wildcard: isWildcard(mapping.value) }">
-            {{ mapping.value }}
-          </code>
-        </div>
-        <button
-          type="button"
-          class="mapping-remove"
-          :aria-label="$t('components.provider.modelMapping.remove')"
-          @click="removeMapping(index)"
-        >
-          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
-            <path
-              d="M3 3l6 6M9 3l-6 6"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
+            <svg class="mapping-arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path
+                d="M6 4l4 4-4 4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <BaseInput
+              v-model="editDraft.value"
+              class="mapping-edit-input"
+              type="text"
+              :placeholder="$t('components.provider.modelMapping.valuePlaceholder')"
+              @keydown.enter.prevent="commitEdit"
+              @keydown.esc.prevent="cancelEdit"
             />
-          </svg>
-        </button>
+          </div>
+          <div class="mapping-actions">
+            <button type="button" class="mapping-save" @click="commitEdit">
+              {{ $t('common.save') }}
+            </button>
+            <button type="button" class="mapping-cancel" @click="cancelEdit">
+              {{ $t('common.cancel') }}
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            class="mapping-content mapping-summary"
+            :title="$t('components.provider.modelMapping.editHint')"
+            @click="startEdit(mapping)"
+          >
+            <code class="mapping-key" :class="{ wildcard: isWildcard(mapping.key) }">
+              {{ mapping.key }}
+            </code>
+            <svg class="mapping-arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path
+                d="M6 4l4 4-4 4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <code class="mapping-value" :class="{ wildcard: isWildcard(mapping.value) }">
+              {{ mapping.value }}
+            </code>
+          </button>
+          <button
+            type="button"
+            class="mapping-remove"
+            :aria-label="$t('components.provider.modelMapping.remove')"
+            :title="$t('components.provider.modelMapping.remove')"
+            @click="removeMapping(index)"
+          >
+            <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+              <path
+                d="M3 3l6 6M9 3l-6 6"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </template>
       </div>
 
       <div
@@ -177,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Download } from 'lucide-vue-next'
 import type { Provider } from '../../../bindings/codeswitch/services/models'
 import BaseInput from './BaseInput.vue'
@@ -215,6 +262,11 @@ const pendingModels = ref<Array<{ id: number; key: string; value: string }>>([])
 const fetchModelsOpen = ref(false)
 let nextPendingModelId = 1
 
+// 就地编辑已保存映射：editingKey 为 null 表示没有行处于编辑态
+const editingKey = ref<string | null>(null)
+const editDraft = reactive({ key: '', value: '' })
+const editorRoot = ref<HTMLElement | null>(null)
+
 const canFetchModels = computed(() => Boolean(props.provider?.apiUrl?.trim()))
 const discoveryHeaders = computed<Record<string, string>>(() => {
   return Object.entries(props.provider?.headers || {}).reduce<Record<string, string>>(
@@ -241,13 +293,10 @@ const discoveryExistingIds = computed(() => {
 const isWildcard = (text: string) => text.includes('*')
 
 const focusValueInput = () => {
-  // 当在 key 输入框按 Enter 时，聚焦到 value 输入框
-  if (valueInputRef.value) {
-    const inputElement = (valueInputRef.value as any).$el?.querySelector('input')
-    if (inputElement) {
-      inputElement.focus()
-    }
-  }
+  // 当在 key 输入框按 Enter 时，聚焦到 value 输入框。
+  // BaseInput 的根元素就是 input 本身，直接取 $el 即输入框。
+  const inputElement = valueInputRef.value?.$el as HTMLInputElement | undefined
+  inputElement?.focus()
 }
 
 const addMapping = () => {
@@ -330,10 +379,51 @@ const removeMapping = (index: number) => {
   emit('update:modelValue', updated)
 }
 
+const startEdit = async (mapping: { key: string; value: string }) => {
+  editingKey.value = mapping.key
+  editDraft.key = mapping.key
+  editDraft.value = mapping.value
+  await nextTick()
+  const inputElement = editorRoot.value?.querySelector<HTMLInputElement>('.mapping-row.editing-row input')
+  inputElement?.focus()
+  inputElement?.select()
+}
+
+const cancelEdit = () => {
+  editingKey.value = null
+  editDraft.key = ''
+  editDraft.value = ''
+}
+
+const commitEdit = () => {
+  const originalKey = editingKey.value
+  if (originalKey === null) return
+
+  const key = editDraft.key.trim()
+  const value = editDraft.value.trim()
+  // 两个字段都必填，缺一不提交并保留编辑态，让用户继续改
+  if (!key || !value) return
+
+  const updated = { ...(props.modelValue || {}) }
+  if (key !== originalKey) delete updated[originalKey]
+  updated[key] = value
+  emit('update:modelValue', updated)
+  cancelEdit()
+}
+
+// 父组件把该映射删掉或整体替换后，编辑态不能停留在不存在的行上
+watch(() => props.modelValue, (value) => {
+  if (editingKey.value === null) return
+  if (!value || !Object.prototype.hasOwnProperty.call(value, editingKey.value)) {
+    cancelEdit()
+  }
+})
+
 watch(() => props.modalOpen, (open) => {
   if (open) return
   pendingModels.value = []
   fetchModelsOpen.value = false
+  cancelEdit()
 })
 </script>
 
@@ -398,6 +488,73 @@ watch(() => props.modalOpen, (open) => {
   gap: 10px;
   flex: 1;
   min-width: 0;
+}
+
+/* 非编辑态整行摘要做成按钮，点击即进入就地编辑 */
+.mapping-summary {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mapping-summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--platform-color, var(--accent-primary)) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.editing-row {
+  border-color: color-mix(in srgb, var(--platform-color, var(--accent-primary)) 45%, var(--border));
+}
+
+.mapping-edit-input {
+  min-width: 0;
+  flex: 1 1 0;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 0.75rem;
+}
+
+.mapping-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mapping-save,
+.mapping-cancel {
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mapping-save {
+  border: 1px solid color-mix(in srgb, var(--platform-color, var(--accent-primary)) 45%, var(--border));
+  background: color-mix(in srgb, var(--platform-color, var(--accent-primary)) 12%, var(--background));
+  color: var(--foreground);
+}
+
+.mapping-save:hover {
+  background: color-mix(in srgb, var(--platform-color, var(--accent-primary)) 20%, var(--background));
+}
+
+.mapping-cancel {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground-muted);
+}
+
+.mapping-cancel:hover {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--foreground-muted) 45%, var(--border));
 }
 
 .mapping-key,

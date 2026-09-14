@@ -1021,6 +1021,7 @@
         "valuePlaceholder": "供应商模型（如 kimi-k2-thinking）",
         "add": "添加",
         "remove": "删除映射",
+        "editHint": "点击可修改该映射",
         "examples": {
           "title": "示例：",
           "exact": "精确映射",

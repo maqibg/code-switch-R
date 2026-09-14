@@ -64,4 +64,45 @@ describe('ModelMappingEditor', () => {
     expect(wrapper.findComponent(ModelMappingEditor).emitted('update:modelValue')?.[0]?.[0]).toEqual({})
     expect(wrapper.find('.mapping-row').exists()).toBe(false)
   })
+
+  it('edits a saved mapping in place when its row is clicked', async () => {
+    const wrapper = mountEditor({ cliModel: 'provider-model' })
+
+    expect(wrapper.find('input.mapping-edit-input').exists()).toBe(false)
+    await wrapper.get('.mapping-summary').trigger('click')
+
+    const inputs = wrapper.findAll('input.mapping-edit-input')
+    expect(inputs.length).toBe(2)
+    expect((inputs[0].element as HTMLInputElement).value).toBe('cliModel')
+    expect((inputs[1].element as HTMLInputElement).value).toBe('provider-model')
+
+    await inputs[1].setValue('new-provider-model')
+    await wrapper.get('.mapping-save').trigger('click')
+
+    const updates = wrapper.findComponent(ModelMappingEditor).emitted('update:modelValue') || []
+    expect(updates[updates.length - 1]?.[0]).toEqual({ cliModel: 'new-provider-model' })
+    expect(wrapper.find('input.mapping-edit-input').exists()).toBe(false)
+  })
+
+  it('renames the mapping key and cancels the edit without emitting on cancel', async () => {
+    const wrapper = mountEditor({ cliModel: 'provider-model' })
+
+    await wrapper.get('.mapping-summary').trigger('click')
+    const inputs = wrapper.findAll('input.mapping-edit-input')
+    await inputs[0].setValue('renamedModel')
+    await inputs[1].setValue('renamed-provider-model')
+    await wrapper.get('.mapping-save').trigger('click')
+
+    let updates = wrapper.findComponent(ModelMappingEditor).emitted('update:modelValue') || []
+    expect(updates[updates.length - 1]?.[0]).toEqual({ renamedModel: 'renamed-provider-model' })
+
+    await wrapper.get('.mapping-summary').trigger('click')
+    const reopened = wrapper.findAll('input.mapping-edit-input')
+    await reopened[1].setValue('discarded-model')
+    await wrapper.get('.mapping-cancel').trigger('click')
+
+    updates = wrapper.findComponent(ModelMappingEditor).emitted('update:modelValue') || []
+    expect(updates[updates.length - 1]?.[0]).toEqual({ renamedModel: 'renamed-provider-model' })
+    expect(wrapper.find('input.mapping-edit-input').exists()).toBe(false)
+  })
 })
